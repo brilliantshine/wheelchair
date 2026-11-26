@@ -32,19 +32,19 @@ exit 0
 # Subtest: key store is private, revisioned and cleans failed temporary writes
 ok 64 - key store is private, revisioned and cleans failed temporary writes
   ---
-  duration_ms: 26.21473
+  duration_ms: 25.481556
   type: 'test'
   ...
 # Subtest: identity is shared by alias and git worktree
 ok 65 - identity is shared by alias and git worktree
   ---
-  duration_ms: 29.583959
+  duration_ms: 27.422442
   type: 'test'
   ...
 # Subtest: command timeout kills the child
 ok 66 - command timeout kills the child
   ---
-  duration_ms: 102.546143
+  duration_ms: 102.115989
   type: 'test'
   ...
 # wc-one-worker: project tools: held back HOLD: also used in a command, args or URL
@@ -54,49 +54,49 @@ ok 66 - command timeout kills the child
 # Subtest: session launcher passes only selected keys outside recorded commands
 ok 67 - session launcher passes only selected keys outside recorded commands
   ---
-  duration_ms: 105.979145
+  duration_ms: 107.813867
   type: 'test'
   ...
 # Subtest: launcher safely passes shell special names and removes the file
 ok 68 - launcher safely passes shell special names and removes the file
   ---
-  duration_ms: 43.342646
+  duration_ms: 40.063064
   type: 'test'
   ...
 # Subtest: launcher errors are fixed messages and remove the file
 ok 69 - launcher errors are fixed messages and remove the file
   ---
-  duration_ms: 67.052631
+  duration_ms: 68.419494
   type: 'test'
   ...
 # Subtest: an invalid executable cannot leak key values in startup errors
 ok 70 - an invalid executable cannot leak key values in startup errors
   ---
-  duration_ms: 22.954088
+  duration_ms: 26.739074
   type: 'test'
   ...
 # Subtest: nested and unbalanced substitutions hold back every referenced name
 ok 71 - nested and unbalanced substitutions hold back every referenced name
   ---
-  duration_ms: 0.980507
+  duration_ms: 0.944338
   type: 'test'
   ...
 # Subtest: an sse tool header key is a key reference
 ok 72 - an sse tool header key is a key reference
   ---
-  duration_ms: 0.325152
+  duration_ms: 0.347937
   type: 'test'
   ...
 # Subtest: folder tool value usability boundaries
 ok 73 - folder tool value usability boundaries
   ---
-  duration_ms: 0.237073
+  duration_ms: 0.230131
   type: 'test'
   ...
 # Subtest: private revisioned shared store and safe errors
 ok 74 - private revisioned shared store and safe errors
   ---
-  duration_ms: 23.887635
+  duration_ms: 24.770815
   type: 'test'
   ...
 1..74
@@ -107,7 +107,7 @@ ok 74 - private revisioned shared store and safe errors
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 16204.261284
+# duration_ms 16123.24883
 ```
 
 ### `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/name-guard.test.js machine/test/connectors-contract.test.js`

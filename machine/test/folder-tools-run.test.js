@@ -123,7 +123,7 @@ test('old bridge arguments refuse newly declared keys but preserve keyless edits
   try {
     assert.equal((await invoke()).isError,false);
     await fs.promises.writeFile(path.join(f.dir,'tool.json'),JSON.stringify({...f.tool,description:'Edited'}));
-    assert.match((await invoke()).content[0].text,/tool changed/i);
+    assert.equal((await invoke()).content[0].text,'The tool changed. Try it with wc.js tool run now or through MCP after the next agent start (a new session, a resume or an account switch).');
     await fs.promises.writeFile(path.join(f.dir,'tool.json'),JSON.stringify({...f.tool,keys:['TOKEN']}));
     assert.equal((await invoke()).content[0].text,'The tool changed. Its keys are used from the next agent start (a new session, a resume or an account switch); wc.js tool run runs it now without keys.');
   } finally { child.stdin.end(); }

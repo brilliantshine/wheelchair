@@ -534,7 +534,7 @@ test('shell-only sessions report keyed tools and include the starting clause', a
   for (const options of [{cli:'kimi'}, {cli:'pi'}, {cli:'codex',mode:'sandboxed'}]) {
     const session = await f.start(options), lines = session.project_tools.keyed[session.name];
     assert.equal(lines.length, 2); assert.deepEqual(lines.map(line => line.text), ['first','second'].map(name => `tool ${name} needs keys, which ${connectors.machine(session.cli).keyedToolsReason(session)}`)); assert.doesNotMatch(await f.command(), /tool-bridge\.js/);
-    assert.match(await fs.readFile(f.promptPath(session.name),'utf8'), /Tools that need keys aren't available in this session/);
+    assert.ok((await fs.readFile(f.promptPath(session.name),'utf8')).includes(` Tools that need keys aren't available in this session (${connectors.machine(session.cli).keyedToolsReason(session)}).`));
   }
 });
 
