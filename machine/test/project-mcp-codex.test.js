@@ -164,3 +164,12 @@ test('folder entries respect sandbox, order, budget and validation', () => {
   const invalid = run(unrestricted, { ...ctx, extraServers: [{ name: 'bad', folder: 'server', entry: { ...entry, command: '${X}' } }] });
   assert.match(invalid.warnings[0].text, /cannot pass through/);
 });
+
+test('keyless bridge retains legacy arguments and fits the same near-limit Codex budget', () => {
+  const {bridgeEntry}=require('../lib/folder-tools'); const dirs=['/work/tree/.wheelchair/tools/a','/work/tree/.wheelchair/tools/b'];
+  const entry=bridgeEntry(worktree,dirs.map(dir=>({dir,tool:{keys:[]}})),{stateDir:'/state'}).entry;
+  const legacy={...entry,args:[path.resolve(__dirname,'../lib/tool-bridge.js'),'--project-dir',worktree,...dirs.flatMap(dir=>['--tool',dir])]};
+  assert.deepEqual(entry.args,legacy.args);
+  const run=e=>command(input,{...session,codex_mode:'unrestricted'},worktree,{tools:true,mcp:{names:['existing'],servers:{existing:{command:'node',args:["'".repeat(15800)]}}},extraServers:[{name:'wheelchair-tools',folder:'bridge',entry:e}]});
+  assert.deepEqual(run(entry),run(legacy)); assert.ok(run(entry).loaded.some(row=>row.name==='wheelchair-tools'));
+});

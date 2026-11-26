@@ -99,3 +99,45 @@ test('keyed bridge reads shared keys on every call and binds names', async () =>
     await fs.promises.writeFile(path.join(f.dir,'tool.json'),JSON.stringify({...f.tool,keys:['OTHER']})); assert.match((await invoke()).content[0].text,/Its keys are used from the next agent start/);
   } finally { child.stdin.end(); }
 });
+
+test('project bridge overrides inherited key and reads project store on each call', async () => {
+  const {execFileSync}=require('node:child_process'); const {projectIdentity,writeKeyStore}=require('../lib/project-keys');
+  const f=await fixture("require('fs').writeFileSync('seen',process.env.TOKEN); console.log('ok')",{keys:['TOKEN']});
+  execFileSync('git',['init',f.root],{stdio:'ignore'}); const state=path.join(f.root,'state'), identity=await projectIdentity(f.root);
+  await writeKeyStore(state,identity,{set:{TOKEN:'projectvalue'}});
+  const args=[bridge,'--project-dir',f.root,'--state-dir',state,'--tool',f.dir,'--key-store','project','--key','TOKEN'];
+  assert.ok(!JSON.stringify(args).includes('projectvalue'));
+  const child=spawn(process.execPath,args,{env:{...process.env,TOKEN:'inheritedvalue'}}), call=rpc(child);
+  const invoke=async()=> (await call('tools/call',{name:'example'})).result;
+  try {
+    assert.equal((await invoke()).isError,false); assert.equal(await fs.promises.readFile(path.join(f.dir,'seen'),'utf8'),'projectvalue');
+    await writeKeyStore(state,identity,{remove:['TOKEN']}); await fs.promises.unlink(path.join(f.dir,'seen'));
+    assert.equal((await invoke()).content[0].text,'tool example needs key TOKEN, not set on this machine'); assert.equal(fs.existsSync(path.join(f.dir,'seen')),false);
+    await writeKeyStore(state,identity,{set:{TOKEN:'replacementvalue'}}); assert.equal((await invoke()).isError,false); assert.equal(await fs.promises.readFile(path.join(f.dir,'seen'),'utf8'),'replacementvalue');
+  } finally { child.stdin.end(); }
+});
+
+test('old bridge arguments refuse newly declared keys but preserve keyless edits', async () => {
+  const f=await fixture("console.log('ok')"); const child=spawn(process.execPath,[bridge,'--project-dir',f.root,'--tool',f.dir]); const call=rpc(child);
+  const invoke=async()=> (await call('tools/call',{name:'example'})).result;
+  try {
+    assert.equal((await invoke()).isError,false);
+    await fs.promises.writeFile(path.join(f.dir,'tool.json'),JSON.stringify({...f.tool,description:'Edited'}));
+    assert.match((await invoke()).content[0].text,/tool changed/i);
+    await fs.promises.writeFile(path.join(f.dir,'tool.json'),JSON.stringify({...f.tool,keys:['TOKEN']}));
+    assert.equal((await invoke()).content[0].text,'The tool changed. Its keys are used from the next agent start (a new session, a resume or an account switch); wc.js tool run runs it now without keys.');
+  } finally { child.stdin.end(); }
+});
+
+test('bridge refuses keyed calls with Node child process debugging but runs keyless calls', async () => {
+  const f=await fixture("console.log('ok')",{keys:['TOKEN']}); const other=path.join(f.root,'other'); await fs.promises.mkdir(other);
+  await fs.promises.writeFile(path.join(other,'tool.json'),JSON.stringify({...f.tool,name:'other',keys:undefined})); await fs.promises.writeFile(path.join(other,'main.js'),"console.log('ok')");
+  const {writeSharedKeys}=require('../lib/shared-keys'); const state=path.join(f.root,'state'); await writeSharedKeys(state,{set:{TOKEN:'somevalue'}});
+  const child=spawn(process.execPath,[bridge,'--project-dir',f.root,'--state-dir',state,'--tool',f.dir,'--key-store','shared','--key','TOKEN','--tool',other],{env:{...process.env,NODE_DEBUG:'child_process'}}); child.stderr.resume(); const call=rpc(child);
+  try { assert.equal((await call('tools/call',{name:'example'})).result.content[0].text,"Node debug output for child processes is on; keyed tools won't run"); assert.equal((await call('tools/call',{name:'other'})).result.isError,false); } finally { child.stdin.end(); }
+});
+
+test('launcher refuses server tool declaring keys', async () => {
+  const f=await fixture('',{kind:'server',start:[process.execPath,'main.js'],keys:['TOKEN']}); const child=spawn(process.execPath,[launch,'--project-dir',f.root,'--tool',f.dir]); const result=await completed(child);
+  assert.notEqual(result.code,0); assert.match(result.stderr,/keys for server tools aren't supported yet/);
+});
