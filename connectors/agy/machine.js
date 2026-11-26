@@ -57,6 +57,7 @@ module.exports = {
           if (fields.some(value => value.includes('${'))) reason = 'uses ${...} that Antigravity cannot pass through';
           else translated = { command: entry.command, args: entry.args || [], env };
         }
+        if (!reason && name === 'wheelchair-tools' && extras.some(extra => extra.name === name && extra.folder === 'bridge')) translated.timeoutSeconds = 260;
         if (reason) warnings.push({ names: [name], text: `${serverLabel(name)}: skipped on Antigravity: ${reason}` });
         else Object.defineProperty(servers, name, { value: translated, enumerable: true, writable: true, configurable: true });
       }
