@@ -42,7 +42,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | Usable key values: 8–4096 characters of letters, digits and `. _ ~ + / = -`; redaction also matches `/` written as `\/` (supersedes 14's value rule) | Removes escaped and multiline leaks in script output | review-round-3 |
 | 17 | Redaction matches every spelling where each key character is itself, `\uXXXX`, a backslash escape or `%XX` (supersedes 16's `\/` rule) | One rule instead of a growing list of encoders | review-round-4 |
 | 18 | Server tools with `keys` are refused by `validateToolJson`, so the launcher never starts them | The launcher re-validates; one gate covers every path | review-round-4 |
-| 19 | Supersedes 17: plain keys are replaced; if a key survives in any decoding (up to three rounds of JSON/backslash unescaping and percent-decoding), the stream is withheld; other transforms (base64, hashing, splitting) are the stated limit | One rule that ends the chase; pending Collin's answer on the limit | review-round-5 |
+| 19 | Supersedes 17: plain keys are replaced; if a key survives in any decoding (up to three rounds of JSON/backslash unescaping and percent-decoding), the stream is withheld; other transforms (base64, hashing, splitting) are the stated limit | One rule that ends the chase | review-round-5 |
+| 20 | Confirms 19: the redaction limit is common escapes (JSON/backslash, percent, up to three layers); base64, hashing and splitting are not caught and the guide forbids printing keys. IDEA.md "What good looks like" updated | Collin: common escapes, clear limit | idea-change |
 
 ## Spec
 
@@ -379,6 +380,15 @@ makes it usable mid-session (K3).
 | mechanics | major | Machine-run result decoded per chunk | upheld | K5: decode whole body once |
 | mechanics | minor | Hidden vs refused status precedence | upheld | K1: `hidden` wins for display |
 | mechanics | minor | "Letter/digit" must be ASCII | upheld | K2: ASCII |
+
+### Round 6 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 5:** K4 rewritten (whole-capture redaction: cut edges, plain keys, decode-and-withhold, stated limit; Decisions 19-20, IDEA.md), K2 ASCII, K1 hidden precedence, K3 "next agent start", K5 result decoding, K7 key-only refresh and conflict, Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 

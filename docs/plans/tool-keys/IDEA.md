@@ -29,7 +29,9 @@ agent can read them.
 - A tool whose key is missing shows "needs key X, not set on this machine" on the Tools
   page and does not run.
 - Collin can add, change and remove shared keys in a Shared keys section of Settings.
-- A key's value never shows up in tool output an agent receives.
+- A key's value never shows up in tool output an agent receives, whether printed as-is or
+  under standard escapes (JSON, web addresses). Keys a tool deliberately transforms (base64,
+  hashing, splitting) are beyond what wheelchair can catch; tool authors must never print keys.
 
 ## Not doing
 
