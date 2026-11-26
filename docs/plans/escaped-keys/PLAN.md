@@ -43,7 +43,7 @@ storage are untouched.
 
 ```mermaid
 flowchart TD
-  A[Keyed script ends; stdout and stderr captured] --> B{Any % or \\ in it?}
+  A[Keyed script ends; stdout and stderr captured] --> B{Any percent sign or backslash in it?}
   B -- no --> C[Today's plain search only]
   B -- yes --> D[Look for every escaped spelling of every key, starting at every byte, plus key pieces at cut edges]
   D --> E{Done within the work budget?}
