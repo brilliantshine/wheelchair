@@ -62,7 +62,7 @@ Examples of `spell3('+')`: `+`, `%2B`, `%252B`, `%25252B`, `\u002B`, `\\u002B`,
 `si` in `spell3(ki)`. The plain value is one of them. Nothing may stand between the `si`.
 
 **Finding and replacing.** `redactCapture` finds every spelling of every one of the tool's
-key values that starts at any byte of the whole capture as captured (before any cut-edge trimming, E3), including spellings that overlap
+key values that starts at any byte of the whole capture as captured (before any cut-edge trimming, E2; order in E3), including spellings that overlap
 each other, overlap plain keys, or begin inside text that looks like another escape (for
 `41CD+EFGH`, `progress=100%41CD%2BEFGH` has the spelling `41CD%2BEFGH`, which must be
 found). It must never work by decoding the capture first. Every byte of every spelling found
@@ -119,8 +119,9 @@ edge shows exactly one `[output cut]`, even when nothing else is left (both edge
 nothing left gives `[output cut][output cut]`, as today). Output of repeated `%41` with an
 unrelated key keeps all but its last few bytes.
 
-Key-free output changes in only two places: text at a cut edge that looks like the start or
-end of an escaped key (for example a trailing lone `%`), and the fallback in E1.
+Key-free output changes in only three places: text at a cut edge that looks like the start or
+end of an escaped key (for example a trailing lone `%`); a capture cut at both edges that is
+all escape-like text, which is dropped whole; and the fallback in E1.
 
 ### E3. Order in `redactCapture`
 
@@ -141,7 +142,7 @@ Replace the sentence about what is caught (`protocol/tools.md:70`) so it says: k
 as-is or with common escapes (JSON or backslash escapes such as `\u002B`, `\x2B` or `\/`,
 and percent-encoding such as `%2B`), up to three layers, are replaced with `[key]`; base64,
 hashing, splitting and web-page codes such as `&#43;` are not caught, and deeper escaping
-may not be. A backslash right before a key is hidden with it. Text at a cut edge that looks like part of an escaped key is dropped, and very escape-heavy output can show `[not checked for keys]` in place of its escape-like stretches. Keep
+may not be. A backslash right before a key is hidden with it. Text at a cut edge that looks like part of an escaped key is dropped (a cut-off stretch that is all escape-like text can be dropped whole), and very escape-heavy output can show `[not checked for keys]` in place of its escape-like stretches. Keep
 "Never print or log a key in any form." Drop "(escaped forms not yet)".
 
 ### Not doing (this plan)
@@ -171,7 +172,8 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
   - both edges cut on a capture made only of a spelling's middle: `[output cut][output cut]`;
   - the fallback, forcing a tiny budget (a test-only option), key `ABCDEFGHIJKL`:
     `ok %41%42 then ABCDEFGHIJKL` gives `ok [not checked for keys] then [key]`; cut start
-    `%41BCDEFGHIJKL rest` gives `[output cut][not checked for keys] rest`; `x ABCDEFGHIJKL%4D`
+    `%41BCDEFGHIJKL rest` gives `[output cut][not checked for keys] rest`; cut start
+    `1%44EFGHIJKL rest` gives `[output cut][not checked for keys] rest`; `x ABCDEFGHIJKL%4D`
     with keys `ABCDEFGHIJKL` and `GHIJKLMN` gives `x [not checked for keys]`;
   - `runScript` exact output, each failing with today's redactor: a script that writes
     `safe done %41%42%43` to stdout and `safe tail %41%42` to stderr, then hangs past a
@@ -229,12 +231,17 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 
 ### Round 3 — 2026-11-26
 
-**Lanes:** intent: claude; mechanics: not claude.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:** E1 work limit now one shared budget with a per-run fallback (`[not checked for keys]`, Decision 9) and fixture (d); E2 rewritten as removals found on the capture as captured, plus the both-edges-cut rule (Decisions 10, 11) and the two places key-free output changes; E3 now the order inside `redactCapture` (search, then build, overlap example); E4 sentence on cut-edge drops and fallback; Validation (overlap, both-cut, fallback, stderr runner fixture).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Fallback cut start leaves a key piece with no escape byte | upheld | Already fixed by Decision 12 (runs found before trimming); test added |
+| intent | major | stdout runner fixture cannot give its output | upheld | Already replaced by the timeout fixture |
+| intent | minor | Both-edges-cut rule is a third change to key-free output | upheld | E2 and E4 list it |
+| intent | minor | Marker count when nothing is left | upheld | Same fix as mechanics (E2) |
+| intent | minor | E1 points to E3 for cut rules | upheld | Reference fixed |
 | mechanics | blocking | Fallback runs found after trimming/replacing leave part of a key | upheld | E1 fallback and E3 step 2 on original bytes (Decision 12); tests |
 | mechanics | minor | Fixture (d) need not exercise edge searches | upheld | (d) rewritten with separators and exact result |
 | mechanics | minor | Marker count when nothing is left | upheld | E2: one per cut edge, as today |
