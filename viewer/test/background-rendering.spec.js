@@ -28,17 +28,17 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(async () => { await ctx.close(); });
 
 async function settings(page) {
-  await page.goto(`${ctx.server.url}/app/settings#background`);
+  await page.goto(`${ctx.server.url}/app/settings#you`);
   await expect.poll(() => page.evaluate(() => window.wcBackground.current().metadata !== null)).toBe(true);
 }
 async function choose(page, file, type) {
   await page.getByLabel('Choose background image').setInputFiles({ name: file, mimeType: type, buffer: await fs.readFile(path.join(fixtures, file)) });
   await expect(page.locator('.background-layer img')).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  await expect(page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
 }
 async function save(page) {
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
+  await page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('.background-editor').getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
 }
 async function solid(locator) {
   await expect(locator).toBeVisible();
@@ -113,7 +113,7 @@ test('shared pages and standalone or framed documents use the expected appearanc
   const pages = [
     ['/app/features', '.section-head:visible'], ['/app/threads', '.col-list'],
     [`/app/thread?id=${thread.id}`, '#composer'], ['/app/new', '#new-form'],
-    [`/app/agents?lead=${thread.id}`, '.agents-heading'], ['/app/settings#background', '.background-editor .box'],
+    [`/app/agents?lead=${thread.id}`, '.agents-heading'], ['/app/settings#you', '.background-editor .box'],
     ['/app/terminal?login=default-claude&machine=hub', '.term-bar'],
     [`/app/doc?thread=${thread.id}&file=PLAN.md`, '#content'],
     [`/app/file?thread=${thread.id}&file=1-missing.txt`, '#message'],

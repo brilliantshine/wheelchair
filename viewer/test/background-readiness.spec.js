@@ -11,7 +11,7 @@ async function signedIn(page) {
   await page.goto(`${server.url}/?token=${server.token}`);
 }
 async function editor(page) {
-  await page.goto(`${server.url}/app/settings#background`);
+  await page.goto(`${server.url}/app/settings#you`);
   await expect(page.getByRole('heading', { name: 'Background Customization' })).toBeVisible();
 }
 const choose = page => page.getByLabel('Choose background image').setInputFiles({ name: 'ready.png', mimeType: 'image/png', buffer: png });
@@ -29,15 +29,15 @@ test('file choice waits for initial metadata and the first enabled choice previe
     await editor(page); await requested;
     expect(await page.evaluate(() => window.wcBackground.current().metadata)).toBeNull();
     await expect(page.getByLabel('Choose background image')).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+    await expect(page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
     release();
     await expect(page.getByLabel('Choose background image')).toBeEnabled();
     await choose(page);
     await expect(page.getByText(/ready.png/)).toBeVisible();
     await expect(page.locator('.background-layer img')).toHaveCount(1);
-    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByRole('status')).toHaveText('Saved');
+    await expect(page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+    await page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.locator('.background-editor').getByRole('status')).toHaveText('Saved');
     await expect.poll(() => page.evaluate(() => window.wcBackground.current().metadata.image_id)).toMatch(/^[a-f0-9]{64}$/);
   } finally { release(); }
 });
@@ -46,8 +46,8 @@ test('unchanged saved metadata preserves slider keyboard focus and the displayed
   await signedIn(page); await editor(page);
   await expect.poll(() => page.evaluate(() => window.wcBackground.current().metadata !== null)).toBe(true);
   await choose(page);
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByRole('status')).toHaveText('Saved');
+  await page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('.background-editor').getByRole('status')).toHaveText('Saved');
   await expect.poll(() => page.evaluate(() => window.wcBackground.current().available)).toBe(true);
   await page.getByLabel('Visibility').focus();
   await expect(page.getByLabel('Visibility')).toBeFocused();
@@ -64,7 +64,7 @@ test('unchanged saved metadata preserves slider keyboard focus and the displayed
   expect(imageReads).toBe(0);
   await page.keyboard.press('ArrowRight');
   await expect(page.getByLabel('Visibility')).toHaveValue('36');
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  await expect(page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
 });
 
 test('opening an agent lesson deep-link discards the local background preview', async ({ page }) => {
@@ -74,9 +74,9 @@ test('opening an agent lesson deep-link discards the local background preview', 
   await expect(page.getByText(/ready.png/)).toBeVisible();
   await expect(page.locator('.background-layer img')).toHaveCount(1);
   await page.evaluate(() => { location.hash = 'templates/lessons/lead'; });
-  await expect(page.locator('#sections a[data-section="templates"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('#sections a[data-section="behavior"]')).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('.background-layer')).toHaveCount(0);
-  await page.locator('#sections a[data-section="background"]').click();
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await page.locator('#sections a[data-section="you"]').click();
+  await expect(page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await expect(page.getByText(/ready.png/)).toHaveCount(0);
 });

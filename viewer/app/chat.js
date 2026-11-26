@@ -159,7 +159,10 @@ async function chat(hub, id) {
     items: shown,
     cards: cards.filter((card) => !card.replaced),
     pinned: shownPins(thread),
-    queued: Object.entries(thread.queues || {}).flatMap(([name, queue]) => { const session = (thread.sessions || []).find((item) => item.name === name); return session ? queue.filter((entry) => !require('./peer-log.js').heldEntry(session, entry)) : queue; }).length,
+    // Only messages waiting for a lead count: the note under the composer is about what the
+    // user sent. Queues for workers, sub-leads or reviewers (often left behind by stopped ones)
+    // are not the user's and never say the lead is busy.
+    queued: Object.entries(thread.queues || {}).flatMap(([name, queue]) => { const session = (thread.sessions || []).find((item) => item.name === name); if (!session) return queue; return session.role === 'lead' ? queue.filter((entry) => !require('./peer-log.js').heldEntry(session, entry)) : []; }).length,
   };
 }
 

@@ -55,7 +55,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `pages/` | The app's pages (threads, thread, doc, features, agents, settings, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; page polls go through `window.wcPoller` (defined in `nav.js`), which pauses while the tab is hidden; their scripts and styles are public assets under `/wheelchair/assets/pages/`. `agents.html`/`agents.js` show the lead sidebar, agent tree, side panel and bottom terminal panel. `term-view.js` is the terminal view (xterm, View only / Typing switch, mouse-report filter, scrollback history) that both the Agents panel and `terminal.html`/`terminal.js` mount. `threads.js` groups by machine plus exact folder path and pins the assistant's row and each project lead's row; `thread.js` shows the assistant and project leads as plain conversation threads (`special`). `doc` opens a thread's MAP/IDEA/PLAN in the app (`doc.html`/`doc.js`/`doc.css`), and `markdown.js` is the Markdown renderer it shares with `doc.js` above, taking a link resolver |
 | `vendor/` | Vendored browser libraries for the app pages (xterm.js), public assets under `/wheelchair/assets/vendor/`. The app's fonts are not here: `/wheelchair/assets/fonts/<name>.woff2` serves four allowlisted files from `node_modules/@fontsource` (`FONT_FILES` in `server.js`) |
 | `signin.html` | What a browser with no remember cookie gets before it is signed in |
-| `playwright.config.js` | The browser suite's two projects, Chromium and Firefox; workers from `test-support/browser-workers.js`: a full run (`WHEELCHAIR_FULL_RUN=1`) with no other full run live gets up to 6, every other run 2, so concurrent runs do not saturate the machine; `--workers` still overrides |
+| `playwright.config.js` | Every spec runs in Chromium; the specs in `viewer/test/firefox-specs.js` also run in Firefox. A spec testing drawing, touch, pixels or scroll belongs on that list. Workers from `test-support/browser-workers.js`: a full run alone gets up to 8, one starting beside n other live full runs gets `max(2, floor(8 / (n + 1)))` (fixed at its start), and non-full runs get 2; `--workers` still overrides |
 | `package.json` | Viewer dependencies (Playwright, the Inter and JetBrains Mono fonts) and the `test` and `test:browser` commands |
 | `test/` | The suites. See below |
 
@@ -92,8 +92,10 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 
 ```bash
 node --test viewer/test/*.test.js     # unquoted glob, as the root router explains
-npm --prefix viewer run test:browser  # Chromium and Firefox
+npm --prefix viewer run test:browser  # every spec in Chromium; listed specs also in Firefox
 ```
+
+Every spec runs in Chromium; the specs in `viewer/test/firefox-specs.js` also run in Firefox. A spec testing drawing, touch, pixels or scroll belongs on that list.
 
 Test temp folders come from `test-support/run-dir.js` (`makeTemp`/`makeTempSync`), which removes them when the test process ends; never allocate from `os.tmpdir()` directly in a test.
 

@@ -10,7 +10,7 @@ test.afterEach(async () => { await server.stop(); });
 
 async function open(page) {
   await page.goto(`${server.url}/?token=${server.token}`);
-  await page.goto(`${server.url}/app/settings#background`);
+  await page.goto(`${server.url}/app/settings#you`);
   await expect(page.getByRole('heading', { name: 'Background Customization' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.wcBackground.current().metadata !== null)).toBe(true);
 }
@@ -21,21 +21,21 @@ for (const width of [390, 1280]) {
     await open(page);
     await page.getByLabel('Choose background image').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: png });
     await expect(page.locator('.background-layer img')).toHaveCount(1);
-    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+    await expect(page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
     await page.getByLabel('Visibility').fill('100');
     await expect(page.locator('.background-layer')).toHaveCSS('opacity', '1');
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.locator('.background-editor').getByRole('button', { name: 'Cancel' }).click();
     await expect(page.locator('.background-layer')).toHaveCount(0);
     await page.getByLabel('Choose background image').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: png });
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
+    await page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.locator('.background-editor').getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
     await page.reload();
     await expect(page.locator('.background-layer img')).toHaveCount(1);
-    await page.getByRole('button', { name: 'Remove background' }).click();
+    await page.locator('.background-editor').getByRole('button', { name: 'Remove background' }).click();
     await expect(page.locator('.background-layer')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
+    await page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.locator('.background-editor').getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
   });
 }
 
@@ -47,15 +47,15 @@ test('background previews remain private until saved', async ({ browser, page })
     await page.getByLabel('Choose background image').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: png });
     await expect(page.locator('.background-layer img')).toHaveCount(1);
     await expect(other.locator('.background-layer')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
+    await page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.locator('.background-editor').getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();
     await other.evaluate(() => window.wcBackground.refresh());
     await expect(other.locator('.background-layer img')).toHaveCount(1);
   } finally { await otherContext.close(); }
 });
 
 const choose = (page, name = 'sample.png', buffer = png) => page.getByLabel('Choose background image').setInputFiles({ name, mimeType: 'image/png', buffer });
-const save = async page => { await page.getByRole('button', { name: 'Save', exact: true }).click(); await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible(); };
+const save = async page => { await page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true }).click(); await expect(page.locator('.background-editor').getByRole('status').filter({ hasText: 'Saved' })).toBeVisible(); };
 
 test('clean editor follows shared save and reset; stale draft conflicts then Cancel restores latest', async ({ browser, page }) => {
   const context = await browser.newContext(); const other = await context.newPage();
@@ -70,18 +70,18 @@ test('clean editor follows shared save and reset; stale draft conflicts then Can
     await other.evaluate(() => window.wcBackground.refresh());
     await expect(other.getByLabel('Visibility')).toHaveValue('100');
     const conflict = other.waitForResponse(r => r.url().includes('/settings/background') && r.request().method() === 'PUT');
-    await other.getByRole('button', { name: 'Save', exact: true }).click();
+    await other.locator('.background-editor').getByRole('button', { name: 'Save', exact: true }).click();
     expect((await conflict).status()).toBe(409);
-    await expect(other.getByRole('alert')).toContainText('changed elsewhere');
-    await other.getByRole('button', { name: 'Cancel' }).click();
+    await expect(other.locator('.background-editor').getByRole('alert')).toContainText('changed elsewhere');
+    await other.locator('.background-editor').getByRole('button', { name: 'Cancel' }).click();
     await expect(other.getByLabel('Visibility')).toHaveValue('0');
-    await page.getByRole('button', { name: 'Remove background' }).click(); await save(page);
+    await page.locator('.background-editor').getByRole('button', { name: 'Remove background' }).click(); await save(page);
     await other.evaluate(() => window.wcBackground.refresh());
     await expect(other.locator('.background-layer')).toHaveCount(0);
   } finally { await context.close(); }
 });
 
-test('draft survives rebuild and invalid file, but navigation, reload and pageshow discard it', async ({ page }) => {
+test('draft survives a same-category hash change and invalid file, but navigation, reload and pageshow discard it', async ({ page }) => {
   await open(page); await choose(page);
   const image = page.locator('.background-layer img'); await expect(image).toHaveCount(1);
   await page.evaluate(() => {
@@ -89,18 +89,18 @@ test('draft survives rebuild and invalid file, but navigation, reload and pagesh
     window.oldEditor = document.querySelector('.background-editor');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   });
-  expect(await page.evaluate(() => document.querySelector('.background-editor') !== window.oldEditor)).toBe(true);
+  expect(await page.evaluate(() => document.querySelector('.background-editor') === window.oldEditor)).toBe(true);
   await expect(page.getByText(/sample.png/)).toBeVisible();
   expect(await page.evaluate(() => document.querySelector('.background-layer img') === window.draftImage)).toBe(true);
   await choose(page, 'bad.png', Buffer.from('not an image'));
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('.background-editor').getByRole('alert')).toBeVisible();
   expect(await page.evaluate(() => document.querySelector('.background-layer img') === window.draftImage)).toBe(true);
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  await expect(page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
   await page.evaluate(() => window.wcBackground.accept(window.wcBackground.current().metadata));
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  await expect(page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
   await page.locator('#sections a[data-section="models"]').click();
   await expect(page.locator('.background-layer')).toHaveCount(0);
-  await page.locator('#sections a[data-section="background"]').click();
+  await page.locator('#sections a[data-section="you"]').click();
   await choose(page); await page.reload();
   await expect(page.locator('.background-layer')).toHaveCount(0);
   await choose(page);
@@ -133,7 +133,7 @@ test('new selection and Remove invalidate an older pending file read', async ({ 
   await expect(page.getByText(/new.png/)).toBeVisible();
   await page.evaluate(() => window.releaseRead());
   await expect(page.getByText(/new.png/)).toBeVisible();
-  await page.getByRole('button', { name: 'Remove background' }).click();
+  await page.locator('.background-editor').getByRole('button', { name: 'Remove background' }).click();
   await expect(page.locator('.background-layer')).toHaveCount(0);
 });
 
@@ -141,9 +141,9 @@ test('late save cannot release a newer section visit preview', async ({ page }) 
   await open(page); await choose(page, 'first.png');
   let release, started; const held = new Promise(r => { release = r; }); const sent = new Promise(r => { started = r; });
   await page.route('**/settings/background/upload?*', async route => { started(); await held; await route.continue(); });
-  await page.getByRole('button', { name: 'Save', exact: true }).click(); await sent;
+  await page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true }).click(); await sent;
   await page.locator('#sections a[data-section="models"]').click();
-  await page.locator('#sections a[data-section="background"]').click(); await choose(page, 'second.png');
+  await page.locator('#sections a[data-section="you"]').click(); await choose(page, 'second.png');
   await expect(page.getByText(/second.png/)).toBeVisible();
   await expect(page.locator('.background-layer img')).toHaveCount(1);
   await page.evaluate(() => { window.newPreview = document.querySelector('.background-layer img'); });
@@ -151,7 +151,7 @@ test('late save cannot release a newer section visit preview', async ({ page }) 
   release(); await response;
   await expect(page.getByText(/second.png/)).toBeVisible();
   expect(await page.evaluate(() => document.querySelector('.background-layer img') === window.newPreview)).toBe(true);
-  await expect(page.getByRole('status')).not.toHaveText('Saved');
+  await expect(page.locator('.background-editor').getByRole('status')).not.toHaveText('Saved');
 });
 
 test('older metadata cannot regress a newer save', async ({ page }) => {
@@ -175,7 +175,7 @@ test('representative settings views retain screenshots and restore appearance af
     await page.getByLabel('Visibility').focus(); await expect(page.getByLabel('Visibility')).toBeFocused();
     await page.screenshot({ path: testInfo.outputPath(`settings-${width}.png`) });
   }
-  await page.getByRole('button', { name: 'Remove background' }).click(); await save(page);
+  await page.locator('.background-editor').getByRole('button', { name: 'Remove background' }).click(); await save(page);
   await expect(page.locator('.background-layer')).toHaveCount(0);
   expect(await page.locator('.background-editor .box').evaluate(e => getComputedStyle(e).backgroundColor)).toBe(before);
 });

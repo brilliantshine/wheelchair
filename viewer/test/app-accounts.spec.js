@@ -104,7 +104,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       const usage = usageBody();
       usage.providers.kimi = { label: 'Kimi Code', left: null, accounts: [{ id: 'default-kimi', provider: 'kimi', name: 'default', plan: 'unknown', weight: 1, paused: false, machines: { hub: 'signed_in', beelink: { state: 'problem', text: "signed in to Kimi's China region; log in again" }, laptop: 'signed_out' }, reading: null, live_sessions: 0 }] };
       await mock(page, { usage });
-      await open(page, 'accounts');
+      await open(page, 'providers');
       const kimi = page.locator('.prov-group[data-provider="kimi"] .acct[data-account="default-kimi"]');
       await expect(kimi.locator('li[data-machine="hub"] .mstate')).toHaveText('signed in');
       await expect(kimi.locator('li[data-machine="beelink"] .mstate')).toHaveText("signed in to Kimi's China region; log in again");
@@ -115,8 +115,8 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
 
     test('Accounts groups accounts by provider with each machine\'s state', async ({ page }) => {
       await mock(page, {});
-      await open(page, 'accounts');
-      await expect(page.locator('#panel h1')).toHaveText('Accounts');
+      await open(page, 'providers');
+      await expect(page.locator('[data-block="accounts"] h2')).toHaveText('Accounts');
       const claude = page.locator('.prov-group[data-provider="claude"]');
       await expect(claude.locator('.acct')).toHaveCount(2);
       await expect(page.locator('.prov-group[data-provider="gpt"] .acct')).toHaveCount(1);
@@ -145,7 +145,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
     test('the Claude sign-in card shows the link and the paste box, and posts the code', async ({ page }) => {
       const state = { signin: { state: 'waiting', url: 'https://claude.example/login', code: null, wantsCode: true, logged_in: false } };
       await mock(page, state);
-      await open(page, 'accounts');
+      await open(page, 'providers');
       await page.locator('.acct[data-account="default-claude"] li[data-machine="beelink"] button').click();
       const card = page.locator('.signin-card');
       await expect(card.getByRole('link', { name: 'Open sign-in link' })).toHaveAttribute('href', 'https://claude.example/login');
@@ -166,7 +166,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
     test('a failed code on a Claude account shows the error and keeps the code, with no Start again', async ({ page }) => {
       const state = { signin: { state: 'waiting', url: 'https://claude.example/login', code: null, wantsCode: true, logged_in: false }, codeError: 'tmux submit failed' };
       await mock(page, state);
-      await open(page, 'accounts');
+      await open(page, 'providers');
       await page.locator('.acct[data-account="default-claude"] li[data-machine="beelink"] button').click();
       const card = page.locator('.signin-card');
       await card.getByPlaceholder('Paste the code here').fill('abc-123');
@@ -181,7 +181,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       usage.providers.openrouter = { label: 'OpenRouter', left: null, accounts: [{ id: 'default-openrouter', provider: 'openrouter', name: 'default', plan: 'unknown', weight: 1, paused: false, machines: { beelink: 'signed_out' }, reading: null, live_sessions: 0 }] };
       const state = { usage, signin: { state: 'waiting', url: null, code: null, wantsCode: true, logged_in: false }, codeError: 'the sign-in screen has moved on; start again' };
       await mock(page, state);
-      await open(page, 'accounts');
+      await open(page, 'providers');
       await page.locator('.acct[data-account="default-openrouter"] li[data-machine="beelink"] button').click();
       const card = page.locator('.signin-card');
       const key = card.getByPlaceholder('Paste your OpenRouter key');
@@ -200,7 +200,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
     test('Antigravity sign-in opens Google and posts the code', async ({ page }) => {
       const state = { signin: { state: 'waiting', url: 'https://accounts.google.com/o/oauth2/auth?x=1', wantsCode: true } };
       await mock(page, state);
-      await open(page, 'accounts');
+      await open(page, 'providers');
       await page.locator('.acct[data-account="default-gemini"] li[data-machine="beelink"] button').click();
       const card = page.locator('.signin-card');
       await expect(card.getByRole('link', { name: 'Open sign-in link' })).toHaveAttribute('href', state.signin.url);
@@ -215,7 +215,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       // The GPT account is signed out on the hub, so its Sign in button is offered.
       state.usage = usageBody();
       state.usage.providers.gpt.accounts[0].machines.hub = 'signed_out';
-      await open(page, 'accounts');
+      await open(page, 'providers');
       await page.locator('.acct[data-account="default-gpt"] li[data-machine="hub"] button').click();
       const card = page.locator('.signin-card');
       await expect(card.getByRole('link', { name: 'https://codex.example/device' })).toBeVisible();
@@ -227,7 +227,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
 
     test('a failed sign-in shows the fallback and an Open terminal link', async ({ page }) => {
       await mock(page, { signin: { state: 'failed', url: null, code: null, wantsCode: false, logged_in: false } });
-      await open(page, 'accounts');
+      await open(page, 'providers');
       await page.locator('.acct[data-account="default-claude"] li[data-machine="beelink"] button').click();
       const card = page.locator('.signin-card');
       await expect(card).toContainText("Couldn't read the sign-in screen", { timeout: 6000 });
@@ -237,7 +237,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
     test('a second Claude account warns once, and Cancel saves nothing', async ({ page }) => {
       const state = {};
       await mock(page, state);
-      await open(page, 'accounts');
+      await open(page, 'providers');
       await page.locator('#add-account').click();
       await page.locator('#add-name').fill('Spare');
       await page.getByRole('button', { name: 'Save' }).click();
@@ -262,7 +262,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
     test('adding a GPT account does not warn', async ({ page }) => {
       const state = {};
       await mock(page, state);
-      await open(page, 'accounts');
+      await open(page, 'providers');
       await page.locator('#add-account').click();
       await page.locator('#add-provider').selectOption('gpt');
       await page.locator('#add-name').fill('Second GPT');
@@ -275,7 +275,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
     test('Usage shows bars, the amber line and the account table with reasons', async ({ page }) => {
       await mock(page, {});
       await open(page, 'usage');
-      await expect(page.locator('#panel h1')).toHaveText('Usage');
+      await expect(page.locator('.catview h1')).toHaveText('Usage and balancing');
       const claude = page.locator('.usage-prov[data-provider="claude"]');
       await expect(claude.locator('.usage-left')).toHaveText('40% left');
       await expect(claude.locator('.usage-line.amber').first()).toContainText(/^Runs out \w+ (morning|afternoon|evening|night), before the first refill/);
@@ -360,10 +360,10 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await noSideScroll(page);
     });
 
-    test('the lead order editor on Models saves through the balancing route', async ({ page }) => {
+    test('the lead order editor in Usage and balancing saves through the balancing route', async ({ page }) => {
       const state = { savedProvider: 'GPT' };
       await mock(page, state);
-      await open(page, 'models');
+      await open(page, 'usage');
       const editor = page.locator('.lead-order');
       await expect(editor.getByRole('button', { name: '+ Antigravity' })).toBeVisible();
       await expect(editor.locator('li').first()).toContainText('Claude');
@@ -373,8 +373,8 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await page.locator('#lead-order-save').click();
       await expect.poll(() => state.calls.some((c) => c[1] === '/settings/balancing')).toBe(true);
       expect(state.calls.find((c) => c[1] === '/settings/balancing')[2]).toEqual({ lead_order: ['gpt', 'claude'] });
-      await expect(page.locator('#panel .note[data-for="section"]')).toHaveText(/Saved/);
-      await page.locator('[data-section="usage"]').click();
+      await expect(page.locator('.lead-order-box .note')).toHaveText(/Saved/);
+      await expect(page.locator('.balancing .note')).toHaveText('');
       await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save GPT for leads');
       await noSideScroll(page);
     });
@@ -401,7 +401,7 @@ test.describe('accounts interface paths', () => {
     usage.providers.claude.accounts[1].plan = 'unknown';
     usage.providers.claude.accounts[1].reading = { account: 'work', at: iso(-60000), five_hour: null, week: null, plan_type: 'pro' };
     await mock(page, { usage });
-    await open(page, 'accounts');
+    await open(page, 'providers');
     await expect(acct(page, 'default-gpt').locator('.v-badge').first()).toHaveText('Plus · reported: pro · weight 1');
     await expect(acct(page, 'default-claude').locator('.v-badge').first()).not.toContainText('reported');
     await expect(acct(page, 'work').locator('.v-badge').first()).toContainText('reported: pro');
@@ -411,7 +411,7 @@ test.describe('accounts interface paths', () => {
     const state = { signin: { state: 'waiting', url: 'https://accounts.google.com/o/oauth2/auth?x=1', wantsCode: true } };
     await mock(page, state);
     await page.clock.install();
-    await open(page, 'accounts');
+    await open(page, 'providers');
     await acct(page, 'default-gemini').locator('li[data-machine="beelink"] button').click();
     const card = page.locator('.signin-card');
     await expect(card.getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
@@ -438,7 +438,7 @@ test.describe('accounts interface paths', () => {
     const state = { signin: { state: 'waiting', url: 'https://accounts.google.com/o/oauth2/auth?x=1', wantsCode: true } };
     await mock(page, state);
     await page.clock.install();
-    await open(page, 'accounts');
+    await open(page, 'providers');
     await acct(page, 'default-gemini').locator('li[data-machine="beelink"] button').click();
     const card = page.locator('.signin-card');
     await expect(card.getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
@@ -452,7 +452,7 @@ test.describe('accounts interface paths', () => {
     const state = { signin: { state: 'waiting', url: null, code: null, wantsCode: false, logged_in: false } };
     await mock(page, state);
     await page.clock.install();
-    await open(page, 'accounts');
+    await open(page, 'providers');
     await page.locator('.acct[data-account="default-claude"] li[data-machine="beelink"] button').click();
     const card = page.locator('.signin-card');
     await expect(card).toContainText('Starting sign-in on beelink');
@@ -467,7 +467,7 @@ test.describe('accounts interface paths', () => {
     const usage = usageBody();
     const state = { usage, onAccount: (m, id, body) => { if (body.name) usage.providers.claude.accounts.find((a) => a.id === id).name = body.name; } };
     await mock(page, state);
-    await open(page, 'accounts');
+    await open(page, 'providers');
     await acct(page, 'work').getByRole('button', { name: 'Rename' }).click();
     await acct(page, 'work').getByLabel('Account name').fill('Side job');
     await acct(page, 'work').getByRole('button', { name: 'Save' }).click();
@@ -479,7 +479,7 @@ test.describe('accounts interface paths', () => {
     const usage = usageBody();
     const state = { usage, onAccount: (m, id, body) => { Object.assign(usage.providers.claude.accounts.find((a) => a.id === id), body); } };
     await mock(page, state);
-    await open(page, 'accounts');
+    await open(page, 'providers');
     await acct(page, 'work').getByRole('button', { name: 'Change plan' }).click();
     await acct(page, 'work').getByLabel('Plan').selectOption('max20');
     await acct(page, 'work').getByLabel('Weight override').fill('2.5');
@@ -498,7 +498,7 @@ test.describe('accounts interface paths', () => {
     const usage = usageBody();
     const state = { usage, onAccount: (m, id) => { if (m === 'DELETE') usage.providers.claude.accounts = usage.providers.claude.accounts.filter((a) => a.id !== id); } };
     await mock(page, state);
-    await open(page, 'accounts');
+    await open(page, 'providers');
     for (const id of ['default-claude', 'default-gpt']) await expect(acct(page, id).getByRole('button', { name: 'Remove' })).toHaveCount(1);
     await expect(page.getByRole('button', { name: 'Add back the default login' })).toHaveCount(0);
     await acct(page, 'work').getByRole('button', { name: 'Remove' }).click();
@@ -517,7 +517,7 @@ test.describe('accounts interface paths', () => {
     usage.providers.claude.accounts = usage.providers.claude.accounts.filter((a) => a.id !== 'default-claude');
     const state = { usage, settings: { accounts: [{ id: 'work', provider: 'claude', name: 'Work', plan: 'pro', weight: 1, paused: true }, { id: 'default-gpt', provider: 'gpt', name: 'default', plan: 'unknown', weight: 1, paused: false }, { id: 'default-gemini', provider: 'gemini', name: 'default', plan: 'unknown', weight: 1, paused: false }] } };
     await mock(page, state);
-    await open(page, 'accounts');
+    await open(page, 'providers');
     const claude = page.locator('section.prov-group[data-provider="claude"]');
     await expect(claude.getByRole('button', { name: 'Add back the default login' })).toBeVisible();
     await expect(page.locator('section.prov-group[data-provider="gpt"]').getByRole('button', { name: 'Add back the default login' })).toHaveCount(0);
@@ -529,14 +529,14 @@ test.describe('accounts interface paths', () => {
     const state = {};
     await mock(page, state);
     await page.clock.install();
-    await open(page, 'accounts');
+    await open(page, 'providers');
     await expect(page.locator('.acct')).toHaveCount(6);
     let seen = state.usageGets;
     await page.clock.runFor(30500);
     await expect.poll(() => state.usageGets).toBeGreaterThan(seen);
     // Usage keeps the same timer.
     await page.locator('#sections a[data-section="usage"]').click();
-    await expect(page.locator('#panel h1')).toHaveText('Usage');
+    await expect(page.locator('.catview h1')).toHaveText('Usage and balancing');
     await expect.poll(() => state.usageGets).toBeGreaterThan(seen);
     await page.waitForTimeout(300);
     seen = state.usageGets;
@@ -544,7 +544,7 @@ test.describe('accounts interface paths', () => {
     await expect.poll(() => state.usageGets).toBeGreaterThan(seen);
     // Another section stops it.
     await page.locator('#sections a[data-section="models"]').click();
-    await expect(page.locator('#panel h1')).not.toHaveText('Usage');
+    await expect(page.locator('.catview h1')).toHaveText('Models');
     await page.waitForTimeout(300);
     seen = state.usageGets;
     await page.clock.runFor(95000);
@@ -561,7 +561,7 @@ test.describe('nav dot', () => {
     await page.goto(`${ctx.server.url}/app/threads`);
     await expect(page.locator('#app-nav .usage-dot')).toBeVisible();
     await page.goto(`${ctx.server.url}/app/settings#usage`);
-    await expect(page.locator('#panel h1')).toHaveText('Usage');
+    await expect(page.locator('.catview h1')).toHaveText('Usage and balancing');
     await expect(page.locator('#app-nav .usage-dot')).toBeHidden();
     expect(state.calls.some((c) => c[1] === '/usage/seen')).toBe(true);
     await page.goto(`${ctx.server.url}/app/threads`);

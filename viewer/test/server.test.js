@@ -954,7 +954,7 @@ test('listen-first startup reuses the port holder and ignores stale .server info
     assert.equal(second.port, first.port); assert.equal(second.token, first.token);
     if (second.child.exitCode === null) await new Promise((resolve) => second.child.once('exit', resolve));
     first.child.kill('SIGKILL'); await new Promise((resolve) => first.child.once('exit', resolve));
-    const replacement = await startServer({ cacheRoot: first.root, open: first.graphPath, port: await freePort() });
+    const replacement = await startServer({ cacheRoot: first.root, open: first.graphPath });
     await replacement.stop();
   } finally { await first.stop(); }
   const root = await makeDir(); await fs.mkdir(path.join(root, 'graphs'), { recursive: true });
@@ -971,8 +971,8 @@ test('listen-first startup reuses the port holder and ignores stale .server info
 test('the token is published atomically while independent ports can start', async () => {
   const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
   const graphPath = await stage({ graphDir }, 'canonical.json');
-  const one = await startServer({ cacheRoot: root, open: graphPath, port: await freePort() });
-  const two = await startServer({ cacheRoot: root, open: graphPath, port: await freePort() });
+  const one = await startServer({ cacheRoot: root, open: graphPath });
+  const two = await startServer({ cacheRoot: root, open: graphPath });
   try {
     const token = await fs.readFile(path.join(root, '.token'), 'utf8');
     assert.match(token, /^[0-9a-f]{64}\n$/);
@@ -1019,7 +1019,7 @@ test('a kill before rename leaves the committed graph as either whole version, n
       assert.doesNotThrow(() => JSON.parse(bytes.toString('utf8')));
       assert.ok(bytes.equals(oldBytes) || bytes.equals(newBytes), 'the committed graph is an exact old or new version');
       assert.equal(path.basename(graphPath), 'canonical.json', 'a temporary name is never the committed graph');
-      const recovery = await startServer({ cacheRoot: root, open: graphPath, port: await freePort() });
+      const recovery = await startServer({ cacheRoot: root, open: graphPath });
       try {
         const recovered = await getGraph(recovery); const successful = copy(recovered.graph);
         entry(successful, 'gather').note = 'post-kill cleanup';
