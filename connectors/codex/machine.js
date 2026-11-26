@@ -121,6 +121,7 @@ module.exports = {
   readSteps: require('./steps').readLines,
   stepsReady: session => !!session.codex_thread_id,
   sandboxed: session => session.project_lead || session.codex_mode !== 'unrestricted',
+  shellToolsOnly: session => module.exports.sandboxed(session),
   sandboxWrap: command => ['codex', 'sandbox', '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true', '--', ...command],
   projectToolReason(name, entry) { const reason = codexEntryReason(name, entry); return reason ? `on Codex: ${reason}` : null; },
   projectToolFileWarning(servers) { return codexOverrides({ servers }).tooLarge ? 'project tools skipped on Codex: .mcp.json is too large to pass on the command line' : null; },
