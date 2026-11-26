@@ -166,4 +166,4 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
   }
   return { read, save, removeKey, identity };
 }
-module.exports = { createProjectTools };
+module.exports = { createProjectTools, repoName };
