@@ -20,6 +20,7 @@ rows 1-4 of `docs/plans/settings-rework/PLAN.md`.
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
+| 1 | Collin prefers his own wording to the `build-up` sentence: plain words first; a technical term only when truly needed, then built up to; never tack a term's name onto a plain explanation | Scope change: rewrite the agent sentence at `viewer/app/settings.js:144` (and the label) to say that | Yes, after Q2 | |
 
 ## Decision Log
 
