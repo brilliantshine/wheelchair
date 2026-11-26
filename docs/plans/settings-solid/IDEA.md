@@ -12,7 +12,8 @@ created: 2026-11-26
 The clean-up pass after the Settings rework (pull request #193). It fixes the four
 things that rework left over: controls that jump or lose focus when part of the page
 refreshes, a phone picker that cuts off its text, and phone rows and boxes that came out
-taller than the mockups.
+taller than the mockups. It also rewrites what agents are told when the "Build up to
+technical terms" writing option is picked, so they use plain words first.
 
 ## Why — the problem
 
@@ -26,6 +27,9 @@ taller than the mockups.
 - On a phone, a few titles and hints wrap onto more lines than the mockups planned, and
   the Writing style box and Diagrams choices are about 12px taller. This comes from the
   app's real font. It may be fine; it has not been looked at on a real phone.
+- The "Build up" option only tells agents to build up to technical terms. It never says
+  to prefer plain words, so an agent explains something plainly and then tacks on the
+  jargon name anyway ("fun fact, this is called idempotency").
 
 ## What good looks like
 
@@ -37,6 +41,8 @@ taller than the mockups.
   option.
 - The phone rows and boxes are either matched to the mockups or Collin has looked and
   said they are fine as they are.
+- With the "Build up" option picked, newly started agents are told to use plain words
+  when they work and to name a technical term only when it is truly needed.
 
 ## Not doing
 
