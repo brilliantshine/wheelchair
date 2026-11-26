@@ -103,8 +103,8 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
         let notExecutable = false;
         if (program.includes('/') && !path.isAbsolute(program)) {
           const folder = `${base}/${name}`, target = path.posix.normalize(`${folder}/${program}`);
-          const result = target.startsWith(folder + '/') ? await must(git(dir, '--literal-pathspecs', 'ls-tree', ref, '--', target)) : '';
-          found = /^(?:100755|120000) blob /.test(result);
+          const result = target !== '..' && !target.startsWith('../') ? await must(git(dir, '--literal-pathspecs', 'ls-tree', ref, '--', target)) : '';
+          found = /^100755 blob /.test(result) || (target.startsWith(folder + '/') && /^120000 blob /.test(result));
           notExecutable = /^100644 blob /.test(result);
         } else found = folderTools.findProgram(program, toolDir, process.env.PATH);
         if (!found) { row.status = 'missing-program'; row.reason = notExecutable ? `its program ${program} isn't executable` : `its program ${program} wasn't found`; }
