@@ -40,6 +40,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 14 | Usable key value: at least 8 characters and no NUL; Shared keys refuses others; project editor marks them for folder tools | Env-safe values, one rule in both places | review-round-2 |
 | 15 | Keys for server tools split into their own thread; here only script tools get keys, and a server tool with `keys` is not connected and says so | Collin: split it off, after three review rounds of leak findings in server output | idea-change |
 | 16 | Usable key values: 8–4096 characters of letters, digits and `. _ ~ + / = -`; redaction also matches `/` written as `\/` (supersedes 14's value rule) | Removes escaped and multiline leaks in script output | review-round-3 |
+| 17 | Redaction matches every spelling where each key character is itself, `\uXXXX`, a backslash escape or `%XX` (supersedes 16's `\/` rule) | One rule instead of a growing list of encoders | review-round-4 |
+| 18 | Server tools with `keys` are refused by `validateToolJson`, so the launcher never starts them | The launcher re-validates; one gate covers every path | review-round-4 |
 
 ## Spec
 
@@ -55,9 +57,12 @@ Anything else makes the tool invalid, and the reason names `keys`. The validated
 absent), so discovery and the bridge's changed-tool check see it. A tool with no `keys`
 behaves exactly as today.
 - **Script tools only.** Keys for server tools are split into their own thread (Decision 15).
-  A server tool whose `tool.json` has a non-empty `keys` is not connected, and its status
-  everywhere (session tool problems, `wc.js tool list`, the Tools page) is `keys for server
-  tools aren't supported yet`. The launcher (`machine/lib/tool-launch.js`) is unchanged.
+  `validateToolJson` refuses a server tool with a non-empty `keys`, with the reason `keys for
+  server tools aren't supported yet`. Since discovery, the launcher
+  (`machine/lib/tool-launch.js`, which re-validates before every start) and `wc.js tool` all
+  use that validator, such a tool is never started or connected, even if `keys` is added
+  mid-session. Its status everywhere (session tool problems, `wc.js tool list`, the Tools
+  page) is that reason.
 
 ### K2. Where a tool's keys come from
 - A **project tool** (from the session's worktree) uses the project's key store, the one
@@ -74,8 +79,7 @@ behaves exactly as today.
   real API keys use). Any other stored value counts as not set, and the status gives the
   reason: `value too short (under 8 characters)`, `value too long` or `value has characters
   folder tools can't use (letters, digits and . _ ~ + / = - only)`. With these characters a
-  key can't span lines, and JSON or shell escaping can change it only by writing `/` as
-  `\/`, which K4 also catches.
+  key can't span lines, and K4 can catch every way common encoders spell it.
 - The Shared keys editor refuses an unusable value, with that same wording. The project key
   editor still accepts any non-empty value (`.mcp.json` servers may use short ones). It
   marks a stored value that folder tools can't use with `can't be used by folder tools:
@@ -108,13 +112,17 @@ behaves exactly as today.
   fixed at start.
 
 ### K4. Hiding key values in output
-Redaction lives in `machine/lib/key-redact.js`. It works on the tool's own key values (K2)
-and replaces every occurrence of each value, and of its form with every `/` written as `\/`,
-with `[key <NAME>]`. A tool with no keys gets no redaction, and its output is passed through
+Redaction lives in `machine/lib/key-redact.js`. It works on the tool's own key values (K2).
+It replaces every occurrence of each value with `[key <NAME>]`, **in any spelling where each
+character appears as itself, as a JSON `\uXXXX` escape, as a backslash escape (`\/`), or
+as percent-encoding `%XX`**, with any mix of these and hex in either case. This one rule
+covers JSON encoders (including .NET's `\u002B` and PHP's `\/`) and URL encoding
+(`URLSearchParams`, `encodeURIComponent`), so no list of encoders has to be kept. The
+matcher is built per key, and its longest possible match is 6 bytes per key character. A tool with no keys gets no redaction, and its output is passed through
 exactly as today.
 - **Script tools** (`machine/lib/tool-run.js`): stdout and stderr each go through a
   streaming redactor before the 2 MiB capture limit, the 1 MiB result cut and the 4 KiB
-  stderr tail. It holds back the last (longest pattern − 1) bytes until more arrives or the
+  stderr tail. It holds back the last (longest possible match − 1) bytes until more arrives or the
   stream ends. Where a capture limit stops reading, the held-back bytes are dropped, never
   sent. No cut can leave part of a key showing. This hold-back is fine because a script's
   result is only returned once it exits.
@@ -160,8 +168,8 @@ exactly as today.
   new names-only agent route (never values). For sandboxed Codex it shows the K5 status.
   Without a session token (a scratch checkout), it lists the names with `key status
   unknown outside a session`.
-- `check`: never uses keys, as now. When the tool declares keys, its output says it ran
-  without them. A server tool with `keys` gets the K1 status.
+- `check`: never uses keys, as now. For a script tool that declares keys, its output says
+  the tool was validated without using keys. A server tool with `keys` gets the K1 status.
 - `run`: when `keyed_run` is `machine`, a keyed tool goes through the K5 route. Otherwise
   (Claude, Antigravity, Codex, or no session token) it runs in the caller's process without
   keys, and for a keyed tool its output starts by saying so. On those AIs keyed tools are
@@ -180,13 +188,17 @@ exactly as today.
   folder tools that use the project store (K2), set or not set. Its usage and remove texts
   name those tools beside any `.mcp.json` servers. On the shared tools project's own page,
   its folder tools use the shared store, so the editor lists only its `.mcp.json` names.
-- After any key save or removal on the Tools page, the folder tool statuses are read again,
-  so a `needs key` line clears without a reload.
+- After any key save or removal on the Tools page, only the folder tool statuses are read
+  again, so a `needs key` line clears without a reload. Unsaved `.mcp.json` tool edits,
+  Windows settings and pending key values on the page stay as they are.
 - **Settings, Shared tools** (`viewer/pages/settings.js`): a Shared keys part under the
   shared tools picker, as in the mockup. Above it sits a machine chooser, the same control
   the project Tools page uses for its keys (not drawn in the mockup). Every read and write
   goes to the machine shown, and switching machine reloads the list. It lists every key name that
-  usable shared tools declare (set or not set), plus any other names stored. You can set a
+  usable shared tools declare (set or not set), plus any other names stored. The
+  declarations come from that machine's newest shared copy. If it has none yet, the machine
+  fetches one as a session start would (easy-tools S3, 20-second limit). If that fails, the
+  part shows the stored names and `couldn't read the shared tools: <reason>`. You can set a
   value (a password field), replace it, or remove a name. Values are write-only: the page
   only ever gets names and whether they are set. Saving uses the store's `revision`, so a
   change made elsewhere in the meantime is refused with "changed elsewhere, reload". The
@@ -216,10 +228,12 @@ makes it usable mid-session (K3).
 ### Validation
 - K1, K2, K3 (declaring keys, store choice, keys only in the tool process and never in
   generated entries or the agent's environment, missing-key problems, mid-session removal,
-  server tools with keys not connected):
-  `node --test machine/test/folder-tools.test.js machine/test/folder-tools-run.test.js machine/test/project-keys.test.js machine/test/shared-keys.test.js` (shared-keys new).
+  server tools with keys refused by the validator, so not in generated entries and not
+  started by the launcher, while keyless servers still connect):
+  `node --test machine/test/folder-tools.test.js machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js machine/test/project-keys.test.js machine/test/shared-keys.test.js` (shared-keys new).
 - K4 (redaction including a key split across chunks, at the 2 MiB capture limit and at the
-  1 MiB cut; the `\/` form; values outside K2's rule counted as not set; launch errors
+  1 MiB cut; `\uXXXX` in either hex case (including `\u002B`), `\/`, `%2F`/`%2b` and mixed
+  spellings; values outside K2's rule counted as not set; launch errors
   without values; output unchanged without keys):
   `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js` (key-redact new).
 - K5 (per-AI availability, sandboxed Codex problems text, Kimi/Pi route and its refusal
@@ -229,8 +243,9 @@ makes it usable mid-session (K3).
 - K8 hint on Kimi/Pi when only a key is missing: `node --test machine/test/project-tools-service.test.js`.
 - K7 (including the shared tools project's own Tools page, switching machine in Shared keys,
   two saves on the same revision, unusable-value marking and refusals, folder-tool names in
-  the project key editor (not on the shared project's page), status refresh after a save): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js machine/test/project-tools.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
-- K8: `grep -n '"keys"' protocol/tools.md` finds the example, and `grep -n -i "keys yet\|key support\|not supported yet" protocol/tools.md` finds nothing. Then read the rendered guide (CONTRIBUTING.md: protocol documents are reviewed as rendered).
+  the project key editor (not on the shared project's page), status refresh after a save
+  with a `.mcp.json` edit pending, Shared keys on a machine with no shared copy yet): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js machine/test/project-tools.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
+- K8: `grep -n '"keys"' protocol/tools.md` finds the example, and `grep -n -i "do not support keys yet\|must wait for key support" protocol/tools.md` finds nothing. Then read the rendered guide (CONTRIBUTING.md: protocol documents are reviewed as rendered).
 
 ### Mockups
 
@@ -314,9 +329,26 @@ makes it usable mid-session (K3).
 
 ### Round 4 — 2026-11-25
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: gpt / gpt-6.2-sol (claude unavailable); mechanics: gpt / gpt-6.2-sol; cross-family: no.
 
 **Changed since Round 3:** Server-tool keys split off (Decision 15, IDEA.md Not doing): K1 (server tools with keys not connected), K3 (bridge only), K4 (script redaction only; `\/` form), K6, K8 (no server keys; Kimi/Pi hint when only a key is missing). K2 usable-value character rule (Decision 16). K7 (project editor uses K2's store rule; statuses refresh after a save). Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | blocking | Percent-encoded key in a request URL escapes redaction | upheld | K4: any-spelling matcher (Decision 17) |
+| intent | minor | Script `check` would claim it "ran" | upheld | K6: "validated without using keys" |
+| mechanics | blocking | .NET `\u002B` escape escapes redaction | upheld | Same fix as intent 1 |
+| mechanics | blocking | Launcher could start a server that gains `keys` mid-session | upheld | K1: validator refuses (Decision 18) |
+| mechanics | major | Status refresh would wipe unsaved `.mcp.json` edits | upheld | K7: only folder statuses re-read |
+| mechanics | minor | Shared keys declarations with no shared copy | upheld | K7: fetch as a session start; failure text |
+| mechanics | minor | K8 grep rejects valid wording | upheld | Grep scoped to current wording |
+| mechanics | minor | Launch test suite missing | upheld | Added to K1–K3 validation |
+
+### Round 5 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 4:** K4 any-spelling matcher (Decision 17), K1 validator refusal for keyed servers (Decision 18), K6 `check` wording, K7 (refresh keeps unsaved edits; Shared keys with no shared copy), K2 wording, Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
