@@ -147,7 +147,7 @@ const ALLOWED_START = {
 const PROJECT_TOOLS_TITLE = 'Project tools problem';
 function projectToolProblems(state) {
   if (!state) return [];
-  const lines = [...(state.file || []), ...(state.programs || [])];
+  const lines = [...(state.file || []), ...(state.programs || []), ...(state.folder || [])];
   for (const key of Object.keys(state.clis || {}).sort()) lines.push(...(state.clis[key].lines || []));
   const seen = new Set();
   return lines.filter((line) => !seen.has(line.text) && seen.add(line.text));
@@ -165,7 +165,7 @@ function applyProjectTools(thread, started) {
   stored.boot = incoming.boot;
   stored.seq = incoming.seq;
   stored.created_at = started.created_at || stored.created_at;
-  stored.state = { file: incoming.file || [], programs: incoming.programs || [], clis: incoming.clis || {} };
+  stored.state = { file: incoming.file || [], programs: incoming.programs || [], folder: incoming.folder || [], clis: incoming.clis || {} };
   const lines = projectToolProblems(stored.state);
   const open = stored.card ? thread.cards.find((item) => item.id === stored.card && !item.answered) : null;
   if (!lines.length) {
@@ -398,6 +398,7 @@ async function startSession(hub, thread, input) {
       ...(sessionEffort ? { effort: sessionEffort } : {}),
       permission_mode: settings.permission_mode,
       codex_mode: thread.project_lead ? 'sandboxed' : settings.codex_mode,
+      ...(settings.shared_tools_repo && ['lead', 'sub-lead', 'worker', 'verifier'].includes(role) && !thread.assistant && !thread.project_lead ? { shared_tools: { repo: settings.shared_tools_repo, candidates: settings.saved_dirs.filter(entry => entry.machine === thread.machine).map(entry => entry.path) } } : {}),
       role_layers: layers.text,
       verify_ref: input.verify_ref,
       base: input.base,
@@ -688,6 +689,7 @@ async function event(hub, payload) {
     await restoreSwitchLimit(hub, target, from);
   }
   if (type === 'ready') {
+    applyProjectTools(thread, payload);
     if (target.switching) {
       await enqueue(hub, thread, target.name, CARRY_ON, 'app', true, { save: false, deliver: false });
       delete target.switching;
