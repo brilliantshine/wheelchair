@@ -130,7 +130,8 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
   has ended, whether it exits, times out or its pipes are closed by force. Then each capture
   is processed in this order:
   1. **Cut edges.** Only an edge that was actually cut is trimmed, each on its own: the
-     start of a stderr window that began mid-stream; the end of stdout at its capture limit;
+     start of a stderr window that began mid-stream; the end of stdout when more than 2 MiB
+     arrived (output of exactly 2 MiB that then ended is not cut);
      and the end of a stream that was still open when the tool timed out or its pipes were
      closed by force. A stream that ended normally keeps its end. Each cut edge is trimmed
      back to the nearest **separator**: any byte that is not one of K2's usable key
@@ -138,18 +139,22 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
      survives at a cut, and a long single line loses only its last unfinished word. If
      an edge has no separator at all, that capture is dropped. Where something was dropped,
      the text ends (or starts) with `[output cut]`.
-  2. **Plain keys.** Every occurrence of a key value is replaced with `[key <NAME>]`, or with
-     `[key]` when the value occurs in its own name, so the marker never repeats it.
+  2. **Plain keys.** Every occurrence of any of the tool's key values is replaced with
+     `[key]`, longest values first, so a value inside another value never leaves the rest of
+     the longer one. The marker names no key, so it can never contain a value (values are at
+     least 8 characters; `[key]` holds 3 usable characters).
   3. **Cuts for the agent.** Only then come the 1 MiB result cut and the 4 KiB stderr tail.
 - **The limit.** Only keys printed as-is are hidden. A key printed in an escaped form
   (JSON `\uXXXX` or `\/` escapes, percent-encoding in a web address) is not caught here.
   Catching those is split into its own thread (Decision 23). Other transforms (base64,
   hashing, splitting) are not caught either. The guide tells authors never to print or log a
   key in any form, and warns that escaped forms are not yet hidden.
-- **Node's own diagnostics.** Node prints a child's environment to its own stderr when
-  `NODE_DEBUG` names `child_process`. The generated bridge entry sets `NODE_DEBUG` to an
-  empty string. The K5 route refuses keyed runs, with that reason, when the machine
-  service's own `NODE_DEBUG` names `child_process`.
+- **Node's own diagnostics.** Node prints a child's environment to its own stderr when its
+  `child_process` debug output is on (`NODE_DEBUG`, including wildcards and any case). The
+  bridge and the K5 route check this in their own process with
+  `util.debuglog('child_process').enabled`. When it is on, they refuse keyed runs with the
+  reason `Node debug output for child processes is on; keyed tools won't run`. Keyless runs
+  and their inherited environment are unchanged.
 - **Launch errors** for a keyed tool (spawn failing in the bridge or the K5 route) report
   only `cannot start <program>: <error code>`, never the error's own message, which can echo
   environment values.
@@ -158,12 +163,12 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
 - **Claude, Antigravity (Gemini), unrestricted Codex:** keyed script tools through MCP, with
   keys, as in K3.
   No added prompt, setting or step (Decision 9).
-- **Sandboxed Codex** (the default for Codex sessions, and always for Codex project leads):
+- **Sandboxed Codex** (the default for Codex sessions):
   keyed tools are not available. The session's tool problems say `tool <name> needs keys,
   which sandboxed Codex can't use; set Codex to unrestricted in Settings to use it`. The
-  machine adds these lines to the session's folder-tool problems itself (using the
-  connector's `sandboxed(session)`), not as connector warnings, so they stay on the problems
-  card even when the session has no MCP entries at all.
+  machine works these lines out itself (using the connector's `sandboxed(session)`) and keeps
+  them with that session only. They stay on the problems card while that session runs, even
+  when it has no MCP entries at all, and whatever other agents start in the same worktree.
   `wc.js tool list` shows the same status. `wc.js tool run` on a keyed tool runs it without
   keys in the caller's process, as for any other tool there, and its output starts by saying
   so.
@@ -280,8 +285,10 @@ makes it usable mid-session (K3).
   `node --test machine/test/folder-tools.test.js machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js machine/test/project-keys.test.js machine/test/shared-keys.test.js` (shared-keys new).
 - K4 (redaction including a key split across chunks, at the 2 MiB capture limit and at the
   1 MiB cut and in a forced-close or timed-out stream; a stderr window with a clipped start keeping its
-  complete end; stderr's end trimmed only on timeout or forced close; a value that occurs in
-  its own name; the bridge entry's empty `NODE_DEBUG` and the K5 refusal; a long single line keeping all but its last word; only the plain value is replaced; non-ASCII values
+  complete end; stderr's end trimmed only on timeout or forced close; two keys where one
+  value is another key's name and one value contains another; refusal with `NODE_DEBUG=*`,
+  `child*` and `CHILD_PROCESS`, keyless runs unaffected; stdout of exactly 2 MiB at a normal
+  end versus overflow; a long single line keeping all but its last word; only the plain value is replaced; non-ASCII values
   counted as not set; launch errors
   without values; output unchanged without keys):
   `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js` (key-redact new).
@@ -289,7 +296,7 @@ makes it usable mid-session (K3).
   for other providers):
   `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/kimi.test.js machine/test/pi.test.js machine/test/name-guard.test.js machine/test/connectors-contract.test.js`, after regenerating `connectors/registry.json` with `node connectors/export.js` (committed). The route tests cover refusals for a reviewer, an assistant, a project lead and a non-Kimi/Pi session, and killing the process group when the connection closes.
 - K6 (including `list` on sandboxed and on unrestricted Codex, the sandboxed problems line
-  with no `.mcp.json`, a changed-tool error for a tool that gained `keys`, no session token, a machine-run result with a multibyte character split
+  with no `.mcp.json` and surviving a Claude worker's start in the same worktree, a changed-tool error for a tool that gained `keys`, no session token, a machine-run result with a multibyte character split
   across chunks, and a connection lost mid-body): `node --test viewer/test/wc-tool.test.js`.
 - K8 hint on Kimi/Pi when only a key is missing: `node --test machine/test/project-tools-service.test.js`.
 - K7 (including the shared tools project's own Tools page, switching machine in Shared keys,
@@ -467,9 +474,26 @@ makes it usable mid-session (K3).
 
 ### Round 9 — 2026-11-25
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 8:** K4 step 1 (only cut edges; separator is any non-key byte), step 2 (`[key]` marker), Node diagnostics; K5 (sandboxed lines added by the machine); K6 (changed-tool advice from the re-read definition); Validation; one Accepted Risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Marker can hold another key's value; substring order | upheld | K4 step 2: `[key]`, longest first |
+| intent | minor | `NODE_DEBUG` wildcards | upheld | K4: check `debuglog(...).enabled` |
+| intent | minor | Project-lead clause can't apply | upheld | Removed from K5 |
+| mechanics | blocking | Marker exposes another key | upheld | Same fix as intent 1 |
+| mechanics | blocking | `NODE_DEBUG` check must match Node's own | upheld | Same fix as intent 2 |
+| mechanics | minor | Sandboxed lines tied to the last starter | upheld | K5: kept per session |
+| mechanics | minor | Clearing `NODE_DEBUG` affects keyless tools | upheld | K4: no env change; refuse keyed runs only |
+| mechanics | minor | Exactly 2 MiB at EOF treated as cut | upheld | K4 step 1: only overflow is a cut |
+
+### Round 10 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 9:** K4 step 1 (overflow only), step 2 (`[key]`, longest first), Node diagnostics (refuse when Node's own check is on); K5 (sandboxed lines per session; project-lead clause removed); Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
