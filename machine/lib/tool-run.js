@@ -9,7 +9,7 @@ let installed = false;
 function installExitHandlers() { if (installed) return; installed = true; process.on('exit', killAll); for (const sig of ['SIGINT','SIGTERM','SIGHUP']) process.on(sig, () => { killAll(); process.removeAllListeners(sig); process.kill(process.pid, sig); }); }
 function runScript({ dir, tool, input, env }) {
   return new Promise(resolve => {
-    let child, timedOut = false, stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), launchError = null;
+    let child, pipeTimer, timedOut = false, stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), launchError = null;
     const program = tool.run[0].includes('/') ? path.resolve(dir, tool.run[0]) : tool.run[0];
     try { child = spawn(program, tool.run.slice(1), { cwd: dir, env, detached: true, stdio: ['pipe','pipe','pipe'] }); } catch (e) { resolve({ ok: false, text: '', code: null, signal: null, timedOut: false, truncated: false, stderr: e.message }); return; }
     if (child.pid) live.add(child.pid);
@@ -18,7 +18,8 @@ function runScript({ dir, tool, input, env }) {
     child.on('error', e => { launchError = e.message; });
     child.stdin.on('error', () => {}); child.stdin.end(JSON.stringify(input));
     const timer = setTimeout(() => { timedOut = true; if (child.pid) killGroup(child.pid); }, tool.timeout_seconds * 1000);
-    child.on('close', (code, signal) => { clearTimeout(timer); if (child.pid) live.delete(child.pid); const truncated = stdout.length > 1048576; const text = stdout.subarray(0, 1048576).toString('utf8') + (truncated ? '\n[output cut at 1 MiB]' : ''); resolve({ ok: !launchError && !timedOut && code === 0, text, code, signal, timedOut, truncated, stderr: launchError || stderr.toString('utf8') }); });
+    child.on('exit', () => { pipeTimer = setTimeout(() => { if (child.pid) killGroup(child.pid); child.stdout.destroy(); child.stderr.destroy(); }, 2000); });
+    child.on('close', (code, signal) => { clearTimeout(timer); clearTimeout(pipeTimer); if (child.pid) live.delete(child.pid); const truncated = stdout.length > 1048576; const text = stdout.subarray(0, 1048576).toString('utf8') + (truncated ? '\n[output cut at 1 MiB]' : ''); resolve({ ok: !launchError && !timedOut && code === 0, text, code, signal, timedOut, truncated, stderr: launchError || stderr.toString('utf8') }); });
   });
 }
 module.exports = { toolEnv, runScript, killAll, installExitHandlers };
