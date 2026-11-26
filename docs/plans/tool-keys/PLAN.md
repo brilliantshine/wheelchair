@@ -129,22 +129,27 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
   2 MiB capture limit, and the last 64 KiB of stderr. Nothing is returned until the process
   has ended, whether it exits, times out or its pipes are closed by force. Then each capture
   is processed in this order:
-  1. **Cut edges.** Every edge where a capture was cut is trimmed on its own: the end of
-     stdout at its limit; both the start of a stderr window that began mid-stream and the end
-     of stderr; and the end of either stream on a timeout or a pipe closed by force. Each is
-     trimmed back to the nearest **separator**: a byte that no key spelling can contain,
-     meaning anything other than an ASCII letter, an ASCII digit, `. _ ~ + / = -`, `\` or
-     `%`. Examples are a space, `"`, `,`, `:` or a newline. That way no piece of a key, plain or
-     escaped, survives at a cut, and a long single line loses only its last unfinished word. If
+  1. **Cut edges.** Only an edge that was actually cut is trimmed, each on its own: the
+     start of a stderr window that began mid-stream; the end of stdout at its capture limit;
+     and the end of a stream that was still open when the tool timed out or its pipes were
+     closed by force. A stream that ended normally keeps its end. Each cut edge is trimmed
+     back to the nearest **separator**: any byte that is not one of K2's usable key
+     characters (for example a space, `"`, `,`, `:` or a newline). So no piece of a plain key
+     survives at a cut, and a long single line loses only its last unfinished word. If
      an edge has no separator at all, that capture is dropped. Where something was dropped,
      the text ends (or starts) with `[output cut]`.
-  2. **Plain keys.** Every occurrence of a key value is replaced with `[key <NAME>]`.
+  2. **Plain keys.** Every occurrence of a key value is replaced with `[key <NAME>]`, or with
+     `[key]` when the value occurs in its own name, so the marker never repeats it.
   3. **Cuts for the agent.** Only then come the 1 MiB result cut and the 4 KiB stderr tail.
 - **The limit.** Only keys printed as-is are hidden. A key printed in an escaped form
   (JSON `\uXXXX` or `\/` escapes, percent-encoding in a web address) is not caught here.
   Catching those is split into its own thread (Decision 23). Other transforms (base64,
   hashing, splitting) are not caught either. The guide tells authors never to print or log a
   key in any form, and warns that escaped forms are not yet hidden.
+- **Node's own diagnostics.** Node prints a child's environment to its own stderr when
+  `NODE_DEBUG` names `child_process`. The generated bridge entry sets `NODE_DEBUG` to an
+  empty string. The K5 route refuses keyed runs, with that reason, when the machine
+  service's own `NODE_DEBUG` names `child_process`.
 - **Launch errors** for a keyed tool (spawn failing in the bridge or the K5 route) report
   only `cannot start <program>: <error code>`, never the error's own message, which can echo
   environment values.
@@ -155,7 +160,10 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
   No added prompt, setting or step (Decision 9).
 - **Sandboxed Codex** (the default for Codex sessions, and always for Codex project leads):
   keyed tools are not available. The session's tool problems say `tool <name> needs keys,
-  which sandboxed Codex can't use; set Codex to unrestricted in Settings to use it`.
+  which sandboxed Codex can't use; set Codex to unrestricted in Settings to use it`. The
+  machine adds these lines to the session's folder-tool problems itself (using the
+  connector's `sandboxed(session)`), not as connector warnings, so they stay on the problems
+  card even when the session has no MCP entries at all.
   `wc.js tool list` shows the same status. `wc.js tool run` on a keyed tool runs it without
   keys in the caller's process, as for any other tool there, and its output starts by saying
   so.
@@ -200,7 +208,8 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
   (Claude, Antigravity, Codex, or no session token) it runs in the caller's process without
   keys, and for a keyed tool its output starts by saying so. On those AIs keyed tools are
   tried for real through MCP, on the next call in a session that offered them.
-- The bridge's changed-tool error, for a keyed script tool, says to try it with keys from
+- The bridge's changed-tool error, when the re-read `tool.json` declares keys (even if the
+  definition offered at start did not), says to try it with keys from
   the next agent start (`wc.js tool run` there runs it without keys). The guide's matching
   advice says the same.
 - `new`: the script template is unchanged. The guide shows how to add `keys`.
@@ -270,16 +279,17 @@ makes it usable mid-session (K3).
   started by the launcher, while keyless servers still connect):
   `node --test machine/test/folder-tools.test.js machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js machine/test/project-keys.test.js machine/test/shared-keys.test.js` (shared-keys new).
 - K4 (redaction including a key split across chunks, at the 2 MiB capture limit and at the
-  1 MiB cut and in a forced-close or timed-out stream, plain and escaped (a `\u`-escaped
-  key cut mid-way leaves nothing of it); stderr trimmed at both ends, on timeout and on forced
-  close; a long single line keeping all but its last word; plain keys replaced; an escaped key passes (the stated limit); non-ASCII values
+  1 MiB cut and in a forced-close or timed-out stream; a stderr window with a clipped start keeping its
+  complete end; stderr's end trimmed only on timeout or forced close; a value that occurs in
+  its own name; the bridge entry's empty `NODE_DEBUG` and the K5 refusal; a long single line keeping all but its last word; only the plain value is replaced; non-ASCII values
   counted as not set; launch errors
   without values; output unchanged without keys):
   `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js` (key-redact new).
 - K5 (per-AI availability, sandboxed Codex problems text, Kimi/Pi route and its refusal
   for other providers):
   `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/kimi.test.js machine/test/pi.test.js machine/test/name-guard.test.js machine/test/connectors-contract.test.js`, after regenerating `connectors/registry.json` with `node connectors/export.js` (committed). The route tests cover refusals for a reviewer, an assistant, a project lead and a non-Kimi/Pi session, and killing the process group when the connection closes.
-- K6 (including `list` on sandboxed and on unrestricted Codex, no session token, a machine-run result with a multibyte character split
+- K6 (including `list` on sandboxed and on unrestricted Codex, the sandboxed problems line
+  with no `.mcp.json`, a changed-tool error for a tool that gained `keys`, no session token, a machine-run result with a multibyte character split
   across chunks, and a connection lost mid-body): `node --test viewer/test/wc-tool.test.js`.
 - K8 hint on Kimi/Pi when only a key is missing: `node --test machine/test/project-tools-service.test.js`.
 - K7 (including the shared tools project's own Tools page, switching machine in Shared keys,
@@ -301,6 +311,7 @@ makes it usable mid-session (K3).
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A keyed server's own request to the client that contains a key value and is withheld may leave the server waiting or misroute the error | Rare path: needs a server-originated request carrying its key | review-round-3 |
+| An agent on Kimi or Pi can choose, through its `PATH`, which program a bare-named keyed tool runs, and so hand a key to its own program | Tampering by a local agent (realism.md), which can already read the key store files on disk | review-round-8 |
 | An agent that reads the key store files on disk can find key values | Same OS account; IDEA.md Not doing | planning |
 
 ## Review Rounds
@@ -439,9 +450,26 @@ makes it usable mid-session (K3).
 
 ### Round 8 — 2026-11-25
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 7:** Escaped-key detection split off (Decision 23, IDEA.md): K4 step 3 removed and the limit restated; K2 and K8 wording; Not doing; Validation. Round 7 fixes: K4 step 1 (separator trim at each edge; Decision 22), K5 (`keyed_unavailable`, lost-connection text), K6 (changed-tool error).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Separator still counts `\` and `%` | upheld | K4 step 1: separator is any non-key byte |
+| intent | minor | Test asserting an escaped leak | upheld | Validation: only the plain value is replaced |
+| mechanics | blocking | Caller's PATH picks the program that gets keys | accepted-risk | Rare path: tampering by a local agent, same as reading key files |
+| mechanics | blocking | Marker repeats a value equal to its name | upheld | K4: `[key]` marker (secret leaks are always fixed) |
+| mechanics | blocking | `NODE_DEBUG` prints the child env | upheld | K4: bridge entry clears it; K5 refuses when set |
+| mechanics | minor | stderr end trimmed after a normal close | upheld | K4 step 1: only cut edges |
+| mechanics | minor | Changed-tool advice from the old definition | upheld | K6: uses the re-read definition |
+| mechanics | minor | Sandboxed warning lost without MCP entries | upheld | K5: machine adds it to folder problems |
+
+### Round 9 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 8:** K4 step 1 (only cut edges; separator is any non-key byte), step 2 (`[key]` marker), Node diagnostics; K5 (sandboxed lines added by the machine); K6 (changed-tool advice from the re-read definition); Validation; one Accepted Risk.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
