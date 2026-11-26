@@ -35,10 +35,10 @@ not ok 1 - failed fetch removes private refs and stale locks, and disables autom
   error: |-
     Expected values to be strictly equal:
     + actual - expected
-    
+
     + 'refs/wheelchair/shared-tools/3020ef97-a9fc-4f72-9900-ecd712ec255a'
     - ''
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: ''
@@ -75,11 +75,11 @@ not ok 1 - failed fetch removes private refs and stale locks, and disables autom
   error: |-
     Expected values to be strictly equal:
     + actual - expected
-    
+
     + 'git fetch failed: sweep missing'
     - 'git fetch failed: network broke'
                          ^
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 'git fetch failed: network broke'
@@ -116,15 +116,15 @@ not ok 1 - failed fetch removes private refs and stale locks, and disables autom
   failureType: 'testCodeFailure'
   error: |-
     The input did not match the regular expression /-c gc.auto=0/. Input:
-    
+
     '-C /tmp/wheelchair-test-run-692990-Btopj0/shared-whYqmi/clone fetch --no-write-fetch-head --no-tags origin +refs/heads/main:refs/wheelchair/shared-tools/fe3b39bf-2cdc-4f09-bd54-fa8367c13153\n'
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected:
   actual: |-
     -C /tmp/wheelchair-test-run-692990-Btopj0/shared-whYqmi/clone fetch --no-write-fetch-head --no-tags origin +refs/heads/main:refs/wheelchair/shared-tools/fe3b39bf-2cdc-4f09-bd54-fa8367c13153
-    
+
   operator: 'match'
   stack: |-
     TestContext.<anonymous> (/home/collin/.local/state/wheelchair/worktrees/wheelchair/wc-7fac691ef321-w6/machine/test/shared-tools.test.js:118:12)
@@ -187,9 +187,9 @@ not ok 1 - refresh failure messages name the step and fit on one short line
   failureType: 'testCodeFailure'
   error: |-
     The expression evaluated to a falsy value:
-    
+
       assert.ok(result.error.length <= 200)
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: true
@@ -226,10 +226,10 @@ not ok 1 - a waiting caller has its own deadline and stale temporary copies are 
   error: |-
     Expected values to be strictly deep-equal:
     + actual - expected
-    
+
     + null
     - 'refresh was still running after 1.2 s'
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 'refresh was still running after 1.2 s'
@@ -266,7 +266,7 @@ not ok 1 - a waiter does not overwrite a newer recorded outcome
   error: |-
     Expected values to be strictly deep-equal:
     + actual - expected
-    
+
       {
     +   at: '2026-11-26T00:22:22.545Z',
     +   error: 'refresh was still running after 0.7 s',
@@ -275,7 +275,7 @@ not ok 1 - a waiter does not overwrite a newer recorded outcome
     -   error: null,
     -   ok: true
       }
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected:
@@ -318,10 +318,10 @@ not ok 1 - origin lookup honors insteadOf and identity errors are clear
   error: |-
     Expected values to be strictly equal:
     + actual - expected
-    
+
     + null
     - '/tmp/wheelchair-test-run-693878-e02Sci/shared-BAKTpn/clone'
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: '/tmp/wheelchair-test-run-693878-e02Sci/shared-BAKTpn/clone'
@@ -357,9 +357,9 @@ not ok 1 - origin lookup honors insteadOf and identity errors are clear
   failureType: 'testCodeFailure'
   error: |-
     The input did not match the regular expression /git rev-parse failed/. Input:
-    
+
     'identity unavailable'
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected:
@@ -397,10 +397,10 @@ not ok 1 - finds first matching repository and skips missing and unrelated candi
   error: |-
     Expected values to be strictly equal:
     + actual - expected
-    
+
     + '/tmp/wheelchair-test-run-693983-ttZCkm/shared-WYXA5K/source'
     - '/tmp/wheelchair-test-run-693983-ttZCkm/shared-WYXA5K/clone'
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: '/tmp/wheelchair-test-run-693983-ttZCkm/shared-WYXA5K/clone'
@@ -472,10 +472,10 @@ not ok 1 - a copy publication failure names its step
   error: |-
     Expected values to be strictly equal:
     + actual - expected
-    
+
     + 'disk full'
     - 'copy publication failed: disk full'
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 'copy publication failed: disk full'
@@ -527,9 +527,9 @@ not ok 3 - concurrent refreshes share one fetch, and deadline kills a stalled pr
   failureType: 'testCodeFailure'
   error: |-
     The input did not match the regular expression /git fetch timed out after 2 s/. Input:
-    
+
     'git timed out'
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected:
@@ -556,10 +556,10 @@ not ok 5 - a waiting caller has its own deadline and stale temporary copies are 
   error: |-
     Expected values to be strictly deep-equal:
     + actual - expected
-    
+
     + null
     - 'refresh was still running at the deadline'
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 'refresh was still running at the deadline'
@@ -586,11 +586,11 @@ not ok 7 - failed fetch removes private refs and stale locks, and disables autom
   error: |-
     Expected values to be strictly equal:
     + actual - expected
-    
+
     + 'git failed: network broke second line'
     - 'git fetch failed: network broke'
             ^
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 'git fetch failed: network broke'
@@ -626,10 +626,10 @@ not ok 9 - origin lookup honors insteadOf and identity errors are clear
   error: |-
     Expected values to be strictly equal:
     + actual - expected
-    
+
     + null
     - '/tmp/wheelchair-test-run-606523-tdL0DB/shared-g2bIQj/clone'
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: '/tmp/wheelchair-test-run-606523-tdL0DB/shared-g2bIQj/clone'
