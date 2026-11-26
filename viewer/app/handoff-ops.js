@@ -87,7 +87,7 @@ async function runLocked(hub, thread, reimport = false, prechecked = false) {
         try { await require('./sessions.js').stopManagedSession(hub, thread, session); }
         catch (error) {
           if (error.status !== 404 || error.message !== 'unknown managed session') throw error;
-          session.live = false; session.status = 'stopped'; session.ended_at = new Date().toISOString(); await hub.save(thread);
+          session.live = false; session.status = 'stopped'; session.ended_at = new Date().toISOString(); require('./sessions.js').refreshProjectTools(thread); await hub.save(thread);
         }
       }
       let running = await checked(hub, thread, 'running');

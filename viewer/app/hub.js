@@ -69,6 +69,7 @@ class Hub {
           session.live = false; session.status = 'ended'; session.ended_at = new Date().toISOString(); changed = true;
         }
       }
+      if (changed) sessions.refreshProjectTools(thread);
       if (changed) await this.save(thread);
     }
     if (this.registerPlan) for (const thread of await this.allThreads()) {

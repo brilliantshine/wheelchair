@@ -145,10 +145,11 @@ const ALLOWED_START = {
 // Spec §8: the machine's project-tool problems for a thread, shown as one "Project tools problem"
 // card. The caller holds the thread lock; this never takes it.
 const PROJECT_TOOLS_TITLE = 'Project tools problem';
-function projectToolProblems(state) {
+function projectToolProblems(state, sessions = []) {
   if (!state) return [];
   const lines = [...(state.file || []), ...(state.programs || []), ...(state.folder || [])];
   for (const key of Object.keys(state.clis || {}).sort()) lines.push(...(state.clis[key].lines || []));
+  for (const session of sessions) if (session.live && !session.ended_at) lines.push(...(state.keyed?.[session.name] || []));
   const seen = new Set();
   return lines.filter((line) => !seen.has(line.text) && seen.add(line.text));
 }
@@ -166,18 +167,36 @@ function applyProjectTools(thread, started) {
   stored.seq = incoming.seq;
   stored.created_at = started.created_at || stored.created_at;
   stored.state = { file: incoming.file || [], programs: incoming.programs || [], folder: incoming.folder || [], clis: incoming.clis || {} };
-  const lines = projectToolProblems(stored.state);
+  const keyed = incoming.keyed;
+  const plain = keyed && typeof keyed === 'object' && !Array.isArray(keyed) && (Object.getPrototypeOf(keyed) === Object.prototype || Object.getPrototypeOf(keyed) === null);
+  stored.state.keyed = plain && Object.values(keyed).every((lines) => Array.isArray(lines) && lines.every((line) => line && typeof line.text === 'string' && Array.isArray(line.names) && line.names.every((name) => typeof name === 'string'))) ? keyed : {};
+  refreshProjectTools(thread);
+}
+function refreshProjectTools(thread) {
+  const stored = thread.project_tools;
+  if (!stored?.state) return;
+  let lines = projectToolProblems(stored.state, thread.sessions);
   const open = stored.card ? thread.cards.find((item) => item.id === stored.card && !item.answered) : null;
   if (!lines.length) {
     if (open) open.answered = true;
     stored.card = null;
     stored.card_names = [];
+    stored.card_texts = [];
+    stored.priority_texts = [];
     return;
   }
   const names = [...new Set(lines.flatMap((line) => (line.names.length ? line.names : ['file'])))].sort();
   const dismissed = stored.card && thread.cards.find((item) => item.id === stored.card && item.answered && item.resolved_by === 'user');
-  if (dismissed && JSON.stringify(names) === JSON.stringify(stored.card_names)) return;
+  const liveKeyed = projectToolProblems({ keyed: stored.state.keyed }, thread.sessions);
+  const shown = new Set(stored.card_texts || dismissed?.items?.filter((item) => !/^and \d+ more$/.test(item)) || []);
+  const newKeyed = dismissed ? liveKeyed.filter((line) => !shown.has(line.text)).map((line) => line.text) : [];
+  if (dismissed && JSON.stringify(names) === JSON.stringify(stored.card_names) && !newKeyed.length) return;
+  const present = new Set(liveKeyed.map((line) => line.text));
+  stored.priority_texts = [...new Set([...(stored.priority_texts || []).filter((text) => present.has(text)), ...newKeyed])];
+  const priority = new Set(stored.priority_texts);
+  lines = [...lines.filter((line) => priority.has(line.text)), ...lines.filter((line) => !priority.has(line.text))];
   const items = lines.slice(0, 20).map((line) => line.text);
+  stored.card_texts = [...items];
   if (lines.length > 20) items.push(`and ${lines.length - 20} more`);
   const body = "Some project tools won't work for agents in this thread:";
   if (open && JSON.stringify(names) === JSON.stringify(stored.card_names)) {
@@ -254,7 +273,6 @@ async function resumeUnanswered(hub, thread, session) {
   }
   delete session.unanswered_start;
   delete session.error;
-  applyProjectTools(thread, started);
   const identity = { name: session.name, attempt_id: session.attempt_id, started_by: session.started_by, queue: session.queue || [] };
   Object.assign(session, started, identity, {
     token: pending.body.token,
@@ -265,6 +283,8 @@ async function resumeUnanswered(hub, thread, session) {
   delete session.project_tools;
   if (session.first_message) { session.turn_started_at = new Date().toISOString(); beginTurn(session, session.turn_started_at); }
   delete session.ended_at;
+  applyProjectTools(thread, started);
+  refreshProjectTools(thread);
   if (quiet.watched(session) && session.first_message) session.owes_reply = true;
   markIdleIfFresh(session);
   await hub.save(thread);
@@ -409,6 +429,7 @@ async function startSession(hub, thread, input) {
   } catch (error) {
     // Leave no session claiming to be "starting" forever: record why it never started.
     Object.assign(session, { status: 'failed', live: false, ended_at: new Date().toISOString(), error: error.message });
+    refreshProjectTools(thread);
     if (!error.status) {
       session.unanswered_start = { body: startBody, first_message: PROVIDERS[selection.provider].typesRoleMessage || Boolean(input.brief) };
       await hub.save(thread);
@@ -752,7 +773,7 @@ async function sessionRequest(hub, payload) {
     return require('./peers.js').listLeads(hub, thread, { allProjects: payload.all_projects === true });
   }
   if (payload.action === 'list') {
-    const problems = projectToolProblems(thread.project_tools && thread.project_tools.state).map((line) => line.text);
+    const problems = projectToolProblems(thread.project_tools && thread.project_tools.state, thread.sessions).map((line) => line.text);
     const leadEntry = [...thread.sessions].reverse().find((item) => item.role === 'lead');
     const listed = thread.sessions.map((item) => (item === leadEntry ? { ...publicSession(item), project_tools: { problems } } : publicSession(item)));
     return { sessions: listed, review_families: await reviewFamilies(hub, thread) };
@@ -854,6 +875,7 @@ async function stopManagedSession(hub, thread, target) {
   endTurn(target, target.ended_at);
   target.live = false;
   target.status = 'stopped';
+  refreshProjectTools(thread);
   quiet.reset(thread, target, true);
   if (result?.end_reason && wasLive) await notifyEnded(hub, thread, target);
   await hub.save(thread);
@@ -938,6 +960,7 @@ async function pollDead(hub) {
           endTurn(target, target.ended_at);
           target.live = false;
           target.status = 'ended';
+          refreshProjectTools(thread);
           delete target.switching;
           quiet.reset(thread, target, true);
           changed = true;
@@ -1001,6 +1024,7 @@ module.exports = {
   retryQueues,
   retryWaiting,
   applyProjectTools,
+  refreshProjectTools,
   sendNow,
   releaseLimits,
   publicSession,
