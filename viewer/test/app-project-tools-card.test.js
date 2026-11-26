@@ -254,6 +254,64 @@ test('keyed lines survive another start and leave when their session stops', asy
   } finally { await finish(f); }
 });
 
+test('dismissed card stays closed when a keyed session ends and names shrink', async () => {
+  const f = await fixture();
+  try {
+    const name = f.made.sessions[0].name;
+    await f.apply({ project_tools: tools({ folder: [line('folder problem')], keyed: { [name]: [line('keyed unavailable', 'weather')] } }) });
+    let t = await f.get(); const id = open(t)[0].id;
+    assert.equal((await api(f.c, `/threads/${f.made.id}/cards/${id}/dismiss`, { method: 'POST', body: {} })).status, 200);
+    await f.hub.withThread(f.made.id, async () => {
+      const thread = await f.get();
+      await sessions.stopManagedSession(f.hub, thread, thread.sessions.find((s) => s.name === name));
+    });
+    t = await f.get();
+    assert.equal(open(t).length, 0);
+    assert.equal(t.project_tools.card, id);
+    assert.deepEqual(t.project_tools.card_names, ['file', 'weather']);
+  } finally { await finish(f); }
+});
+
+test('failed start refresh drops keyed lines from the open card', async () => {
+  const f = await fixture();
+  try {
+    const name = f.made.sessions[0].name;
+    await f.apply({ project_tools: tools({ keyed: { [name]: [line('keyed unavailable', 'weather')] } }) });
+    await f.hub.withThread(f.made.id, async () => {
+      const thread = await f.get();
+      const target = thread.sessions.find((s) => s.name === name);
+      const real = f.hub.call.bind(f.hub);
+      f.hub.call = async (machine, route, method, body, timeout) => {
+        if (route === '/v1/sessions' && method === 'POST') { const error = new Error('failed start'); error.status = 500; throw error; }
+        return real(machine, route, method, body, timeout);
+      };
+      await assert.rejects(sessions.startSession(f.hub, thread, { role: target.role, attempt_id: target.attempt_id, started_by: target.started_by, name, _waiting: target }), /failed start/);
+    });
+    assert.equal(open(await f.get()).length, 0);
+  } finally { await finish(f); }
+});
+
+test('pollDead refresh drops keyed lines from the open card', async () => {
+  const f = await fixture();
+  try {
+    const name = f.made.sessions[0].name;
+    await f.apply({ project_tools: tools({ keyed: { [name]: [line('keyed unavailable', 'weather')] } }) });
+    f.c.machine.sessions.delete(name);
+    await sessions.pollDead(f.hub);
+    assert.equal(open(await f.get()).length, 0);
+  } finally { await finish(f); }
+});
+
+test('archive refresh drops keyed lines from the open card', async () => {
+  const f = await fixture();
+  try {
+    const name = f.made.sessions[0].name;
+    await f.apply({ project_tools: tools({ keyed: { [name]: [line('keyed unavailable', 'weather')] } }) });
+    await require('../app/threads.js').archive(f.hub, f.made.id);
+    assert.equal(open(await f.get()).length, 0);
+  } finally { await finish(f); }
+});
+
 test('ended and malformed keyed entries do not appear', () => {
   const t = { sessions: [{ name: 'ended', live: false, ended_at: 'now' }], cards: [] };
   sessions.applyProjectTools(t, { project_tools: tools({ keyed: { ended: [line('old', 'a')] } }) });
