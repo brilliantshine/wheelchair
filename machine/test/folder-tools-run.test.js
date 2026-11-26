@@ -52,3 +52,22 @@ test('launcher waits for stdout after child exit', {timeout:7000}, async()=>{
 cp.spawn=()=>{ const child=new EventEmitter(); child.stdin=new PassThrough(); child.stdout=new PassThrough(); setTimeout(()=>child.emit('exit',7,null),1000); setTimeout(()=>{ child.stdout.end('late output'); child.stdout.on('end',()=>child.emit('close',7,null)); },2000); return child; };`);
   const child=spawn(process.execPath,[launch,'--project-dir',f.root,'--tool',f.dir],{env:{...process.env,NODE_OPTIONS:`--require=${shim}`}}); const result=await completed(child); assert.equal(result.code,7); assert.equal(result.stdout,'late output');
 });
+test('handshake returns cancelled for an already aborted signal without starting',async()=>{
+  const root=await makeTemp(), marker=path.join(root,'started'), controller=new AbortController(); controller.abort();
+  const result=await handshake({command:process.execPath,args:['-e',"require('fs').writeFileSync(process.argv[1],'started'); setInterval(()=>{},1000)",marker],cwd:root,env:process.env,timeoutMs:1000,signal:controller.signal});
+  assert.deepEqual(result,{ok:false,serverInfo:null,tools:null,error:'cancelled'}); assert.equal(fs.existsSync(marker),false);
+});
+test('handshake abort stops an unresponsive server and its grandchild',async()=>{
+  const root=await makeTemp(), file=path.join(root,'pid'), controller=new AbortController();
+  const code="const c=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); require('fs').writeFileSync(process.argv[1],String(c.pid)); setInterval(()=>{},1000)";
+  const pending=handshake({command:process.execPath,args:['-e',code,file],cwd:root,env:process.env,timeoutMs:3000,signal:controller.signal});
+  const pid=await pidFile(file); controller.abort(); const result=await pending;
+  assert.deepEqual(result,{ok:false,serverInfo:null,tools:null,error:'cancelled'}); await stopped(pid);
+});
+test('handshake abort discards a partial initialize response',async()=>{
+  const root=await makeTemp(), file=path.join(root,'ready'), controller=new AbortController();
+  const code="require('readline').createInterface({input:process.stdin}).on('line',s=>{const m=JSON.parse(s); if(m.method==='initialize') console.log(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{serverInfo:{name:'partial'},capabilities:{tools:{}}}})); if(m.method==='tools/list') require('fs').writeFileSync(process.argv[1],'ready');}); setInterval(()=>{},1000)";
+  const pending=handshake({command:process.execPath,args:['-e',code,file],cwd:root,env:process.env,timeoutMs:3000,signal:controller.signal});
+  const deadline=Date.now()+2500; while(!fs.existsSync(file) && Date.now()<deadline) await new Promise(r=>setTimeout(r,50)); assert.equal(fs.existsSync(file),true);
+  controller.abort(); assert.deepEqual(await pending,{ok:false,serverInfo:null,tools:null,error:'cancelled'});
+});
