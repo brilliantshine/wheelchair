@@ -327,3 +327,55 @@ test('Windows marks read and save independently while preserving document keys',
   assert.ok(latest.some(d => !('wheelchair' in d)));
   git('-C', f.repo, 'remote', 'set-url', 'origin', f.remote); const keysOnly = (await tools.read({ path: f.repo })).body; assert.equal(keysOnly.wsl, true); assert.deepEqual(keysOnly.windows, []);
 });
+test('folder tools come from the default branch even with a different push destination', async () => {
+  const f = await fixture();
+  const base = path.join(f.repo, '.wheelchair', 'tools');
+  for (const [name, value] of Object.entries({ good: { name: 'good', description: 'ok', kind: 'script', inputs: {}, run: ['./run'] }, broken: { name: 'broken', description: 'bad', kind: 'server' }, absent: { name: 'absent', description: 'bad', kind: 'script', inputs: {}, run: ['./missing'] } })) {
+    await fs.mkdir(path.join(base, name), { recursive: true });
+    await fs.writeFile(path.join(base, name, 'tool.json'), JSON.stringify(value));
+  }
+  await fs.writeFile(path.join(base, 'good', 'run'), 'ok');
+  git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'tools'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  await fs.rm(path.join(base, 'good'), { recursive: true });
+  git('-C', f.repo, 'remote', 'set-url', '--push', 'origin', 'https://github.com/other/repo.git');
+  const read = (await f.tools.read({ path: f.repo })).body;
+  assert.equal(read.mode, 'keys-only');
+  assert.deepEqual(read.folder_tools.rows.map(r => [r.name, r.status]), [['absent', 'missing-program'], ['broken', 'invalid'], ['good', 'ok']]);
+  assert.match(read.folder_tools.rows[1].reason, /start/);
+  git('-C', f.repo, 'remote', 'set-url', 'origin', f.remote);
+  const local = (await f.tools.read({ path: f.repo })).body;
+  assert.deepEqual(local.folder_tools.notes, ['folder tools can only be listed for GitHub projects']);
+});
+test('shared folder copy, collision, and refresh notes', async () => {
+  const f = await fixture();
+  const shared = require('../lib/shared-tools');
+  const choice = { repo: 'owner/name', candidates: [f.repo] };
+  const local = await fixture();
+  git('-C', local.repo, 'remote', 'set-url', 'origin', local.remote);
+  const state = path.join(local.root, 'state');
+  let result = (await local.tools.read({ path: local.repo, shared_tools: { ...choice, candidates: [] } })).body.folder_tools;
+  assert.ok(result.notes.includes("the shared tools project isn't added on this machine"));
+  result = (await local.tools.read({ path: local.repo, shared_tools: choice })).body.folder_tools;
+  assert.ok(result.notes.includes('no shared copy on this machine yet'));
+  const id = await shared.identityFor(f.repo), root = path.join(state, 'shared-tools', id), hash = 'a'.repeat(40), copy = path.join(root, hash), dir = path.join(copy, '.wheelchair', 'tools', 'shared');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(root, 'last-refresh.json'), JSON.stringify({ at: 'now', ok: false, error: 'offline' }));
+  result = (await local.tools.read({ path: local.repo, shared_tools: choice })).body.folder_tools;
+  assert.ok(result.notes.includes('last refresh failed: offline'));
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'shared', description: 'ok', kind: 'server', start: ['node'] }));
+  await fs.writeFile(path.join(root, 'current'), hash);
+  result = (await local.tools.read({ path: local.repo, shared_tools: choice })).body.folder_tools;
+  assert.equal(result.rows[0].status, 'ok');
+  assert.equal(result.rows[0].note, "not checked against this project's own tools");
+  assert.deepEqual((await f.tools.read({ path: f.repo, shared_tools: choice })).body.folder_tools.rows, []);
+  const projectDir = path.join(local.repo, '.wheelchair', 'tools', 'shared');
+  await fs.mkdir(projectDir, { recursive: true });
+  await fs.writeFile(path.join(projectDir, 'tool.json'), JSON.stringify({ name: 'shared', description: 'project', kind: 'server', start: ['node'] }));
+  git('-C', local.repo, 'add', '.wheelchair'); git('-C', local.repo, 'commit', '-qm', 'collision'); git('-C', local.repo, 'push', '-q', local.remote, 'main');
+  git('-C', local.repo, 'remote', 'set-url', 'origin', 'https://github.com/owner/name.git');
+  git('-C', local.repo, 'config', 'remote.origin.url', 'https://github.com/owner/other.git');
+  await fs.mkdir(path.join(local.root, 'owner'), { recursive: true });
+  await fs.cp(local.remote, path.join(local.root, 'owner', 'other.git'), { recursive: true });
+  result = (await local.tools.read({ path: local.repo, shared_tools: choice })).body.folder_tools;
+  assert.equal(result.rows.find(row => row.source === 'shared').status, 'hidden');
+});

@@ -1499,3 +1499,42 @@ test('timing: a network abort says Couldn\'t check', async ({ page }) => {
   await expect(line(page, 'loc')).toContainText("Couldn't check: ");
   await expect(line(page, 'loc')).not.toContainText('Checking');
 });
+
+test('folder tools show mixed and empty states', async ({ page }) => {
+  await open(page, { read: readBody({ folder_tools: { notes: [], rows: [
+    { name: 'search', source: 'project', kind: 'script', status: 'ok' },
+    { name: 'browser', source: 'shared', kind: 'server', status: 'ok' },
+    { name: 'bad', source: 'project', kind: null, status: 'invalid', reason: 'tool.json is missing "start"' },
+  ] } }) });
+  const list = page.locator('.pt-folder-tools');
+  await expect(list).toContainText('search');
+  await expect(list).toContainText('Working');
+  await expect(list).toContainText("server tools don't work on Kimi, Pi or sandboxed Codex");
+  await expect(list).toContainText('tool.json is missing "start"');
+});
+
+test('folder tools empty state', async ({ page }) => {
+  await open(page, { read: readBody({ folder_tools: { rows: [], notes: [] } }) });
+  await expect(page.locator('.pt-folder-tools')).toContainText('No folder tools yet.');
+});
+
+test('capture folder tool screens', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium');
+  const rows = [
+    { name: 'search_docs', source: 'project', kind: 'script', status: 'ok' },
+    { name: 'browser', source: 'shared', kind: 'server', status: 'ok' },
+    { name: 'search_docs', source: 'shared', kind: 'script', status: 'hidden', reason: 'hidden by the project tool of the same name' },
+    { name: 'calendar', source: 'project', kind: 'server', status: 'invalid', reason: 'tool.json is missing "start"' },
+  ];
+  let mixed = true;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, { read: () => readBody({ folder_tools: { rows: mixed ? rows : [], notes: [] } }) });
+  await page.screenshot({ path: '/tmp/wc-t6-logs/tools-mixed-phone.png' });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.screenshot({ path: '/tmp/wc-t6-logs/tools-mixed-desktop.png' });
+  mixed = false;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('#pt-project').selectOption('/tmp/proj-beta');
+  await expect(page.locator('.pt-folder-tools')).toContainText('No folder tools yet.');
+  await page.screenshot({ path: '/tmp/wc-t6-logs/tools-empty-phone.png' });
+});

@@ -86,6 +86,11 @@ async function handle(hub, request, response, url, machineAuthenticated) {
     if (!body || typeof body.path !== 'string') return send(response, 400, { error: 'path is required' });
     const { machine, ...input } = body;
     const name = typeof machine === 'string' && machine ? machine : 'hub';
+    if (bits[1] === 'read') {
+      const config = await settings.load(hub);
+      delete input.shared_tools;
+      if (config.shared_tools_repo) input.shared_tools = { repo: config.shared_tools_repo, candidates: config.saved_dirs.filter(entry => entry.machine === name).map(entry => entry.path) };
+    }
     try {
       const result = await hub.client.passThrough(name, `/v1/project-tools/${bits[1]}`, 'POST', input, 120_000);
       return send(response, result.status, result.body);

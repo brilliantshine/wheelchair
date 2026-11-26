@@ -300,3 +300,9 @@ button.danger { color: var(--bad-text); }
 .lesson-removed h3, .lesson-waiting h3 { font-size: 14px; margin: 8px 0; }
 .lessons-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .lessons-tools button { flex: 1 1 auto; }
+
+.pt-folder-good { color: var(--good-text); font-size: 13px; line-height: 1.5; }
+.pt-folder-tools { display: flex; flex-direction: column; gap: 10px; }
+.pt-folder-tools > .hint { margin: 0; }
+.pt-shared > .hint { margin: -8px 0 0; }
+.pt-folder-tools .pt-tools > .hint { margin: 0; }
