@@ -45,7 +45,7 @@ test.describe('desktop', () => {
   test('eight sections, kept across a reload through the hash', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const nav = page.locator('#sections a');
-    await expect(nav).toHaveText(['Harnesses', 'Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style', 'Project tools', 'Background Customization']);
+    await expect(nav).toHaveText(['Harnesses', 'Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style', 'Project tools', 'Shared tools', 'Background Customization']);
     await nav.nth(4).click();
     await expect(page).toHaveURL(/#templates$/);
     await expect(page.locator('.tpl-list h1')).toHaveText('Behavior templates');
@@ -349,7 +349,7 @@ test.describe('phone', () => {
   test('the sections are tabs above the section and the page never scrolls sideways', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const tabs = page.locator('#sections a');
-    await expect(tabs).toHaveCount(8);
+    await expect(tabs).toHaveCount(9);
     const boxes = await tabs.evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().toJSON()));
     expect(new Set(boxes.map((b) => Math.round(b.top))).size).toBe(1);
     const panel = await page.locator('#panel').boundingBox();
@@ -627,4 +627,21 @@ test('models and preferences fits at 390px', async ({ page }) => {
   await openPage(page, context, '/app/settings#models');
   await expect(page.locator('tr[data-provider="gemini"]')).toBeVisible();
   await noSideScroll(page);
+});
+
+test('shared tools picker saves a project and clears it', async ({ page }) => {
+  await page.route('**/wheelchair/api/new-thread*', route => route.fulfill({ json: { machines: ['hub'], saved: [{ name: 'shared-tools', path: '/tmp/shared-tools' }, { name: 'local', path: '/tmp/local' }], found: [], previous: [] } }));
+  await page.route('**/wheelchair/api/project-tools/read', route => route.fulfill({ json: { repo: route.request().postDataJSON().path === '/tmp/shared-tools' ? 'owner/shared' : null } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPage(page, context, '/app/settings#shared-tools');
+  const picker = page.getByLabel('Shared tools project');
+  await expect(picker.locator('option')).toContainText(['None', 'shared-tools', 'local (no GitHub origin)']);
+  if (test.info().project.name === 'chromium') await page.screenshot({ path: '/tmp/wc-t6-logs/shared-none-phone.png' });
+  await picker.selectOption('owner/shared');
+  await expect.poll(async () => (await settings(page)).shared_tools_repo).toBe('owner/shared');
+  await page.reload();
+  await expect(picker).toHaveValue('owner/shared');
+  if (test.info().project.name === 'chromium') await page.screenshot({ path: '/tmp/wc-t6-logs/shared-chosen-phone.png' });
+  await picker.selectOption('');
+  await expect.poll(async () => (await settings(page)).shared_tools_repo).toBe(null);
 });
