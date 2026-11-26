@@ -74,3 +74,17 @@ test('non-directory tools path and per-tool read errors', async () => {
   fs.promises.readFile=async (...args)=>{if(args[0]===path.join(dir,'tool.json')) throw Object.assign(new Error('permission denied'),{code:'EACCES'}); return original(...args);};
   try { await fs.promises.writeFile(path.join(dir,'tool.json'),'{}'); const rows=await f.readToolsDir(root,'project'); assert.equal(rows[0].status,'invalid'); assert.equal(rows[0].reason,'permission denied'); } finally { fs.promises.readFile=original; }
 });
+test('key declarations and store choice', () => {
+  const keys=['TOKEN','OTHER']; const result=f.validateToolJson('weather',{...script,keys});
+  assert.deepEqual(result.tool.keys,keys); assert.notEqual(result.tool.keys,keys);
+  assert.deepEqual(f.validateToolJson('weather',script).tool.keys,[]);
+  for (const keys of [null,{},[],Array(21).fill('A'),['A','A'],['1BAD'],['HOME'],[1]]) assert.equal(f.validateToolJson('weather',{...script,keys}).reason,'tool.json has an invalid "keys"');
+  assert.equal(f.validateToolJson('weather',{name:'weather',description:'x',kind:'server',start:['sh'],keys:['TOKEN']}).reason,"keys for server tools aren't supported yet");
+  assert.deepEqual(f.validateToolJson('weather',{name:'weather',description:'x',kind:'server',start:['sh']}).tool.keys,[]);
+  assert.equal(f.toolKeyStore({source:'shared'},false),'shared'); assert.equal(f.toolKeyStore({source:'project'},true),'shared'); assert.equal(f.toolKeyStore({source:'project'},false),'project');
+});
+
+test('keyed bridge arguments carry names and store only', () => {
+  const rows = [{ dir: '/tool', tool: { keys: ['TOKEN', 'OTHER'] }, key_store: 'shared' }];
+  assert.deepEqual(f.bridgeEntry('/project', rows, { stateDir: '/state' }).entry.args.slice(1), ['--project-dir', '/project', '--state-dir', '/state', '--tool', '/tool', '--key-store', 'shared', '--key', 'TOKEN', '--key', 'OTHER']);
+});

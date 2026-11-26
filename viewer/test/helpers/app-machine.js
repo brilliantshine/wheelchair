@@ -36,6 +36,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
   const planReplies = {};
   let keptUploads;
   const projectToolsReplies = {};
+  const sharedKeysReplies = {};
   let usageReply = { status: 200, delay: 0, reading: null };
   let refreshDelay = 0;
   let uploadsDir = options.uploadsDir;
@@ -86,7 +87,13 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     const write = ['POST', 'PUT'].includes(request.method);
     const input = write ? await readBody(request) : {};
     calls.push({ method: request.method, path: url.pathname, body: input });
-    if (request.method === 'POST' && /^\/v1\/project-tools\/(read|save|remove-key)$/.test(url.pathname)) {
+    if (request.method === 'POST' && /^\/v1\/shared-keys\/(read|save|remove)$/.test(url.pathname)) {
+      const reply = sharedKeysReplies[url.pathname.split('/').pop()] || { status: 200, body: {} };
+      response.writeHead(reply.status, { 'content-type': 'application/json' });
+      response.end(reply.raw || JSON.stringify(reply.body));
+      return;
+    }
+    if (request.method === 'POST' && /^\/v1\/project-tools\/(read|save|remove-key|key-status)$/.test(url.pathname)) {
       const reply = projectToolsReplies[url.pathname.split('/').pop()] || { status: 200, body: {} };
       if (reply.delay) await new Promise((resolve) => setTimeout(resolve, reply.delay));
       if (reply.raw !== undefined) { response.writeHead(reply.status || 200); return response.end(reply.raw); }
@@ -183,7 +190,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     planReplies,
     get keptUploads() { return keptUploads; },
     set keptUploads(value) { keptUploads = value; },
-    projectToolsReplies,
+    projectToolsReplies, sharedKeysReplies,
     status,
     get dropNextStart() { return dropNextStart; },
     set dropNextStart(value) { dropNextStart = value === true ? 1 : Number(value) || 0; },

@@ -82,17 +82,31 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   const write = ['POST', 'PUT', 'DELETE'].includes(request.method);
   const body = write ? await readBody(request) : {};
   if (request.method === 'POST' && bits.length === 2 && bits[0] === 'project-tools' &&
-      ['read', 'save', 'remove-key', 'unity-prep', 'windows-status'].includes(bits[1])) {
+      ['read', 'save', 'remove-key', 'key-status', 'unity-prep', 'windows-status'].includes(bits[1])) {
     if (!body || typeof body.path !== 'string') return send(response, 400, { error: 'path is required' });
     const { machine, ...input } = body;
     const name = typeof machine === 'string' && machine ? machine : 'hub';
-    if (bits[1] === 'read') {
+    if (bits[1] === 'read' || bits[1] === 'key-status') {
       const config = await settings.load(hub);
       delete input.shared_tools;
       if (config.shared_tools_repo) input.shared_tools = { repo: config.shared_tools_repo, candidates: config.saved_dirs.filter(entry => entry.machine === name).map(entry => entry.path) };
     }
     try {
       const result = await hub.client.passThrough(name, `/v1/project-tools/${bits[1]}`, 'POST', input, 120_000);
+      return send(response, result.status, result.body);
+    } catch (error) {
+      if (error.status === 404 && error.message === `unknown machine: ${name}`) return send(response, 404, { error: error.message });
+      return send(response, 504, { error: error.message === 'machine timeout' ? 'machine timeout' : error.message === 'machine returned invalid JSON' ? error.message : 'machine unavailable' });
+    }
+  }
+  if (request.method === 'POST' && bits.length === 2 && bits[0] === 'shared-keys' && ['read', 'save', 'remove'].includes(bits[1])) {
+    const { machine, ...input } = body || {};
+    const name = typeof machine === 'string' && machine ? machine : 'hub';
+    const config = await settings.load(hub);
+    delete input.shared_tools;
+    if (config.shared_tools_repo) input.shared_tools = { repo: config.shared_tools_repo, candidates: config.saved_dirs.filter(entry => entry.machine === name).map(entry => entry.path) };
+    try {
+      const result = await hub.client.passThrough(name, `/v1/shared-keys/${bits[1]}`, 'POST', input, 120_000);
       return send(response, result.status, result.body);
     } catch (error) {
       if (error.status === 404 && error.message === `unknown machine: ${name}`) return send(response, 404, { error: error.message });

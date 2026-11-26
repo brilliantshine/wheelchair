@@ -45,6 +45,9 @@ agents own neither tmux nor the machine secret.
 | `lib/project-mcp.js` | Reads project MCP servers (including the `wheelchair.windows` marks) and exposes shared document and entry validation. |
 | `lib/project-tools.js` | Reads and saves project tools and manages stored keys through GitHub PRs. |
 | `lib/project-keys.js` | Shared project key references, identity, storage and launch selection. |
+| `lib/shared-keys.js` | Machine-local shared key storage. |
+| `lib/shared-keys-page.js` | Shared key listing, validation and changes. |
+| `lib/key-redact.js` | Redacts tool key values from output. |
 | `lib/env-launch.js` | Session key launcher: reads and deletes the mode-600 JSON env file, then execs the CLI; never prints values. |
 | `lib/project-programs.js` | Synchronous check that each project stdio server's program exists, for the thread's project-tools lines. |
 | `lib/limits.js` | Pure exhausted-window reset calculation. |

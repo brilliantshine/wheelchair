@@ -2409,13 +2409,64 @@
     const message = h('p', { class: 'hint', role: 'status' });
     select.addEventListener('change', async () => {
       select.disabled = true;
-      try { const result = await api('/settings/preferences', { method: 'PUT', body: { shared_tools_repo: select.value || null } }); data.shared_tools_repo = result.shared_tools_repo; message.textContent = 'Saved'; }
+      try { const result = await api('/settings/preferences', { method: 'PUT', body: { shared_tools_repo: select.value || null } }); data.shared_tools_repo = result.shared_tools_repo; message.textContent = 'Saved'; readKeys(); }
       catch (error) { select.value = data.shared_tools_repo || ''; message.textContent = error.message; }
       finally { select.disabled = false; }
     });
+    const machine = h('select', { id: 'shared-keys-machine', 'aria-label': 'Machine' });
+    const keyHost = h('section', { class: 'pt-keys' });
+    let revision = null, sequence = 0;
+    async function readKeys() {
+      const seq = ++sequence, selected = machine.value || 'hub';
+      try {
+        const result = await api('/shared-keys/read', { method: 'POST', body: { machine: selected } });
+        if (seq !== sequence) return;
+        revision = result.revision;
+        paintKeys(result.keys || [], result.notes || []);
+      } catch (error) { if (seq === sequence) keyHost.replaceChildren(h('p', { class: 'pt-warn', text: error.body?.reason || error.message })); }
+    }
+    async function change(action, payload, errorEl) {
+      errorEl.textContent = '';
+      try {
+        const result = await api('/shared-keys/' + action, { method: 'POST', body: { machine: machine.value || 'hub', revision, ...payload } });
+        revision = result.revision;
+        await readKeys();
+      } catch (error) {
+        const reason = error.body?.reason || error.body?.error || error.message;
+        if (error.status === 409) { await readKeys(); keyHost.prepend(h('p', { class: 'pt-warn', role: 'alert', text: reason })); }
+        else errorEl.textContent = reason;
+      }
+    }
+    function paintKeys(keys, notes) {
+      const rows = keys.map(key => {
+        const value = h('input', { type: 'password', autocomplete: 'off', 'aria-label': 'Value for ' + key.name, placeholder: key.stored ? 'New value' : 'Value' });
+        const error = h('p', { class: 'inline-err', role: 'alert' });
+        const set = h('button', { type: 'button', text: key.stored ? 'Replace' : 'Set', onclick: () => { if (!value.value) { error.textContent = 'Enter a value.'; return; } change('save', { keys: { [key.name]: value.value } }, error); } });
+        const remove = key.stored && h('button', { type: 'button', text: 'Remove', onclick: () => change('remove', { name: key.name }, error) });
+        return h('div', { class: 'pt-key', 'data-key': key.name },
+          h('div', { class: 'pt-key-head' }, h('span', { class: 'mono', text: key.name }), h('span', { class: 'pt-chip ' + (key.stored ? 'set' : 'unset'), text: key.stored ? 'set' : 'not set' }), key.tools?.length && h('span', { class: 'hint', text: 'used by ' + key.tools.join(', ') })),
+          key.stored && key.folder_usable === false && h('p', { class: 'pt-warn', text: "can't be used by folder tools: " + key.reason }),
+          h('div', { class: 'pt-key-ctl' }, value, set, remove), error);
+      });
+      const name = h('input', { type: 'text', autocomplete: 'off', 'aria-label': 'New key name', placeholder: 'Key name' });
+      const value = h('input', { type: 'password', autocomplete: 'off', 'aria-label': 'New key value', placeholder: 'Value' });
+      const error = h('p', { class: 'inline-err', role: 'alert' });
+      keyHost.replaceChildren(h('h2', { text: 'Shared keys on this machine' }),
+        h('p', { class: 'hint', text: 'Key values are stored on this machine and never shown again. Other machines need their own keys entered.' }),
+        h('div', { class: 'pt-keylist' }, rows),
+        h('div', { class: 'pt-addkey' }, name, value, h('button', { type: 'button', text: 'Add a key', onclick: () => change('save', { keys: { [name.value]: value.value } }, error) })), error,
+        ...notes.map(text => h('p', { class: 'hint', text })));
+    }
+    machine.addEventListener('change', readKeys);
+    api('/new-thread?machine=hub').then(result => {
+      machine.replaceChildren(...(result.machines || ['hub']).map(name => h('option', { value: name, text: name })));
+      machine.value = result.machine || 'hub';
+      return readKeys();
+    }).catch(error => { keyHost.textContent = error.message; });
     return h('div', { class: 'pt pt-shared' },
       h('div', { class: 'pt-picker' }, h('label', {}, h('span', { text: 'Shared tools project' }), select)),
-      h('p', { class: 'hint', text: 'To add or change a shared tool, ask in a thread in the shared tools project.' }), message);
+      h('p', { class: 'hint', text: 'To add or change a shared tool, ask in a thread in the shared tools project.' }), message,
+      h('div', { class: 'pt-picker' }, h('label', {}, h('span', { text: 'Machine' }), machine)), keyHost);
   }
 
   const BLOCKS = {

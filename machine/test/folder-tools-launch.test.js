@@ -251,7 +251,7 @@ test('shell instructions require a usable script on Kimi, Pi or sandboxed Codex 
   const line = `Folder tools: this session can't call them through MCP. Run \`node ${path.resolve(__dirname, '../..')}/viewer/app/wc.js tool list\` to see them and \`node ${path.resolve(__dirname, '../..')}/viewer/app/wc.js tool run <name> --input '<json>'\` to run a script tool; give that shell command a timeout longer than the tool's timeout_seconds (default 120 s).`;
   for (const options of fallback) {
     const session = await f.start(options);
-    assert.doesNotMatch(await fs.readFile(f.promptPath(session.name), 'utf8'), /Folder tools:/);
+    assert.match(await fs.readFile(f.promptPath(session.name), 'utf8'), /Folder tools:/);
   }
   await putTool(f.worktree, 'script', 'Project script');
   for (const options of fallback) {
@@ -517,7 +517,7 @@ test('agent tools endpoint and wc tool list use the session pin', async t => {
     assert.equal(denied.status, 401);
     const response = await request(session.token);
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { worktree: f.worktree, shared_copy: session.shared_tools.copy });
+    assert.deepEqual(await response.json(), { worktree: f.worktree, shared_copy: session.shared_tools.copy, keyed_unavailable: null });
     const result = await promisify(execFile)(process.execPath, [path.join(__dirname, '../../viewer/app/wc.js'), 'tool', 'list'], {
       env: { ...process.env, WHEELCHAIR_MACHINE_ORIGIN: origin, WHEELCHAIR_SESSION_TOKEN: session.token },
       timeout: 5000,
@@ -525,5 +525,77 @@ test('agent tools endpoint and wc tool list use the session pin', async t => {
     assert.match(result.stdout, /shared/);
   } finally {
     await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('shell-only sessions report keyed tools and include the starting clause', async t => {
+  const f = await fixture(t);
+  for (const name of ['first', 'second']) { const dir = await putTool(f.worktree, name, name); const file = path.join(dir, 'tool.json'); await fs.writeFile(file, JSON.stringify({ ...(await readJson(file)), keys: ['TOKEN'] })); }
+  for (const options of [{cli:'kimi'}, {cli:'pi'}, {cli:'codex',mode:'sandboxed'}]) {
+    const session = await f.start(options), lines = session.project_tools.keyed[session.name];
+    assert.equal(lines.length, 2); assert.deepEqual(lines.map(line => line.text), ['first','second'].map(name => `tool ${name} needs keys, which ${connectors.machine(session.cli).keyedToolsReason(session)}`)); assert.doesNotMatch(await f.command(), /tool-bridge\.js/);
+    assert.ok((await fs.readFile(f.promptPath(session.name),'utf8')).includes(` Tools that need keys aren't available in this session (${connectors.machine(session.cli).keyedToolsReason(session)}).`));
+  }
+});
+
+async function keyedTool(worktree, name, keys=['TOKEN'], kind='script') {
+  const dir=await putTool(worktree,name,name,kind), file=path.join(dir,'tool.json');
+  await fs.writeFile(file,JSON.stringify({...await readJson(file),keys})); return dir;
+}
+
+test('keyed discovery omits missing keys and keeps secrets out of launch artifacts', async t => {
+  const {projectIdentity,writeKeyStore}=require('../lib/project-keys'); const f=await fixture(t); git(f.worktree,'init');
+  const dir=await keyedTool(f.worktree,'secret');
+  const missing=await f.start({cli:'claude'}); assert.ok(!missing.command.includes('--mcp-config')); assert.equal(missing.project_tools.folder[0].text,'tool secret needs key TOKEN, not set on this machine');
+  const value='sentinelvalue123'; await writeKeyStore(f.stateDir,await projectIdentity(f.worktree),{set:{TOKEN:value}});
+  for(const cli of ['claude','codex']) {
+    const session=await f.start({cli}); const artifacts=[await f.command(),JSON.stringify(session.command),await fs.readFile(f.promptPath(session.name),'utf8')];
+    if(cli==='claude') { const config=await f.config(session); assert.ok(config['wheelchair-tools'].args.includes(dir)); artifacts.push(JSON.stringify(config)); }
+    else assert.match(artifacts[0],/tool-bridge/);
+    for(const artifact of artifacts) assert.ok(!artifact.includes(value));
+  }
+});
+
+test('shared project uses shared store and missing shared tool identifies its source', async t => {
+  const {writeSharedKeys}=require('../lib/shared-keys'); const f=await fixture(t); const remote=await sharedRepo(f);
+  await keyedTool(remote.source,'shared'); git(remote.source,'add','.wheelchair'); git(remote.source,'commit','-m','keyed'); git(remote.source,'push','origin','main');
+  const missing=await f.start({cli:'claude',choice:remote.choice}); assert.equal(missing.project_tools.folder[0].text,'shared tool shared needs key TOKEN, not set on this machine'); assert.ok(!missing.command.includes('--mcp-config'));
+  git(f.worktree,'init'); git(f.worktree,'remote','add','origin',origin); git(f.worktree,'config',`url.file://${remote.bare}.insteadOf`,origin);
+  const dir=await keyedTool(f.worktree,'own'); await writeSharedKeys(f.stateDir,{set:{TOKEN:'sharedvalue'}});
+  const own=await f.start({cli:'claude',choice:remote.choice}); assert.equal(own.shared_tools.own,true);
+  const args=(await f.config(own))['wheelchair-tools'].args; assert.ok(args.includes(dir)); assert.equal(args[args.indexOf('--key-store')+1],'shared');
+});
+
+test('keyed server is excluded while keyless server connects', async t => {
+  const f=await fixture(t); await keyedTool(f.worktree,'bad',['TOKEN'],'server'); await putTool(f.worktree,'good','good','server');
+  const session=await f.start({cli:'claude'}), entries=await f.config(session);
+  assert.equal(entries.bad,undefined); assert.ok(entries.good); assert.match(session.project_tools.folder[0].text,/keys for server tools aren't supported yet/);
+});
+
+test('agent routes report key status and sandbox restriction without values', async t => {
+  const {projectIdentity,writeKeyStore}=require('../lib/project-keys'); const f=await fixture(t); git(f.worktree,'init');
+  await keyedTool(f.worktree,'secret',['SET','MISSING','BAD']); await writeKeyStore(f.stateDir,await projectIdentity(f.worktree),{set:{SET:'sentinelvalue',BAD:'short'}});
+  const unrestricted=await f.start(), sandbox=await f.start({mode:'sandboxed'}); const server=http.createServer((req,res)=>f.machine.handle(req,res)); server.listen(0,'127.0.0.1'); await once(server,'listening');
+  try {
+    const request=async (session,route)=>{const response=await fetch(`http://127.0.0.1:${server.address().port}/v1/agent/${route}`,{method:'POST',headers:{'x-wheelchair-session-token':session.token},body:'{}',signal:AbortSignal.timeout(4000)}); assert.equal(response.status,200); return response.json();};
+    assert.equal((await request(unrestricted,'tools')).keyed_unavailable,null); assert.equal((await request(sandbox,'tools')).keyed_unavailable,connectors.machine('codex').keyedToolsReason(sandbox));
+    const result=await request(unrestricted,'tool-keys'); assert.ok(!JSON.stringify(result).includes('sentinelvalue')); assert.deepEqual(result.tools[0].keys,[{name:'SET',set:true,reason:null},{name:'MISSING',set:false,reason:'not set on this machine'},{name:'BAD',set:false,reason:'value too short (under 8 characters)'}]);
+  } finally { await new Promise(resolve=>server.close(resolve)); }
+});
+
+test('shell-only keyed lines survive other sessions and disappear after end', async t => {
+  const f=await fixture(t); await keyedTool(f.worktree,'first'); await keyedTool(f.worktree,'second');
+  const a=await f.start({cli:'kimi'}), b=await f.start({cli:'pi'});
+  assert.equal(b.project_tools.keyed[a.name].length,2); assert.equal(b.project_tools.keyed[b.name].length,2);
+  f.machine.sessions[a.name].status='ended'; const c=await f.start({mode:'sandboxed'});
+  assert.equal(c.project_tools.keyed[a.name],undefined); assert.equal(c.project_tools.keyed[b.name].length,2);
+});
+
+test('starting prompt excludes keyed clause for keyless or hidden shared scripts', async t => {
+  const f=await fixture(t); await putTool(f.worktree,'shared','local'); const remote=await sharedRepo(f);
+  await keyedTool(remote.source,'shared'); git(remote.source,'add','.wheelchair'); git(remote.source,'commit','-m','keyed'); git(remote.source,'push','origin','main');
+  for(const options of [{cli:'kimi'},{mode:'sandboxed'}]) {
+    const plain=await f.start(options); assert.doesNotMatch(await fs.readFile(f.promptPath(plain.name),'utf8'),/Tools that need keys/);
+    const hidden=await f.start({...options,choice:remote.choice}); assert.doesNotMatch(await fs.readFile(f.promptPath(hidden.name),'utf8'),/Tools that need keys/); assert.deepEqual(hidden.project_tools.keyed[hidden.name],[]);
   }
 });
