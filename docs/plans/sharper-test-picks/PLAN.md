@@ -1,6 +1,6 @@
 ---
 slug: sharper-test-picks
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-25
 ---
 
@@ -37,6 +37,19 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ## Spec
 
 The law for this change is `CONTRIBUTING.md` at the merge-base; nothing here edits it.
+
+How the machine suite's time changes (S2): the one slow file becomes nine files that
+`node --test` runs side by side.
+
+```mermaid
+flowchart LR
+  A["connectors-model-roundtrip.test.js<br/>3 tests in a row, ~292 s"] --> B["helpers/model-roundtrip.js<br/>shared roundTrip"]
+  B --> C1["real connectors"]
+  B --> C2["6 invalid sixth-connector files"]
+  B --> C3["sixth with defaults"]
+  B --> C4["sixth with none defaults"]
+  C1 & C2 & C3 & C4 --> D["run in parallel<br/>suite well under 150 s"]
+```
 
 ### S1. Stale map check
 
