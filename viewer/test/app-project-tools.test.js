@@ -128,3 +128,29 @@ test('read forwards the configured shared project and this machine’s saved pat
   await api(ctx, '/project-tools/read', { method: 'POST', body: { path: '/project' } });
   assert.equal(Object.hasOwn(ctx.machine.calls.findLast(call => call.path === '/v1/project-tools/read').body, 'shared_tools'), false);
 });
+
+test('key status and shared key routes inject the chosen machine configuration without persisting values', async (t) => {
+  const ctx = await setup(); t.after(() => close(ctx));
+  await api(ctx, '/settings/preferences', { method: 'PUT', body: { shared_tools_repo: 'owner/tools' } });
+  const file = path.join(ctx.state, 'settings.json');
+  const config = JSON.parse(await fs.readFile(file, 'utf8'));
+  config.saved_dirs = [{ name: 'here', machine: 'hub', path: '/here' }, { name: 'other', machine: 'other', path: '/else' }];
+  await fs.writeFile(file, JSON.stringify(config));
+  const secret = 'unique-shared-key-secret-8273';
+  for (const action of ['read', 'save', 'remove']) {
+    const reply = { status: action === 'save' ? 409 : 200, body: action === 'save' ? { outcome: 'refused', reason: 'changed elsewhere, reload' } : { revision: 2, keys: [] } };
+    ctx.machine.sharedKeysReplies[action] = reply;
+    const result = await api(ctx, '/shared-keys/' + action, { method: 'POST', body: { machine: 'hub', revision: 1, keys: { TOKEN: secret }, shared_tools: { repo: 'bad' } } });
+    assert.deepEqual(result, reply);
+    const sent = ctx.machine.calls.findLast(c => c.path === '/v1/shared-keys/' + action).body;
+    assert.deepEqual(sent.shared_tools, { repo: 'owner/tools', candidates: ['/here'] });
+    assert.equal(sent.keys.TOKEN, secret);
+  }
+  ctx.machine.projectToolsReplies['key-status'] = { status: 200, body: { key_revision: 2, keys: [] } };
+  await api(ctx, '/project-tools/key-status', { method: 'POST', body: { path: '/p', machine: 'hub' } });
+  assert.deepEqual(ctx.machine.calls.findLast(c => c.path === '/v1/project-tools/key-status').body.shared_tools, { repo: 'owner/tools', candidates: ['/here'] });
+  assert.ok((await files(ctx.state)).every(content => !content.includes(secret)));
+  assert.equal((await api(ctx, '/shared-keys/read', { method: 'POST', body: { machine: 'missing' } })).status, 404);
+  ctx.machine.sharedKeysReplies.read = { status: 200, raw: 'invalid' };
+  assert.equal((await api(ctx, '/shared-keys/read', { method: 'POST', body: {} })).status, 504);
+});

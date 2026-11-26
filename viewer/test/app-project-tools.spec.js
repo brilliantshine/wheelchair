@@ -37,8 +37,9 @@ const readBody = (over = {}) => ({
 });
 
 // Stubs the picker and /project-tools/*; `replies` queues [status, body] for save/remove-key.
-async function stub(page, { read = readBody(), replies = [], gate = null, unity = [], unityGate = null, winStatus = null } = {}) {
-  const calls = { read: [], save: [], remove: [], unity: [], status: [], statusAt: [] };
+async function stub(page, { read = readBody(), replies = [], gate = null, unity = [], unityGate = null, winStatus = null, keyStatus = null } = {}) {
+  const calls = { read: [], save: [], remove: [], unity: [], status: [], statusAt: [], keyStatus: [] };
+  let latest = typeof read === 'object' ? read : readBody();
   await page.route('**/wheelchair/api/new-thread*', (route) => route.fulfill({ json: {
     machine: 'hub', machines: ['hub', 'node-2'], default_folder: '/tmp', saved: [{ name: 'alpha', path: '/tmp/proj-alpha' }, { name: 'beta', path: '/tmp/proj-beta' }], found: [], previous: [] } }));
   await page.route('**/wheelchair/api/project-tools/*', async (route) => {
@@ -49,6 +50,7 @@ async function stub(page, { read = readBody(), replies = [], gate = null, unity 
       const out = typeof read === 'function' ? await read(calls.read.length, body) : read;
       return Array.isArray(out) ? route.fulfill({ status: out[0], json: out[1] }) : route.fulfill({ json: out });
     }
+    if (kind === 'key-status') { calls.keyStatus.push(body); if (keyStatus) return route.fulfill({ json: await keyStatus(calls.keyStatus.length, body) }); return route.fulfill({ json: { key_revision: latest.key_revision ?? latest.token?.key_revision ?? 1, keys: latest.keys || [], key_info: latest.key_info || [], folder_tools: latest.folder_tools || { rows: [], notes: [] } } }); }
     if (kind === 'windows-status') {
       calls.status.push(body); calls.statusAt.push(Date.now());
       const out = winStatus ? await winStatus(calls.status.length, body) : null;
@@ -62,6 +64,7 @@ async function stub(page, { read = readBody(), replies = [], gate = null, unity 
     if (gate) await gate;
     const [status, json] = replies.shift() || [200, { outcome: 'saved', key_revision: 1, keys: ['API_KEY'], warnings: [] }];
     if (json === null) return route.abort();
+    if (status === 200 && json.keys) latest = { ...latest, keys: json.keys, key_revision: json.key_revision };
     return route.fulfill({ status, json });
   });
   return calls;
@@ -1546,4 +1549,30 @@ test('capture folder tool screens', async ({ page, browserName }) => {
   await page.locator('#pt-project').selectOption('/tmp/proj-beta');
   await expect(page.locator('.pt-folder-tools')).toContainText('No folder tools yet.');
   await capture('tools-empty-phone.png');
+});
+
+test('folder key status refresh preserves drafts and conflict retry uses the new revision', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const folder = { name: 'weather', source: 'project', kind: 'script', status: 'ok', key_missing: true, key_lines: ['needs key WEATHER_TOKEN, not set on this machine'] };
+  const info = { name: 'WEATHER_TOKEN', stored: true, folder_usable: false, reason: 'value too short', tools: ['weather'] };
+  const calls = await open(page, { read: readBody({ folder_tools: { rows: [folder], notes: [] }, key_info: [info] }), replies: [
+    [409, { outcome: 'refused', reason: 'changed elsewhere' }],
+    [200, { outcome: 'saved', key_revision: 3, keys: ['API_KEY', 'WEATHER_TOKEN'] }],
+  ], keyStatus: n => ({ key_revision: n + 1, keys: ['API_KEY', 'WEATHER_TOKEN'], key_info: [info], folder_tools: { rows: [{ ...folder, key_missing: n === 1, key_lines: n === 1 ? folder.key_lines : ['uses keys: not available to sandboxed Codex, Kimi or Pi'] }], notes: [] } }) });
+  await expect(page.getByText(folder.key_lines[0])).toBeVisible();
+  await expect(keyRow(page, 'WEATHER_TOKEN')).toContainText('used by weather');
+  await expect(keyRow(page, 'WEATHER_TOKEN')).toContainText("can't be used by folder tools: value too short");
+  await page.screenshot({ path: '/tmp/t3b-tools-phone.png' });
+  await tool(page, 'web').getByRole('button', { name: 'Edit web' }).click();
+  await page.getByLabel('URL', { exact: true }).fill('https://draft.example/mcp');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await keyRow(page, 'WEATHER_TOKEN').getByLabel('Value for WEATHER_TOKEN').fill('longvalue');
+  await keyRow(page, 'WEATHER_TOKEN').getByRole('button', { name: 'Set WEATHER_TOKEN' }).click();
+  await expect(page.locator('.pt-status')).toContainText('changed elsewhere; key status refreshed');
+  await expect(tool(page, 'web')).toContainText('https://draft.example/mcp');
+  await keyRow(page, 'WEATHER_TOKEN').getByLabel('Value for WEATHER_TOKEN').fill('longvalue');
+  await keyRow(page, 'WEATHER_TOKEN').getByRole('button', { name: 'Set WEATHER_TOKEN' }).click();
+  await expect(page.getByText(folder.key_lines[0])).toHaveCount(0);
+  await expect(tool(page, 'web')).toContainText('https://draft.example/mcp');
+  expect(calls.save[1].token.key_revision).toBe(2);
 });

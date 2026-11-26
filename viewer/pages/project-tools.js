@@ -306,16 +306,19 @@
       const toolsMode = r.mode === 'tools';
       if (r.notice) parts.push(h('p', { class: 'pt-notice', text: r.notice }));
       const folders = r.folder_tools || { rows: [], notes: [] };
-      const folderCards = (folders.rows || []).map(row => h('div', { class: 'pt-tool' },
+      els.folders = h('div', { class: 'pt-tools' });
+      function folderCards() { return (state.read.folder_tools?.rows || []).map(row => h('div', { class: 'pt-tool' },
         h('div', { class: 'pt-tool-head' }, h('h3', { text: row.name }),
           row.kind && h('span', { class: 'pt-chip', text: row.kind }),
           h('span', { class: 'pt-chip', text: row.source === 'project' ? 'this project' : 'shared' })),
-        h('p', { class: row.status === 'ok' && row.kind === 'script' ? 'pt-folder-good' : 'pt-warn', text: row.status === 'ok' ? (row.kind === 'server' ? "server tools don't work on Kimi, Pi or sandboxed Codex" : 'Working') : row.reason }),
-        row.note && h('p', { class: 'hint', text: row.note })));
+        !row.key_missing && h('p', { class: row.status === 'ok' && row.kind === 'script' ? 'pt-folder-good' : 'pt-warn', text: row.status === 'ok' ? (row.kind === 'server' ? "server tools don't work on Kimi, Pi or sandboxed Codex" : 'Working') : row.reason }),
+        row.note && h('p', { class: 'hint', text: row.note }),
+        (row.key_lines || []).map(line => h('p', { class: row.key_missing ? 'pt-warn' : 'hint', text: line })))); }
+      els.paintFolders = () => { const cards = folderCards(); els.folders.replaceChildren(...(state.read.folder_tools?.notes || []).map(text => h('p', { class: 'hint', text })), ...(cards.length ? cards : [h('p', { class: 'hint', text: 'No folder tools yet. Ask in a thread to make one for this project or the shared tools project.' })])); };
       parts.push(h('section', { class: 'pt-folder-tools' }, h('h2', { text: 'Folder tools' }),
         h('p', { class: 'hint', text: 'To add or change a folder tool, ask in a thread.' }),
-        h('div', { class: 'pt-tools' }, ...(folders.notes || []).map(text => h('p', { class: 'hint', text })),
-          ...(folderCards.length ? folderCards : [h('p', { class: 'hint', text: 'No folder tools yet. Ask in a thread to make one for this project or the shared tools project.' })]))));
+        els.folders));
+      els.paintFolders();
 
       if (toolsMode) {
         els.waiting = h('div', {});
@@ -944,6 +947,24 @@
       for (const fn of formState?.refreshers || []) fn();
     }
 
+    async function refreshKeyStatus(c) {
+      const { status, body } = await post('/project-tools/key-status', { machine: c.machine, path: c.path });
+      if (!fresh(c) || status !== 200 || !body) throw new Error("Couldn't refresh key status");
+      if (state.token) state.token.key_revision = body.key_revision;
+      state.keys = (body.keys || []).slice();
+      state.read.key_info = body.key_info || [];
+      const incoming = body.folder_tools?.rows || [];
+      for (const row of state.read.folder_tools?.rows || []) {
+        const updated = incoming.find(r => r.name === row.name && r.source === row.source);
+        if (updated) for (const field of ['keys', 'key_store', 'key_lines', 'key_missing']) {
+          if (Object.hasOwn(updated, field)) row[field] = updated[field]; else delete row[field];
+        }
+      }
+      els.paintFolders?.();
+      if (els.tools) paintTools();
+      for (const fn of formState?.refreshers || []) fn();
+    }
+
     async function send(extra) {
       setBusy(true);
       setStatus('Saving…');
@@ -952,7 +973,7 @@
       try {
         const { status: code, body } = await post('/project-tools/save', { machine: c.machine, path: c.path, token: state.token, ...extra });
         if (!fresh(c)) return false;
-        out = await handle(code, body, c);
+        out = await handle(code, body, c, extra.tools === null);
       } finally { setBusy(false); }
       return out;
     }
@@ -962,17 +983,17 @@
     }
 
     // Shows a save or remove reply. Returns true when the keys/tools were stored.
-    async function handle(code, body, c) {
+    async function handle(code, body, c, keyOnly = true) {
       const outcome = body && KNOWN_OUTCOMES.includes(body.outcome) ? body.outcome : null;
       if (!outcome) { setStatus(LOST, true); return false; }
       if (outcome === 'saved') {
-        applyKeys(body);
+        if (keyOnly) await refreshKeyStatus(c); else applyKeys(body);
         setStatus(['Saved', warningsList(body.warnings)].filter(Boolean));
         paintKeys(); paintSave();
         return true;
       }
       if (outcome === 'removed') {
-        applyKeys(body);
+        await refreshKeyStatus(c);
         setStatus('Key removed');
         paintKeys(); paintSave();
         return true;
@@ -998,7 +1019,10 @@
       }
       // refused
       const reason = body.reason || 'refused';
-      if (code === 409) {
+      if (code === 409 && keyOnly) {
+        await refreshKeyStatus(c);
+        setStatus('changed elsewhere; key status refreshed — try again', true);
+      } else if (code === 409) {
         await reloadThenShow([reason + '. The project was reloaded; make your change again.'], [reason + '.'], true, c);
       } else setStatus(reason, true);
       return false;
@@ -1009,12 +1033,12 @@
     function keyRowNames() {
       const set = new Set(state.keys);
       const refs = state.read?.token?.baseline ? Object.keys(state.read.references || {}) : [];
-      return [...new Set([...state.keys, ...refs])].sort((a, b) => a.localeCompare(b)).map((n) => [n, set.has(n)]);
+      return [...new Set([...state.keys, ...refs, ...(state.read?.key_info || []).map(k => k.name)])].sort((a, b) => a.localeCompare(b)).map((n) => [n, set.has(n)]);
     }
 
     function keyUsage(name) {
       if (!state.read?.token?.baseline) return 'unknown';
-      const users = own(state.read.references, name) || [];
+      const users = [...new Set([...(own(state.read.references, name) || []), ...((state.read.key_info || []).find(k => k.name === name)?.tools || [])])];
       return users.length ? 'used by ' + users.join(', ') : 'not used on main';
     }
 
@@ -1050,7 +1074,7 @@
         if (await setKey(name, value.value)) value.value = '';
       }, { 'aria-label': 'Set ' + name });
       const rm = isSet ? lockBtn('Remove', () => {
-        const users = own(state.read?.references, name) || [];
+        const users = [...new Set([...(own(state.read?.references, name) || []), ...((state.read?.key_info || []).find(k => k.name === name)?.tools || [])])];
         rm.hidden = true;
         confirmHost.hidden = false;
         confirmHost.replaceChildren(
@@ -1071,6 +1095,7 @@
         h('div', { class: 'pt-key-head' }, h('span', { class: 'mono', text: name }),
           h('span', { class: 'pt-chip ' + (isSet ? 'set' : 'unset'), text: isSet ? 'set' : 'not set' }),
           h('span', { class: 'hint', text: keyUsage(name) })),
+        (state.read?.key_info || []).find(k => k.name === name && k.stored && k.folder_usable === false) && h('p', { class: 'pt-warn', text: "can't be used by folder tools: " + (state.read.key_info.find(k => k.name === name).reason || '') }),
         h('div', { class: 'pt-key-ctl' }, value, setBtn, rm), err, confirmHost);
     }
 

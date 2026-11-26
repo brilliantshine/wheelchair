@@ -1231,3 +1231,37 @@ test.describe('one place for sign-in, usage and each draft', () => {
     await expect(status).toHaveText('Signed in');
   });
 });
+
+test('shared keys follow machine, show refusals and reload on revision conflicts', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/wheelchair/api/new-thread*', route => route.fulfill({ json: { machine: 'hub', machines: ['hub', 'node-2'] } }));
+  let revision = 1, saves = 0;
+  const reads = [];
+  await page.route('**/wheelchair/api/shared-keys/*', async route => {
+    const action = new URL(route.request().url()).pathname.split('/').pop(), body = route.request().postDataJSON();
+    if (action === 'read') {
+      reads.push(body.machine);
+      return route.fulfill({ json: { revision, keys: body.machine === 'hub' ? [
+        { name: 'MAPS_TOKEN', stored: true, folder_usable: false, reason: 'value too short', tools: ['maps'] },
+        { name: 'WEATHER_TOKEN', stored: false, folder_usable: null, tools: ['weather'] },
+      ] : [], notes: body.machine === 'node-2' ? ["couldn't read the shared tools: no copy"] : [] } });
+    }
+    if (++saves === 1) return route.fulfill({ status: 400, json: { outcome: 'refused', reason: 'value too short' } });
+    if (saves === 2) { revision = 2; return route.fulfill({ status: 409, json: { outcome: 'refused', reason: 'changed elsewhere, reload' } }); }
+    return route.fulfill({ json: { outcome: 'saved', revision: ++revision, keys: [] } });
+  });
+  await openPage(page, context, '/app/settings#shared-tools');
+  await expect(page.getByLabel('Shared tools project')).toBeEnabled();
+  const row = page.locator('[data-key="MAPS_TOKEN"]');
+  await expect(row).toContainText("can't be used by folder tools: value too short");
+  await expect(row).toContainText('used by maps');
+  await page.screenshot({ path: '/tmp/t3b-shared-phone.png' });
+  await row.getByLabel('Value for MAPS_TOKEN').fill('short');
+  await row.getByRole('button', { name: 'Replace' }).click();
+  await expect(row.getByRole('alert')).toHaveText('value too short');
+  await row.getByRole('button', { name: 'Replace' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'changed elsewhere, reload' })).toBeVisible();
+  await page.getByLabel('Machine', { exact: true }).selectOption('node-2');
+  await expect(page.getByText("couldn't read the shared tools: no copy")).toBeVisible();
+  expect(reads).toContain('node-2');
+});
