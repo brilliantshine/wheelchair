@@ -246,6 +246,7 @@ const poller = {
   }
 };
 module.exports = {
+  shellToolsOnly() { return true; },
   checkVersion: (service, executable) => module.exports.checkKimiVersion.call(service, executable),
   versionStatus(service, login) { const executable = resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } service.checkVersion('kimi'); return module.exports.kimiVersionStatus(service.kimiVersions.get(JSON.stringify([executable, mtime])), login); },
   launchPath: service => module.exports.kimiLaunchPath.call(service),
