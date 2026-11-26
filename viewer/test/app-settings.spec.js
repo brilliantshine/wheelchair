@@ -7,6 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { makeDir, startServer } = require('./helpers/server.js');
+const { runDir } = require('../../test-support/run-dir');
 const { openPage } = require('./helpers/app-views-setup.js');
 
 test.describe.configure({ mode: 'serial' });
@@ -629,19 +630,47 @@ test('models and preferences fits at 390px', async ({ page }) => {
   await noSideScroll(page);
 });
 
-test('shared tools picker saves a project and clears it', async ({ page }) => {
-  await page.route('**/wheelchair/api/new-thread*', route => route.fulfill({ json: { machines: ['hub'], saved: [{ name: 'shared-tools', path: '/tmp/shared-tools' }, { name: 'local', path: '/tmp/local' }], found: [], previous: [] } }));
-  await page.route('**/wheelchair/api/project-tools/read', route => route.fulfill({ json: { repo: route.request().postDataJSON().path === '/tmp/shared-tools' ? 'owner/shared' : null } }));
+async function sharedPickerRoutes(page, saved, lookup) {
+  await page.route('**/wheelchair/api/settings', async route => {
+    const response = await route.fetch(), body = await response.json();
+    await route.fulfill({ response, json: { ...body, saved_dirs: saved } });
+  });
+  await page.route('**/wheelchair/api/project-tools/read', lookup);
+}
+
+test('shared tools picker uses saved projects, resolves in parallel and retains a missing choice', async ({ page }) => {
+  const saved = [{ name: 'shared-tools', path: '/tmp/shared-tools', machine: 'hub' }, { name: 'local', path: '/tmp/local', machine: 'remote' }, { name: 'shared-again', path: '/tmp/shared-copy', machine: 'remote' }];
+  let pending = 0, parallel = true, release; const gate = new Promise(resolve => { release = resolve; });
+  await sharedPickerRoutes(page, saved, async route => {
+    const body = route.request().postDataJSON(); expect(body.repo_only).toBe(true);
+    if (++pending === 3) release();
+    await Promise.race([gate, new Promise(resolve => setTimeout(() => { parallel = false; resolve(); }, 1500))]);
+    await route.fulfill({ json: { repo: body.path === '/tmp/local' ? null : 'owner/shared' } });
+  });
+  await page.route('**/wheelchair/api/new-thread*', route => route.fulfill({ json: { machines: ['hub'], saved: [], found: [{ name: 'found', path: '/found' }], previous: ['/previous'] } }));
   await page.setViewportSize({ width: 390, height: 844 });
   await openPage(page, context, '/app/settings#shared-tools');
   const picker = page.getByLabel('Shared tools project');
-  await expect(picker.locator('option')).toContainText(['None', 'shared-tools', 'local (no GitHub origin)']);
-  if (test.info().project.name === 'chromium') await page.screenshot({ path: '/tmp/wc-t6-logs/shared-none-phone.png' });
+  await expect(picker.locator('option')).toContainText(['None', 'shared-tools (hub)', 'local (remote) (no GitHub origin)', 'shared-again (remote)']);
+  expect(pending).toBe(3); expect(parallel).toBe(true); await expect(picker.locator('option:disabled')).toHaveCount(1);
   await picker.selectOption('owner/shared');
   await expect.poll(async () => (await settings(page)).shared_tools_repo).toBe('owner/shared');
-  await page.reload();
-  await expect(picker).toHaveValue('owner/shared');
-  if (test.info().project.name === 'chromium') await page.screenshot({ path: '/tmp/wc-t6-logs/shared-chosen-phone.png' });
   await picker.selectOption('');
   await expect.poll(async () => (await settings(page)).shared_tools_repo).toBe(null);
+  await page.evaluate(async () => fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ shared_tools_repo: 'owner/gone' }) }));
+  await page.reload();
+  await expect(picker).toHaveValue('owner/gone'); await expect(picker.locator('option[value="owner/gone"]')).toHaveText('owner/gone');
+  await picker.selectOption('');
+});
+
+test('capture shared tools picker screens', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium' || !process.env.WHEELCHAIR_SCREENSHOTS);
+  await sharedPickerRoutes(page, [{ name: 'shared-tools', path: '/tmp/shared-tools', machine: 'hub' }], route => route.fulfill({ json: { repo: 'owner/shared' } }));
+  const capture = async name => { const file = path.join(runDir(), name); await page.screenshot({ path: file }); await fs.copyFile(file, path.join(process.env.WHEELCHAIR_SCREENSHOTS, name)); };
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPage(page, context, '/app/settings#shared-tools');
+  const picker = page.getByLabel('Shared tools project'); await expect(picker).toBeEnabled();
+  await picker.selectOption(''); await page.reload(); await expect(picker).toBeEnabled(); await capture('shared-none-phone.png');
+  await picker.selectOption('owner/shared'); await expect.poll(async () => (await settings(page)).shared_tools_repo).toBe('owner/shared');
+  await page.reload(); await expect(picker).toHaveValue('owner/shared'); await capture('shared-chosen-phone.png'); await picker.selectOption('');
 });
