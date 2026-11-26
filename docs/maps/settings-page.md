@@ -1,5 +1,15 @@
 # Settings page map
 
+**Historical map:** covered files changed since the commit below; do not rely on its line references without rechecking. Current Settings repaint and phone details are in `docs/plans/settings-solid/MAP.md`.
+
+## Current follow-up: Settings repaint and phone layout
+
+Checked against: `672764aeaa4a1170c7cd6d15af0cfb9673ced4e2` (origin/main). Files rechecked: `viewer/pages/settings.js`, `viewer/pages/settings.css`, `viewer/pages/app.css`, `viewer/pages/settings.html`, `viewer/pages/nav.js`, `viewer/server.js`, and the Settings, Accounts and Harnesses browser specs.
+
+Category hosts repaint independently (`viewer/pages/settings.js:2502-2525`). Usage answers can reattach the sign-in card within Accounts, while Usage bars and Lead order are sibling blocks (`viewer/pages/settings.js:1422-1437`, `viewer/pages/settings.js:1722-1734`, `viewer/pages/settings.js:11-14`). Phone layout, focus and scroll limits, and tests are mapped with evidence in `docs/plans/settings-solid/MAP.md`. Other material below remains historical and was not rechecked.
+
+## Historical snapshot
+
 Checked against: `92e0fa7897706dc1e3f561cee818a1c55f0e9361` (worktree HEAD; fetched origin/main is `8440ad7204dd9bd3448473043d396a011b554f3d`).
 Files covered: `viewer/pages/settings.html`, `viewer/pages/settings.js`, `viewer/pages/settings.css`, `viewer/pages/project-tools.js`, `viewer/pages/background.js`, `viewer/pages/background-format.js`, `viewer/app/settings.js`, `viewer/app/routes.js`, `viewer/app/state.js`, `viewer/app/background.js`, `viewer/pages/nav.js`, `viewer/pages/thread.js`, `viewer/pages/threads.js`, `viewer/pages/assistant-popup.js`, `protocol/sensitivity.md`, `protocol/app/assistant.md`, `viewer/test/`.
 
