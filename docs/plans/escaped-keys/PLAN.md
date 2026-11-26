@@ -174,6 +174,15 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 | mechanics | minor | Speed fixtures unpinned; no late-failure case | upheld | E1 pinned fixtures (a)-(c), work limit (Decision 8) |
 | mechanics | minor | Cut-edge tests could pass by dropping everything | upheld | Exact-output tests in Validation |
 
+### Round 2 — 2026-11-26
+
+**Lanes:** intent and mechanics; see start output.
+
+**Changed since Round 1:** E1 speed rewritten (work limit and withholding, pinned fixtures (o), (a)-(c); Decision 8); E2 rewritten (K4 trim kept, plus removal of cut-off spelling pieces; Decision 7); E4 wording (three layers a guarantee, backslash before a key); Validation (pinned four-layer fixture, backslash case, exact cut-edge outputs for `redactCapture` and `runScript`).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
