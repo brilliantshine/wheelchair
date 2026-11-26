@@ -44,6 +44,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 18 | Server tools with `keys` are refused by `validateToolJson`, so the launcher never starts them | The launcher re-validates; one gate covers every path | review-round-4 |
 | 19 | Supersedes 17: plain keys are replaced; if a key survives in any decoding (up to three rounds of JSON/backslash unescaping and percent-decoding), the stream is withheld; other transforms (base64, hashing, splitting) are the stated limit | One rule that ends the chase | review-round-5 |
 | 20 | Confirms 19: the redaction limit is common escapes (JSON/backslash, percent, up to three layers); base64, hashing and splitting are not caught and the guide forbids printing keys. IDEA.md "What good looks like" updated | Collin: common escapes, clear limit | idea-change |
+| 21 | Cut edges are trimmed by whole lines, not by a byte count | Keys contain no newline in any spelling, so this covers escaped keys at any cut | review-round-6 |
 
 ## Spec
 
@@ -65,7 +66,10 @@ behaves exactly as today.
   use that validator, such a tool is never started or connected, even if `keys` is added
   mid-session. Its status everywhere (session tool problems, `wc.js tool list`, the Tools
   page) is that reason, except that a shared tool hidden by a same-named project tool shows
-  `hidden` as today. It is still never started.
+  `hidden` as today. It is still never started. Session tool problems are worked out at agent
+  start, so a mid-session edit shows there from the next agent start. Until then a new start
+  of that server is refused by the launcher (reason on its stderr), and a server already
+  running keeps running as it was.
 
 ### K2. Where a tool's keys come from
 - A **project tool** (from the session's worktree) uses the project's key store, the one
@@ -82,7 +86,8 @@ behaves exactly as today.
   real API keys use). Any other stored value counts as not set, and the status gives the
   reason: `value too short (under 8 characters)`, `value too long` or `value has characters
   folder tools can't use (letters, digits and . _ ~ + / = - only)`. With these characters a
-  key can't span lines, and K4 can catch every way common encoders spell it.
+  key can't span lines, and K4's cut and decoding rules can rely on that. K4 states what is
+  not caught.
 - The Shared keys editor refuses an unusable value, with that same wording. The project key
   editor still accepts any non-empty value (`.mcp.json` servers may use short ones). It
   marks a stored value that folder tools can't use with `can't be used by folder tools:
@@ -122,13 +127,18 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
   2 MiB capture limit, and the last 64 KiB of stderr. Nothing is returned until the process
   has ended, whether it exits, times out or its pipes are closed by force. Then each capture
   is processed in this order:
-  1. **Cut edges.** Where a capture was cut (stdout at its limit, a stderr window that
-     starts mid-stream, or a pipe closed by force), the bytes within (longest key − 1) of
-     that cut are dropped, so no key fragment survives.
+  1. **Cut edges, by whole lines.** Where a capture was cut (stdout at its limit, a stderr
+     window that starts mid-stream, or a pipe closed by force), the partial line at that cut
+     is dropped: stdout back to its last newline, a stderr window up to and including its
+     first newline. A key, and any escaped spelling of it, never contains a raw newline (K2),
+     so no piece of a key survives a cut, however it was escaped. If the capture has no
+     newline at all, all of it is dropped. Where something was dropped, the text ends (or
+     starts) with `[output cut]`.
   2. **Plain keys.** Every occurrence of a key value is replaced with `[key <NAME>]`.
   3. **Disguised keys.** The text is decoded up to three times, in every order, with two
      decoders: JSON/backslash unescaping (`\uXXXX`, `\/` and the like) and percent-decoding
-     (`%XX`). If any decoded version contains a key value, that stream's whole text becomes
+     (`%XX`). Each decoder decodes every valid escape it finds and leaves anything else as it
+     is (a stray `100%` or a lone backslash never stops it). If any decoded version contains a key value, that stream's whole text becomes
      `[output withheld: it contained a key value]`. This catches .NET's `\u002B`, PHP's
      `\/`, URL encoding, a URL inside a URL, and escaped text logged again as JSON.
   4. **Cuts for the agent.** Only then come the 1 MiB result cut and the 4 KiB stderr tail.
@@ -168,7 +178,10 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
   - **How the CLI picks:** `/v1/agent/tools` adds `keyed_run: "machine" | "local"` from
     that same eligibility.
   - **Reading the result:** the CLI collects the whole response body as bytes and decodes
-    it as UTF-8 once, so a character split across chunks is never damaged.
+    it as UTF-8 once, so a character split across chunks is never damaged. If the connection
+    ends before the body is complete, or the body is not valid JSON, `run` exits non-zero
+    with `lost the connection to the machine before the tool's result arrived` and prints
+    no partial result.
   - **Lifetime:** the route kills the tool's process group if the request's connection
     closes before the tool ends (the CLI exiting or being killed), as the CLI's own exit
     handlers do for a local run.
@@ -202,7 +215,9 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
   its folder tools use the shared store, so the editor lists only its `.mcp.json` names.
 - After a **key-only** save or removal on the Tools page, only the key names and folder tool
   statuses are read again, so a `needs key` line clears without a reload. Unsaved
-  `.mcp.json` tool edits, Windows settings and other pending key values stay as they are.
+  `.mcp.json` tool edits, Windows settings and other pending key values stay as they are. The refresh also returns
+  the current `key_revision`, which the page uses for the next save, while keeping the
+  `.mcp.json` baseline its drafts were made against.
   This also applies when a key-only save is refused because the keys changed elsewhere: the
   page says so, refreshes the key names and statuses, and keeps the drafts. A save that also
   opens a `.mcp.json` pull request reloads the page as today.
@@ -227,7 +242,9 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
 `protocol/tools.md` replaces "keys are not supported yet" with: the `keys` field and an
 example, where each kind of tool's keys come from (K2), what reaches the agent and what
 doesn't (K3, including the `.mcp.json` caveat and the same-account limit in IDEA.md), output
-redaction, never writing a key into a tool's files, which agents can use keyed tools (K5),
+redaction and its limit (K4: what is caught, and that base64, hashing or splitting are not),
+the rule that a tool must never print or log a key in any form, never writing a key into a
+tool's files, which agents can use keyed tools (K5),
 and how to try one (K6), and that server tools can't have keys yet. The starting-instructions
 line for Kimi, Pi and sandboxed Codex (easy-tools S11) is unchanged, except that on
 sandboxed Codex it adds that keyed tools are unavailable there. It is also given on Kimi
@@ -247,7 +264,9 @@ makes it usable mid-session (K3).
   started by the launcher, while keyless servers still connect):
   `node --test machine/test/folder-tools.test.js machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js machine/test/project-keys.test.js machine/test/shared-keys.test.js` (shared-keys new).
 - K4 (redaction including a key split across chunks, at the 2 MiB capture limit and at the
-  1 MiB cut and in a forced-close or timed-out stream; plain keys replaced; withheld for
+  1 MiB cut and in a forced-close or timed-out stream, plain and escaped (a `\u`-escaped
+  key cut mid-way leaves nothing of it); a capture with no newline; plain keys replaced;
+  a `%2B` key in a stream that also holds a stray `100%`; withheld for
   `\u002B`, `\/`, `%2B`, `%252B` (a URL inside a URL) and a `JSON.stringify` of
   already-escaped text; a base64 form is not caught (the stated limit); non-ASCII values
   counted as not set; launch errors
@@ -256,15 +275,15 @@ makes it usable mid-session (K3).
 - K5 (per-AI availability, sandboxed Codex problems text, Kimi/Pi route and its refusal
   for other providers):
   `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/kimi.test.js machine/test/pi.test.js machine/test/name-guard.test.js machine/test/connectors-contract.test.js`, after regenerating `connectors/registry.json` with `node connectors/export.js` (committed). The route tests cover refusals for a reviewer, an assistant, a project lead and a non-Kimi/Pi session, and killing the process group when the connection closes.
-- K6 (including no session token, and a machine-run result with a multibyte character split
-  across chunks): `node --test viewer/test/wc-tool.test.js`.
+- K6 (including no session token, a machine-run result with a multibyte character split
+  across chunks, and a connection lost mid-body): `node --test viewer/test/wc-tool.test.js`.
 - K8 hint on Kimi/Pi when only a key is missing: `node --test machine/test/project-tools-service.test.js`.
 - K7 (including the shared tools project's own Tools page, switching machine in Shared keys,
   two saves on the same revision, unusable-value marking and refusals, folder-tool names in
   the project key editor (not on the shared project's page), status refresh after a save
   with a `.mcp.json` edit pending, a key-only save refused by a change in another tab keeping
-  drafts, a combined save still reloading, Shared keys on a machine with no shared copy yet): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js machine/test/project-tools.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
-- K8: `grep -n '"keys"' protocol/tools.md` finds the example, and `grep -n -i "do not support keys yet\|must wait for key support" protocol/tools.md` finds nothing. Then read the rendered guide (CONTRIBUTING.md: protocol documents are reviewed as rendered).
+  drafts and then succeeding on retry with the new revision, a combined save still reloading, Shared keys on a machine with no shared copy yet): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js machine/test/project-tools.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
+- K8: `grep -n '"keys"' protocol/tools.md` finds the example, `grep -n -i "never print or log a key" protocol/tools.md` finds the rule, and `grep -n -i "do not support keys yet\|must wait for key support" protocol/tools.md` finds nothing. Then read the rendered guide (CONTRIBUTING.md: protocol documents are reviewed as rendered).
 
 ### Mockups
 
@@ -383,9 +402,26 @@ makes it usable mid-session (K3).
 
 ### Round 6 — 2026-11-25
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 5:** K4 rewritten (whole-capture redaction: cut edges, plain keys, decode-and-withhold, stated limit; Decisions 19-20, IDEA.md), K2 ASCII, K1 hidden precedence, K3 "next agent start", K5 result decoding, K7 key-only refresh and conflict, Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Byte-count edge drop too short for escaped keys | upheld | K4 step 1: trim to whole lines (Decision 21) |
+| intent | minor | K2 reason over-promises | upheld | K2 wording points to K4's limit |
+| intent | minor | K8 doesn't require the limit and the never-print rule | upheld | K8 and its grep |
+| mechanics | blocking | Trimming raw bytes; escaped fragment at the cut | upheld | Same fix as intent 1 |
+| mechanics | blocking | Decoder failure on mixed text | upheld | K4 step 3: decode valid escapes, leave the rest |
+| mechanics | major | Partial refresh keeps a stale revision | upheld | K7: refresh returns `key_revision` |
+| mechanics | major | Interrupted machine-run response | upheld | K5: clear failure, no partial result |
+| mechanics | minor | When the problems card shows a mid-session refusal | upheld | K1: next agent start; running server unchanged |
+
+### Round 7 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 6:** K4 step 1 (trim by whole lines; Decision 21) and step 3 (decoders on mixed text), K2 and K8 wording on the limit, K5 interrupted response, K7 revision in refresh, K1 problems timing, Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
