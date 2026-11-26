@@ -38,19 +38,33 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 The law for this change is `CONTRIBUTING.md` at the merge-base; nothing here edits it.
 
-### S1. Stale map check (`test-support/test/pick-tests.test.js`)
+### S1. Stale map check
 
-A new test reads the working `test-support/test-map.json` and the files tracked at the
-checkout's `HEAD` commit (`git ls-tree -r --name-only HEAD`; the index and working tree do not count), and fails listing every entry where: a `tests` item
-is neither one of the picker's suite names (`pick-tests.js:20-28`) nor a tracked file
-the picker recognises as a test (`viewer/test/*.test.js`, `viewer/test/*.spec.js`,
-`machine/test/*.test.js`); or the `glob`, compiled with the picker's glob rules
-(`pick-tests.js:35-43`), matches no tracked file. The message names each bad entry by its
-`glob` and the bad target. To share the glob and suite rules rather than copy them,
-`pick-tests.js` exports them (for example `module.exports = { glob, suites, testSuite }`
-when required, running the CLI only when it is the main module); the CLI's behaviour does
-not change. The map has no stale entries today (MAP.md), so the test passes on landing. Existing
-tests in that file keep passing unchanged.
+`test-support/pick-tests.js` exports a pure function `staleEntries(map, files)`: `map` is
+the parsed `test-map.json` array, `files` the tracked paths. It returns one item per
+problem, `{ glob, target, problem }`, for every entry where a `tests` item is neither one
+of the picker's suite names (`pick-tests.js:20-28`) nor a path in `files` the picker
+recognises as a test (`testSuite`, `pick-tests.js:31`) (`target` is that item), or where
+the `glob`, compiled with the picker's glob rules (`pick-tests.js:35-43`), matches no
+path in `files` (`target` is null). Additive and ordinary entries are both checked. To
+export it, the CLI body runs only when `require.main === module`; the CLI's behaviour and
+output do not change.
+
+Two new tests in `test-support/test/pick-tests.test.js`:
+
+- **Real tree:** reads the map and the file list from the same commit, `HEAD`, as the
+  picker does (`git show HEAD:test-support/test-map.json`, `git ls-tree -r --name-only
+  HEAD`), and asserts `staleEntries` returns nothing; on failure the message lists each
+  item's glob and target. The map has no stale entries today (MAP.md), so it passes on
+  landing.
+- **Fixture:** a map with one entry naming a missing test file, one naming an unknown
+  suite, one whose glob matches nothing, and one valid entry; asserts exactly the three
+  bad entries are returned, each with its glob and target.
+
+Existing tests in that file keep passing unchanged. A test deletion or rename that leaves
+a stale entry does not select the test-support suite in targeted picks (a changed test
+selects only itself, `pick-tests.js:59`), so the failure first shows in the full run
+before the push; that is the intended place.
 
 ### S2. Split the slow machine test file
 
@@ -92,14 +106,18 @@ The split files, run together with the command above on an idle machine, finish 
 under 150 s wall (S2), against about 292 s for the old file.
 
 Full-run check (IDEA "What good looks like", last bullet): the full run for the built
-commit, already started by the pusher, writes `summary.txt`. Its `machine` seconds are
-below its `viewer-browser` seconds, and the slowest suite's seconds are below 561
-(9 min 21 s).
+commit, already started by the pusher, writes `summary.txt`. `full-run.sh` runs
+`viewer-browser` alongside the other suites, which run one after another
+(`test-support/full-run.sh:84-105`), so the run's length is the larger of the
+`viewer-browser` seconds and the sum of every other suite's seconds. That length is under
+480 s (8 min, against 561 s before), and the `machine` seconds are below the
+`viewer-browser` seconds.
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| The S1 real-tree check lists files with `git ls-tree` without `-z`, so a tracked name with unusual characters is quoted and a glob for it could be reported stale | No such names in the tree; rare path (`realism.md`) | review-round-2 |
 
 ## Review Rounds
 
@@ -135,6 +153,12 @@ below its `viewer-browser` seconds, and the slowest suite's seconds are below 56
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Full-run check passes a run as long as before: summary has per-suite times and "slowest suite below 561" ignores the serial chain | downgraded | Minor: a validation weakness, it would not build the wrong thing or stop a worker. Fixed: length = max(browser, sum of the rest) < 480 s |
+| mechanics | minor | S1 tested only against a valid map | upheld | S1: `staleEntries` plus a fixture with three bad entries |
+| mechanics | minor | Rare path: `git ls-tree` quotes unusual file names | accepted-risk | Rare path; see Accepted Risks |
+| intent | minor | Full-run check doesn't measure the total | declined | Duplicate of the mechanics full-run finding, fixed there |
+| intent | minor | S1 read the working map against the HEAD tree; uncommitted entries fail falsely | upheld | S1 reads both at `HEAD` |
+| intent | minor | Decision 3 implies targeted picks catch stale entries; they don't | upheld | S1 says the failure first shows in the full run |
 
 ## Implementation Tasks
 
