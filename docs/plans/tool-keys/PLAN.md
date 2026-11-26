@@ -42,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | Usable key values: 8–4096 characters of letters, digits and `. _ ~ + / = -`; redaction also matches `/` written as `\/` (supersedes 14's value rule) | Removes escaped and multiline leaks in script output | review-round-3 |
 | 17 | Redaction matches every spelling where each key character is itself, `\uXXXX`, a backslash escape or `%XX` (supersedes 16's `\/` rule) | One rule instead of a growing list of encoders | review-round-4 |
 | 18 | Server tools with `keys` are refused by `validateToolJson`, so the launcher never starts them | The launcher re-validates; one gate covers every path | review-round-4 |
+| 19 | Supersedes 17: plain keys are replaced; if a key survives in any decoding (up to three rounds of JSON/backslash unescaping and percent-decoding), the stream is withheld; other transforms (base64, hashing, splitting) are the stated limit | One rule that ends the chase; pending Collin's answer on the limit | review-round-5 |
 
 ## Spec
 
@@ -62,7 +63,8 @@ behaves exactly as today.
   (`machine/lib/tool-launch.js`, which re-validates before every start) and `wc.js tool` all
   use that validator, such a tool is never started or connected, even if `keys` is added
   mid-session. Its status everywhere (session tool problems, `wc.js tool list`, the Tools
-  page) is that reason.
+  page) is that reason, except that a shared tool hidden by a same-named project tool shows
+  `hidden` as today. It is still never started.
 
 ### K2. Where a tool's keys come from
 - A **project tool** (from the session's worktree) uses the project's key store, the one
@@ -75,7 +77,7 @@ behaves exactly as today.
   the tools there are its project tools, but they use the shared key store, so a shared
   tool can be tried before merge.
 - A key is **set** for folder tools when the store has that name with a value that is
-  **usable**: 8 to 4096 characters, each a letter, a digit or one of `. _ ~ + / = -` (what
+  **usable**: 8 to 4096 characters, each an ASCII letter, an ASCII digit or one of `. _ ~ + / = -` (what
   real API keys use). Any other stored value counts as not set, and the status gives the
   reason: `value too short (under 8 characters)`, `value too long` or `value has characters
   folder tools can't use (letters, digits and . _ ~ + / = - only)`. With these characters a
@@ -108,24 +110,31 @@ behaves exactly as today.
   each machine-route run (K5). Replacing a value takes effect on the next run. Removing a key
   makes the next run return the missing-key text as an error and run nothing. Adding a key that was missing at
   session start makes the tool usable on Kimi and Pi at once (their `wc.js tool list` and
-  `run` read live), and through MCP from the next session, because the MCP tool list is
+  `run` read live), and through MCP from the next agent start (a new session, a resume or
+  an account switch, which rediscover tools), because the MCP tool list is
   fixed at start.
 
 ### K4. Hiding key values in output
-Redaction lives in `machine/lib/key-redact.js`. It works on the tool's own key values (K2).
-It replaces every occurrence of each value with `[key <NAME>]`, **in any spelling where each
-character appears as itself, as a JSON `\uXXXX` escape, as a backslash escape (`\/`), or
-as percent-encoding `%XX`**, with any mix of these and hex in either case. This one rule
-covers JSON encoders (including .NET's `\u002B` and PHP's `\/`) and URL encoding
-(`URLSearchParams`, `encodeURIComponent`), so no list of encoders has to be kept. The
-matcher is built per key, and its longest possible match is 6 bytes per key character. A tool with no keys gets no redaction, and its output is passed through
-exactly as today.
-- **Script tools** (`machine/lib/tool-run.js`): stdout and stderr each go through a
-  streaming redactor before the 2 MiB capture limit, the 1 MiB result cut and the 4 KiB
-  stderr tail. It holds back the last (longest possible match − 1) bytes until more arrives or the
-  stream ends. Where a capture limit stops reading, the held-back bytes are dropped, never
-  sent. No cut can leave part of a key showing. This hold-back is fine because a script's
-  result is only returned once it exits.
+Redaction lives in `machine/lib/key-redact.js` and works on the tool's own key values (K2).
+A tool with no keys gets no redaction, and its output is passed through exactly as today.
+- **Script tools** (`machine/lib/tool-run.js`): the runner keeps raw bytes: stdout up to the
+  2 MiB capture limit, and the last 64 KiB of stderr. Nothing is returned until the process
+  has ended, whether it exits, times out or its pipes are closed by force. Then each capture
+  is processed in this order:
+  1. **Cut edges.** Where a capture was cut (stdout at its limit, a stderr window that
+     starts mid-stream, or a pipe closed by force), the bytes within (longest key − 1) of
+     that cut are dropped, so no key fragment survives.
+  2. **Plain keys.** Every occurrence of a key value is replaced with `[key <NAME>]`.
+  3. **Disguised keys.** The text is decoded up to three times, in every order, with two
+     decoders: JSON/backslash unescaping (`\uXXXX`, `\/` and the like) and percent-decoding
+     (`%XX`). If any decoded version contains a key value, that stream's whole text becomes
+     `[output withheld: it contained a key value]`. This catches .NET's `\u002B`, PHP's
+     `\/`, URL encoding, a URL inside a URL, and escaped text logged again as JSON.
+  4. **Cuts for the agent.** Only then come the 1 MiB result cut and the 4 KiB stderr tail.
+- **The limit.** Redaction catches a key as written and under up to three layers of those
+  standard escapes. Other transforms are not caught: base64 (for example an HTTP Basic auth
+  header), hashing, or splitting the key up. The guide tells authors never to print or log a
+  key in any form (Decision 19).
 - **Launch errors** for a keyed tool (spawn failing in the bridge or the K5 route) report
   only `cannot start <program>: <error code>`, never the error's own message, which can echo
   environment values.
@@ -157,6 +166,8 @@ exactly as today.
     `connectors/`; `connectors/contract.js` and `connectors/README.md` list the new field.
   - **How the CLI picks:** `/v1/agent/tools` adds `keyed_run: "machine" | "local"` from
     that same eligibility.
+  - **Reading the result:** the CLI collects the whole response body as bytes and decodes
+    it as UTF-8 once, so a character split across chunks is never damaged.
   - **Lifetime:** the route kills the tool's process group if the request's connection
     closes before the tool ends (the CLI exiting or being killed), as the CLI's own exit
     handlers do for a local run.
@@ -188,9 +199,12 @@ exactly as today.
   folder tools that use the project store (K2), set or not set. Its usage and remove texts
   name those tools beside any `.mcp.json` servers. On the shared tools project's own page,
   its folder tools use the shared store, so the editor lists only its `.mcp.json` names.
-- After any key save or removal on the Tools page, only the folder tool statuses are read
-  again, so a `needs key` line clears without a reload. Unsaved `.mcp.json` tool edits,
-  Windows settings and pending key values on the page stay as they are.
+- After a **key-only** save or removal on the Tools page, only the key names and folder tool
+  statuses are read again, so a `needs key` line clears without a reload. Unsaved
+  `.mcp.json` tool edits, Windows settings and other pending key values stay as they are.
+  This also applies when a key-only save is refused because the keys changed elsewhere: the
+  page says so, refreshes the key names and statuses, and keeps the drafts. A save that also
+  opens a `.mcp.json` pull request reloads the page as today.
 - **Settings, Shared tools** (`viewer/pages/settings.js`): a Shared keys part under the
   shared tools picker, as in the mockup. Above it sits a machine chooser, the same control
   the project Tools page uses for its keys (not drawn in the mockup). Every read and write
@@ -232,19 +246,23 @@ makes it usable mid-session (K3).
   started by the launcher, while keyless servers still connect):
   `node --test machine/test/folder-tools.test.js machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js machine/test/project-keys.test.js machine/test/shared-keys.test.js` (shared-keys new).
 - K4 (redaction including a key split across chunks, at the 2 MiB capture limit and at the
-  1 MiB cut; `\uXXXX` in either hex case (including `\u002B`), `\/`, `%2F`/`%2b` and mixed
-  spellings; values outside K2's rule counted as not set; launch errors
+  1 MiB cut and in a forced-close or timed-out stream; plain keys replaced; withheld for
+  `\u002B`, `\/`, `%2B`, `%252B` (a URL inside a URL) and a `JSON.stringify` of
+  already-escaped text; a base64 form is not caught (the stated limit); non-ASCII values
+  counted as not set; launch errors
   without values; output unchanged without keys):
   `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js` (key-redact new).
 - K5 (per-AI availability, sandboxed Codex problems text, Kimi/Pi route and its refusal
   for other providers):
   `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/kimi.test.js machine/test/pi.test.js machine/test/name-guard.test.js machine/test/connectors-contract.test.js`, after regenerating `connectors/registry.json` with `node connectors/export.js` (committed). The route tests cover refusals for a reviewer, an assistant, a project lead and a non-Kimi/Pi session, and killing the process group when the connection closes.
-- K6 (including no session token): `node --test viewer/test/wc-tool.test.js`.
+- K6 (including no session token, and a machine-run result with a multibyte character split
+  across chunks): `node --test viewer/test/wc-tool.test.js`.
 - K8 hint on Kimi/Pi when only a key is missing: `node --test machine/test/project-tools-service.test.js`.
 - K7 (including the shared tools project's own Tools page, switching machine in Shared keys,
   two saves on the same revision, unusable-value marking and refusals, folder-tool names in
   the project key editor (not on the shared project's page), status refresh after a save
-  with a `.mcp.json` edit pending, Shared keys on a machine with no shared copy yet): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js machine/test/project-tools.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
+  with a `.mcp.json` edit pending, a key-only save refused by a change in another tab keeping
+  drafts, a combined save still reloading, Shared keys on a machine with no shared copy yet): `node --test viewer/test/app-project-tools.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js machine/test/project-tools.test.js`, `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js`.
 - K8: `grep -n '"keys"' protocol/tools.md` finds the example, and `grep -n -i "do not support keys yet\|must wait for key support" protocol/tools.md` finds nothing. Then read the rendered guide (CONTRIBUTING.md: protocol documents are reviewed as rendered).
 
 ### Mockups
@@ -346,12 +364,21 @@ makes it usable mid-session (K3).
 
 ### Round 5 — 2026-11-25
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: gpt / gpt-6.2-sol (claude unavailable); mechanics: gpt / gpt-6.2-sol; cross-family: no.
 
 **Changed since Round 4:** K4 any-spelling matcher (Decision 17), K1 validator refusal for keyed servers (Decision 18), K6 `check` wording, K7 (refresh keeps unsaved edits; Shared keys with no shared copy), K2 wording, Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Key in a URL inside a URL (`%252B`) escapes | upheld | K4: decode up to three rounds, then withhold (Decision 19) |
+| intent | minor | Combined save and PR must still reload | upheld | K7: refresh rule scoped to key-only saves |
+| intent | minor | "Next session" where resume also rediscovers | upheld | K3: "next agent start" |
+| mechanics | blocking | Escaped text re-escaped by `JSON.stringify` escapes | upheld | Same fix as intent 1 |
+| mechanics | blocking | Held bytes flushed on timeout or forced pipe close | upheld | K4: nothing returned until the end; cut edges dropped |
+| mechanics | major | Key-only conflict reload wipes drafts | upheld | K7: conflict keeps drafts |
+| mechanics | major | Machine-run result decoded per chunk | upheld | K5: decode whole body once |
+| mechanics | minor | Hidden vs refused status precedence | upheld | K1: `hidden` wins for display |
+| mechanics | minor | "Letter/digit" must be ASCII | upheld | K2: ASCII |
 
 ## Implementation Tasks
 
