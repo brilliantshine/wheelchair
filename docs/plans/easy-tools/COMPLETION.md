@@ -160,6 +160,16 @@ grep -rn "hidden by the project tool" machine viewer protocol   # no output
 
 ### Verification attempt 2: PASS (commit 42f8bde5)
 
-Verifier claude-opus-5-5: both gaps fixed, every Spec validation command passed, screens match the mockups apart from the plan's allowed differences. No rare paths accepted. Full run on the verified commit ():
-
+Verifier claude-opus-5-5: both gaps fixed, every Spec validation command passed, screens match the mockups apart from the plan's allowed differences. No rare paths accepted. Full run on the verified commit (`summary.txt`):
+```
+commit 42f8bde5e33d142bcac10a3595cb2367303021e1
+suite viewer-browser exit 0
+suite viewer-node exit 0
+suite machine exit 0
+suite test-support exit 0
+suite sensitivity exit 0
+suite codex exit 0
+suite install exit 0
+suite sudo-helper exit 0
+```
 No failures, so nothing had to be checked against main.
