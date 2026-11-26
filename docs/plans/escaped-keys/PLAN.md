@@ -286,7 +286,9 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | tricky: escaped-spelling matcher, cut edges, budget/fallback in `redactCapture`; tests; E4 guide sentence | `machine/lib/key-redact.js` (+ optional `machine/lib/key-spell.js` and its `machine/AGENTS.md` row), `machine/test/key-redact.test.js` (+ optional `key-redact-speed.test.js`), `protocol/tools.md:70`, `docs/plans/escaped-keys/reports/T1.md` | standard / gpt-6.1-terra | wc-ac4d5c6479fe-worker (t1-a1) | Spec Validation command; E4 greps; pick-tests | in progress |
 
 ## Log
 
 - After round 3, budget card: Collin chose Keep going (budget reset).
+- 2026-11-26 — T1 dispatched (standard, gpt-6.1-terra, attempt t1-a1).
