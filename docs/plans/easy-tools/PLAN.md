@@ -598,6 +598,7 @@ Filled by Stage 3. One row per worker brief.
 | T6b | Fixes for T6: folder listing never breaks the editor, program checks match launch, literal paths, picker from saved projects, missing tests | T6 files | standard / gpt-6.1-terra, effort xhigh (rung 1; asked for claude, hub sent gpt) | wc-7fac691ef321-worker-11 | done |
 | T7 | Guide `protocol/tools.md`, role pointers, README, routers (S5, S11) | `protocol/tools.md`, `protocol/app/{lead,sub-lead,worker}.md`, `README.md`, routers | standard / gpt-6.1-terra (asked for claude; hub sent gpt) | wc-7fac691ef321-worker-13 | done (nits in T8) |
 | T8 | Small corrections: server tools ordered by name (S8), connectors README, guide wording, role pointer blank lines | one statement of `machine/service.js`, one test, `connectors/README.md`, `protocol/tools.md`, `protocol/app/{lead,sub-lead,worker}.md` | standard / gpt-6.1-terra | wc-7fac691ef321-worker-14 | `node --test machine/test/folder-tools-launch.test.js machine/test/name-guard.test.js` | done |
+| R1 | Remediation 1: Antigravity bridge 260 s and guide deadlines (R1a); mockup hidden-tool wording (R1b) | `connectors/agy/machine.js`, `protocol/tools.md`, two strings, their tests | standard / gpt-6.1-terra | wc-7fac691ef321-worker-15 | see REMEDIATION-1.md | in progress |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -646,3 +647,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-25 — T6b accepted (band: bigger-scout): items 1-6 done; my re-run 64/64 node, 278/278 browser. No test for the project-fetch guard on the keys-only (`!destination`) path (the code path is guarded). Its report pasted about 13,000 lines of test output; I cut the pasted output down to the summary lines after merge.
 - 2026-11-25 — Choice: T8, test name "Codex orders shared and project servers by name after the bridge" (worker reported none).
 - 2026-11-25 — T8 accepted (band: scout): all four items as briefed; 21/21, the new ordering test watched failing on the unsorted code.
+- 2026-11-25 — Verification attempt 1 (claude-opus-5-5, commit 1a5669bd): FAIL, 2 gaps, no rare paths; full run on 1a5669bd passed (8 suites exit 0). The lead answered fix both, defer nothing. REMEDIATION-1.md: R1a Antigravity bridge `timeoutSeconds` 260 and the guide's deadlines; R1b the mockup's hidden-tool wording. Dispatched as one task R1 to worker 15 (gpt, standard).
