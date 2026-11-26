@@ -12,6 +12,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | File | Role |
 |---|---|
 | `server.js` | The whole server, with no runtime dependencies: routes, token and remember-cookie auth, graph validation, the layout pass, the app-hub glue, the agent-write contract, the lock and registry kept under the cache root. Its header comment is the route and error-code list |
+| `app/tool-cli.js` | Agent CLI commands to create, list, check and run folder tools. |
 | `app/state.js` | Hub-state paths, atomic JSON writes, per-file transaction queues, and thread persistence. `allThreads()` and `threadSnapshot(id)` serve shared, deep-frozen records from a stat-checked cache; code that mutates or saves reads with `thread(id)` (or clones the one record). |
 | `app/machine-client.js` | The authenticated client for machine-service routes, including JSON status and body pass-through. |
 | `app/cards.js`, `card.js` | Hub card handling, including hidden `resolve` and `retract` cards, and the agent-side card validator/CLI. |

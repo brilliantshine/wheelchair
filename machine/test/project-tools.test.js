@@ -24,8 +24,10 @@ async function fixture() {
 }
 test('reading from remote default branch via a private ref with FETCH_HEAD and tags untouched', async () => {
   const f = await fixture(); const fetchHead = path.join(f.repo, '.git', 'FETCH_HEAD'); await fs.writeFile(fetchHead, 'unchanged');
+  const refs = git('-C', f.repo, 'for-each-ref', '--format=%(refname):%(objectname)');
   const result = await f.tools.read({ path: f.repo }); assert.equal(result.body.mode, 'tools'); assert.equal(result.body.source.document.mcpServers.old.command, 'tool');
   assert.equal(await fs.readFile(fetchHead, 'utf8'), 'unchanged'); assert.equal(git('-C', f.repo, 'for-each-ref', '--format=%(refname)', 'refs/wheelchair/tools', 'refs/tags'), '');
+  assert.equal(git('-C', f.repo, 'for-each-ref', '--format=%(refname):%(objectname)'), refs);
 });
 test('temp-worktree commit, new-branch push and PR; two saves make two PRs', async () => {
   const f = await fixture(); const read = (await f.tools.read({ path: f.repo })).body; const before = await fs.readFile(path.join(f.repo, '.mcp.json'), 'utf8');
@@ -326,4 +328,139 @@ test('Windows marks read and save independently while preserving document keys',
   const latest = git('--git-dir', f.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/wc-tools/').split('\n').map(b => JSON.parse(git('--git-dir', f.remote, 'show', `${b}:.mcp.json`)));
   assert.ok(latest.some(d => !('wheelchair' in d)));
   git('-C', f.repo, 'remote', 'set-url', 'origin', f.remote); const keysOnly = (await tools.read({ path: f.repo })).body; assert.equal(keysOnly.wsl, true); assert.deepEqual(keysOnly.windows, []);
+});
+test('folder tools come from the default branch even with a different push destination', async () => {
+  const f = await fixture();
+  const base = path.join(f.repo, '.wheelchair', 'tools');
+  for (const [name, value] of Object.entries({ good: { name: 'good', description: 'ok', kind: 'script', inputs: {}, run: ['./run'] }, broken: { name: 'broken', description: 'bad', kind: 'server' }, absent: { name: 'absent', description: 'bad', kind: 'script', inputs: {}, run: ['./missing'] } })) {
+    await fs.mkdir(path.join(base, name), { recursive: true });
+    await fs.writeFile(path.join(base, name, 'tool.json'), JSON.stringify(value));
+  }
+  await fs.writeFile(path.join(base, 'good', 'run'), 'ok', { mode: 0o755 });
+  git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'tools'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  await fs.rm(path.join(base, 'good'), { recursive: true });
+  git('-C', f.repo, 'remote', 'set-url', '--push', 'origin', 'https://github.com/other/repo.git');
+  const read = (await f.tools.read({ path: f.repo })).body;
+  assert.equal(read.mode, 'keys-only');
+  assert.deepEqual(read.folder_tools.rows.map(r => [r.name, r.status]), [['absent', 'missing-program'], ['broken', 'invalid'], ['good', 'ok']]);
+  assert.match(read.folder_tools.rows[1].reason, /start/);
+  git('-C', f.repo, 'remote', 'set-url', 'origin', f.remote);
+  const local = (await f.tools.read({ path: f.repo })).body;
+  assert.deepEqual(local.folder_tools.notes, ['folder tools can only be listed for GitHub projects']);
+});
+test('shared folder copy, collision, and refresh notes', async () => {
+  const f = await fixture();
+  const shared = require('../lib/shared-tools');
+  const choice = { repo: 'owner/name', candidates: [f.repo] };
+  const local = await fixture();
+  git('-C', local.repo, 'remote', 'set-url', 'origin', local.remote);
+  const state = path.join(local.root, 'state');
+  let result = (await local.tools.read({ path: local.repo, shared_tools: { ...choice, candidates: [] } })).body.folder_tools;
+  assert.ok(result.notes.includes("the shared tools project isn't added on this machine"));
+  result = (await local.tools.read({ path: local.repo, shared_tools: choice })).body.folder_tools;
+  assert.ok(result.notes.includes('no shared copy on this machine yet'));
+  const id = await shared.identityFor(f.repo), root = path.join(state, 'shared-tools', id), hash = 'a'.repeat(40), copy = path.join(root, hash), dir = path.join(copy, '.wheelchair', 'tools', 'shared');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(root, 'last-refresh.json'), JSON.stringify({ at: 'now', ok: false, error: 'offline' }));
+  result = (await local.tools.read({ path: local.repo, shared_tools: choice })).body.folder_tools;
+  assert.ok(result.notes.includes('last refresh failed: offline'));
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'shared', description: 'ok', kind: 'server', start: ['node'] }));
+  const invalid = path.join(copy, '.wheelchair', 'tools', 'invalid'), missing = path.join(copy, '.wheelchair', 'tools', 'missing');
+  await fs.mkdir(invalid); await fs.writeFile(path.join(invalid, 'tool.json'), '{}');
+  await fs.mkdir(missing); await fs.writeFile(path.join(missing, 'tool.json'), JSON.stringify({ name: 'missing', description: 'missing', kind: 'server', start: ['wheelchair-absent'] }));
+  await fs.writeFile(path.join(root, 'current'), hash);
+  result = (await local.tools.read({ path: local.repo, shared_tools: choice })).body.folder_tools;
+  assert.equal(result.rows.find(row => row.name === 'shared').status, 'ok');
+  assert.equal(result.rows.find(row => row.name === 'invalid').status, 'invalid');
+  assert.equal(result.rows.find(row => row.name === 'missing').status, 'missing-program');
+  assert.equal(result.rows.find(row => row.name === 'shared').note, "not checked against this project's own tools");
+  assert.deepEqual((await f.tools.read({ path: f.repo, shared_tools: choice })).body.folder_tools.rows, []);
+  const projectDir = path.join(local.repo, '.wheelchair', 'tools', 'shared');
+  await fs.mkdir(projectDir, { recursive: true });
+  await fs.writeFile(path.join(projectDir, 'tool.json'), JSON.stringify({ name: 'shared', description: 'project', kind: 'server', start: ['node'] }));
+  git('-C', local.repo, 'add', '.wheelchair'); git('-C', local.repo, 'commit', '-qm', 'collision'); git('-C', local.repo, 'push', '-q', local.remote, 'main');
+  git('-C', local.repo, 'remote', 'set-url', 'origin', 'https://github.com/owner/name.git');
+  git('-C', local.repo, 'config', 'remote.origin.url', 'https://github.com/owner/other.git');
+  await fs.mkdir(path.join(local.root, 'owner'), { recursive: true });
+  await fs.cp(local.remote, path.join(local.root, 'owner', 'other.git'), { recursive: true });
+  result = (await local.tools.read({ path: local.repo, shared_tools: choice })).body.folder_tools;
+  assert.equal(result.rows.find(row => row.source === 'shared' && row.name === 'shared').status, 'hidden');
+});
+
+test('folder failures preserve editor and shared listing', async () => {
+  const f = await fixture();
+  const baseline = (await f.tools.read({ path: f.repo })).body;
+  const broken = createProjectTools({ stateDir: path.join(f.root, 'state'), commandAsync: (p, a, o) => a.includes('ls-tree') && a.includes('.wheelchair/tools/') ? Promise.reject(new Error('folder failure\nextra')) : f.runner(p, a, o) });
+  const result = (await broken.read({ path: f.repo })).body;
+  assert.equal(result.mode, baseline.mode); assert.deepEqual(result.source, baseline.source);
+  assert.deepEqual(result.folder_tools, { rows: [], notes: ["couldn't list folder tools: folder failure extra"] });
+  assert.equal(git('-C', f.repo, 'for-each-ref', '--format=%(refname)', 'refs/wheelchair'), '');
+});
+
+test('folder program checks use executable tree modes, absolute paths and PATH', async () => {
+  const f = await fixture(), base = path.join(f.repo, '.wheelchair', 'tools');
+  const programs = { executable: './run', plain: './run', absolute: process.execPath, bare: 'node', missing: 'wheelchair-no-such-program', 'star[abc]': './run' };
+  for (const [name, program] of Object.entries(programs)) {
+    const dir = path.join(base, name); await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name, description: 'test', kind: 'script', inputs: {}, run: [program] }));
+    if (program === './run') await fs.writeFile(path.join(dir, 'run'), 'run', { mode: name === 'plain' ? 0o644 : 0o755 });
+  }
+  const sibling = path.join(base, 'sibling'); await fs.mkdir(sibling);
+  await fs.writeFile(path.join(sibling, 'tool.json'), JSON.stringify({ name: 'sibling', description: 'test', kind: 'script', inputs: {}, run: ['../executable/run'] }));
+  const symlink = path.join(base, 'symlink'); await fs.mkdir(symlink);
+  await fs.writeFile(path.join(symlink, 'tool.json'), JSON.stringify({ name: 'symlink', description: 'test', kind: 'script', inputs: {}, run: ['./run'] }));
+  await fs.symlink('target', path.join(symlink, 'run')); await fs.writeFile(path.join(symlink, 'target'), 'ok', { mode: 0o755 });
+  git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'programs'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const rows = (await f.tools.read({ path: f.repo })).body.folder_tools.rows, byName = Object.fromEntries(rows.map(row => [row.name, row]));
+  assert.equal(byName.executable.status, 'ok'); assert.equal(byName.sibling.status, 'ok'); assert.equal(byName.symlink.status, 'ok'); assert.equal(byName.absolute.status, 'ok'); assert.equal(byName.bare.status, 'ok');
+  assert.equal(byName.missing.status, 'missing-program'); assert.equal(byName.plain.status, 'missing-program'); assert.match(byName.plain.reason, /not executable|isn't executable/);
+  assert.match(byName['star[abc]'].reason, /name/i);
+});
+
+test('repo-only read does not fetch or list tools', async () => {
+  const f = await fixture();
+  const fast = createProjectTools({ stateDir: path.join(f.root, 'state'), commandAsync: (p, a, o) => { if (p === 'gh' || a.includes('fetch') || a.includes('ls-tree')) throw new Error('unexpected expensive operation'); return f.runner(p, a, o); } });
+  assert.deepEqual((await fast.read({ path: f.repo, repo_only: true })).body, { repo: 'owner/name' });
+});
+
+
+test('shared listing failure preserves project rows and keys-only editor', async () => {
+  const f = await fixture(), shared = require('../lib/shared-tools');
+  const original = shared.findSharedProject;
+  shared.findSharedProject = async () => { throw new Error('shared failed\nsecond line'); };
+  try {
+    const choice = { repo: 'another/repo', candidates: [f.repo] };
+    const result = (await f.tools.read({ path: f.repo, shared_tools: choice })).body;
+    assert.equal(result.mode, 'tools'); assert.equal(result.source.document.mcpServers.old.command, 'tool');
+    assert.deepEqual(result.folder_tools.notes, ["couldn't list folder tools: shared failed second line"]);
+    git('-C', f.repo, 'remote', 'set-url', '--push', 'origin', 'https://github.com/other/repo.git');
+    const keys = (await f.tools.read({ path: f.repo, shared_tools: choice })).body;
+    assert.equal(keys.mode, 'keys-only'); assert.deepEqual(keys.folder_tools.notes, ["couldn't list folder tools: shared failed second line"]);
+  } finally { shared.findSharedProject = original; }
+});
+
+
+test('project listing failure keeps successfully discovered shared rows', async () => {
+  const f = await fixture(), shared = require('../lib/shared-tools'), folder = require('../lib/folder-tools');
+  const originals = { find: shared.findSharedProject, identity: shared.identityFor, newest: shared.newestCopy, discover: folder.discover };
+  shared.findSharedProject = async () => f.repo; shared.identityFor = async () => 'identity'; shared.newestCopy = () => '/copy';
+  folder.discover = async () => ({ rows: [{ name: 'shared', source: 'project', status: 'ok' }] });
+  try {
+    const broken = createProjectTools({ stateDir: path.join(f.root, 'state'), commandAsync: (p, a, o) => a.includes('ls-tree') && a.includes('.wheelchair/tools/') ? Promise.reject(new Error('bad tree')) : f.runner(p, a, o) });
+    const result = (await broken.read({ path: f.repo, shared_tools: { repo: 'another/repo', candidates: [f.repo] } })).body;
+    assert.equal(result.mode, 'tools'); assert.equal(result.source.document.mcpServers.old.command, 'tool');
+    assert.deepEqual(result.folder_tools.rows.map(row => [row.name, row.source]), [['shared', 'shared']]);
+    assert.deepEqual(result.folder_tools.notes, ["couldn't list folder tools: bad tree"]);
+  } finally { shared.findSharedProject = originals.find; shared.identityFor = originals.identity; shared.newestCopy = originals.newest; folder.discover = originals.discover; }
+});
+
+
+test('literal tool paths do not interpret wildcard folder names', async () => {
+  const f = await fixture(), dir = path.join(f.repo, '.wheelchair', 'tools', 'bad[abc]'); await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'bad[abc]', description: 'bad name', kind: 'server', start: ['node'] }));
+  git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'literal'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const calls = []; const tools = createProjectTools({ stateDir: path.join(f.root, 'state'), commandAsync: (p, a, o) => { if (a.includes('ls-tree') && a.some(v => v.startsWith('.wheelchair/tools/'))) calls.push(a); return f.runner(p, a, o); } });
+  const [row] = (await tools.read({ path: f.repo })).body.folder_tools.rows;
+  assert.equal(row.name, 'bad[abc]'); assert.match(row.reason, /name/i); assert.doesNotMatch(row.reason, /missing/i);
+  assert.ok(calls.length >= 2); assert.ok(calls.every(args => args.includes('--literal-pathspecs')));
 });

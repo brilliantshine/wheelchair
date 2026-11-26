@@ -34,8 +34,9 @@ module.exports = {
   command(input, session, worktree, context) {
     const settingsPath = path.join(context.stateDir, 'settings', `${session.name}.json`);
     const servers = {}, warnings = [];
-    if (context.tools && context.mcp) {
-      for (const [name, original] of Object.entries(context.mcp.servers)) {
+    const extras = context.tools ? context.extraServers || [] : [];
+    if (context.tools && (context.mcp || extras.length)) {
+      for (const [name, original] of [...Object.entries(context.mcp?.servers || {}), ...extras.map(({ name, entry }) => [name, entry])]) {
         const entry = Object.hasOwn(context.replaceEntries || {}, name) ? context.replaceEntries[name] : original;
         if (entry === null) continue;
         let reason, translated;
@@ -56,6 +57,7 @@ module.exports = {
           if (fields.some(value => value.includes('${'))) reason = 'uses ${...} that Antigravity cannot pass through';
           else translated = { command: entry.command, args: entry.args || [], env };
         }
+        if (!reason && name === 'wheelchair-tools' && extras.some(extra => extra.name === name && extra.folder === 'bridge')) translated.timeoutSeconds = 260;
         if (reason) warnings.push({ names: [name], text: `${serverLabel(name)}: skipped on Antigravity: ${reason}` });
         else Object.defineProperty(servers, name, { value: translated, enumerable: true, writable: true, configurable: true });
       }
@@ -69,7 +71,7 @@ module.exports = {
         { path: path.join(plugin, 'mcp_config.json'), text: JSON.stringify({ mcpServers: servers }, null, 2) + '\n' },
       ] };
     }
-    return { loaded: c.loadedTools(Object.keys(servers), context.mcp, context.mount, context.replaceEntries), ...(warnings.length ? { warnings } : {}), ...(toolFiles ? { toolFiles } : {}), settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(toolFiles ? ['--add-dir', toolFiles.dir] : []), '--dangerously-skip-permissions', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
+    return { loaded: [...c.loadedTools(Object.keys(servers).filter(name => !extras.some(extra => extra.name === name)), context.mcp, context.mount, context.replaceEntries), ...extras.filter(extra => Object.hasOwn(servers, extra.name)).map(({ name }) => ({ name, windows: false, wrapped: false }))], ...(warnings.length ? { warnings } : {}), ...(toolFiles ? { toolFiles } : {}), settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(toolFiles ? ['--add-dir', toolFiles.dir] : []), '--dangerously-skip-permissions', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('? for shortcuts') && !onboarding.some(s => pane.includes(s)); },

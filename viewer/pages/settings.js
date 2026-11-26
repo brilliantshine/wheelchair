@@ -17,6 +17,7 @@
     { key: 'threads', title: 'Threads', line: 'Display, merging, folders and permissions', lede: 'Display, merging, folders and permissions for your threads.', note: true, blocks: ['thread-view', 'permission', 'lead-names'] },
     { key: 'behavior', title: 'Agent behavior', line: 'Behavior templates and lessons learned', lede: 'How agents work, and what they have learned.', blocks: ['templates'] },
     { key: 'tools', title: 'Project tools', line: 'Tools and keys for your projects', lede: '', blocks: ['tools'] },
+    { key: 'shared-tools', title: 'Shared tools', line: 'The project that holds tools for all your projects', lede: 'Choose the project that holds tools shared across your projects.', blocks: ['shared-tools'] },
   ];
   // Old addresses open the category that now holds what they named.
   const ALIASES = { harnesses: 'providers', accounts: 'providers', writing: 'you', background: 'you', templates: 'behavior' };
@@ -2375,6 +2376,48 @@
     return projectToolsHost;
   }
 
+  let sharedProjects = null;
+  let sharedLoading = false;
+  async function loadSharedProjects() {
+    if (sharedLoading || sharedProjects) return;
+    sharedLoading = true;
+    try {
+      const entries = (data.saved_dirs || []).filter(entry => entry.path && entry.machine);
+      const machines = new Set(entries.map(entry => entry.machine));
+      sharedProjects = await Promise.all(entries.map(async entry => {
+        const name = (entry.name || entry.path) + (machines.size > 1 ? ` (${entry.machine})` : '');
+        try {
+          const result = await api('/project-tools/read', { method: 'POST', body: { machine: entry.machine, path: entry.path, repo_only: true } });
+          return { name, repo: result.repo };
+        } catch { return { name, repo: null }; }
+      }));
+    } catch { sharedProjects = []; }
+    sharedLoading = false;
+    paint('shared-tools');
+  }
+  function renderSharedTools() {
+    if (!sharedProjects) loadSharedProjects();
+    const select = h('select', { id: 'shared-tools-project', 'aria-label': 'Shared tools project', disabled: !sharedProjects });
+    select.append(h('option', { value: '', text: 'None' }));
+    const seen = new Set();
+    for (const item of sharedProjects || []) {
+      if (item.repo) seen.add(item.repo.toLowerCase());
+      select.append(h('option', { value: item.repo || '', disabled: !item.repo, text: item.repo ? item.name : item.name + ' (no GitHub origin)' }));
+    }
+    if (data.shared_tools_repo && !seen.has(data.shared_tools_repo.toLowerCase())) select.append(h('option', { value: data.shared_tools_repo, text: data.shared_tools_repo }));
+    select.value = data.shared_tools_repo || '';
+    const message = h('p', { class: 'hint', role: 'status' });
+    select.addEventListener('change', async () => {
+      select.disabled = true;
+      try { const result = await api('/settings/preferences', { method: 'PUT', body: { shared_tools_repo: select.value || null } }); data.shared_tools_repo = result.shared_tools_repo; message.textContent = 'Saved'; }
+      catch (error) { select.value = data.shared_tools_repo || ''; message.textContent = error.message; }
+      finally { select.disabled = false; }
+    });
+    return h('div', { class: 'pt pt-shared' },
+      h('div', { class: 'pt-picker' }, h('label', {}, h('span', { text: 'Shared tools project' }), select)),
+      h('p', { class: 'hint', text: 'To add or change a shared tool, ask in a thread in the shared tools project.' }), message);
+  }
+
   const BLOCKS = {
     name: renderName, writing: renderWriting, diagrams: renderDiagrams, enter: renderEnter,
     background: () => (bg ? renderBackground() : null),
@@ -2383,7 +2426,7 @@
     tiers: renderTiers, 'lead-models': renderLeadModels, escalation: renderEscalation, others: renderOthers,
     conversations: renderConversations,
     'thread-view': renderThreadView, permission: renderPermission, 'lead-names': renderLeadNames,
-    templates: renderTemplates, tools: renderProjectTools,
+    templates: renderTemplates, tools: renderProjectTools, 'shared-tools': renderSharedTools,
   };
   const blockHost = (name) => panel.querySelector(`.block[data-block="${name}"]`);
 

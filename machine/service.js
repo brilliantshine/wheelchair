@@ -6,6 +6,8 @@ const { TryService } = require('./lib/try');
 const { providers, loadRecipes } = require('./lib/harness-recipes');
 const harnessInstall = require('./lib/harness-install');
 const { createProjectTools } = require('./lib/project-tools');
+const folderTools = require('./lib/folder-tools');
+const sharedTools = require('./lib/shared-tools');
 const { TOOL_ROLES, readProjectMcp, hasWindowsProgram, serverLabel } = require('./lib/project-mcp');
 const { windowsTarget, rewriteUrl } = require('./lib/win-mark');
 const { missingPrograms } = require('./lib/project-programs');
@@ -216,6 +218,7 @@ function composeRolePrompt(input) {
 }
 // Validates the optional start fields; returns the normalised ones.
 function startOptions(input) {
+  if (input.shared_tools !== undefined && (!input.shared_tools || typeof input.shared_tools !== 'object' || Array.isArray(input.shared_tools) || Object.keys(input.shared_tools).some(key => !['repo', 'candidates'].includes(key)) || typeof input.shared_tools.repo !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(input.shared_tools.repo) || !Array.isArray(input.shared_tools.candidates) || !input.shared_tools.candidates.every(p => typeof p === 'string' && path.isAbsolute(p)))) die('invalid shared_tools');
   const mode = input.permission_mode === undefined || input.permission_mode === null ? 'auto' : input.permission_mode;
   if (!Object.hasOwn(PERMISSION_MODES, mode)) die('permission_mode must be auto or bypass');
   const codexMode = input.codex_mode === undefined ? 'sandboxed' : input.codex_mode;
@@ -745,7 +748,7 @@ class MachineService {
   commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context = {}) {
     const adapter = adapters[input.cli];
     if (!adapter) die(`cli must be ${listWords(connectors.list().map(m => m.cli))}`);
-    return adapter.command(input, session, worktree, { ...(context.launchExtras || {}), stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, wsl: context.wsl, mount: context.mount, replaceEntries: context.replaceEntries, resume: context.resume });
+    return adapter.command(input, session, worktree, { ...(context.launchExtras || {}), stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, wsl: context.wsl, mount: context.mount, replaceEntries: context.replaceEntries, extraServers: context.extraServers, resume: context.resume });
   }
 
   threadWorktree(input, worktree) {
@@ -760,9 +763,9 @@ class MachineService {
   validProjectToolsState(value) {
     const plain = v => v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype;
     const lines = v => Array.isArray(v) && v.every(line => plain(line) && Array.isArray(line.names) && line.names.every(name => typeof name === 'string') && typeof line.text === 'string');
-    return plain(value) && Number.isSafeInteger(value.seq) && value.seq >= 0 && lines(value.file) && lines(value.programs) && plain(value.clis) && Object.values(value.clis).every(cli => plain(cli) && lines(cli.lines) && typeof cli.thread === 'boolean' && (typeof cli.hash === 'string' || cli.hash === null));
+    return plain(value) && Number.isSafeInteger(value.seq) && value.seq >= 0 && lines(value.file) && (value.folder === undefined || lines(value.folder)) && lines(value.programs) && plain(value.clis) && Object.values(value.clis).every(cli => plain(cli) && lines(cli.lines) && typeof cli.thread === 'boolean' && (typeof cli.hash === 'string' || cli.hash === null));
   }
-  updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs) {
+  updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs, folder = [], extraServers = []) {
     // Machines built without the constructor (some tests) get the maps on first use.
     this.projectToolsBoot ||= crypto.randomUUID(); this.projectToolsState ||= new Map(); this.projectToolsWrites ||= new Map();
     const id = encodeURIComponent(safeName(input.thread_id, 'thread id'));
@@ -774,9 +777,10 @@ class MachineService {
       this.projectToolsState.set(id, state);
     }
     const { mcp, warnings, hash } = read;
-    if (mcp === null && warnings.length) {
+    if (thread) state.folder = folder;
+    if (mcp === null && warnings.length && !extraServers.length) {
       if (thread) state.file = warnings;
-    } else if (mcp === null || mcp.names.length === 0) {
+    } else if ((mcp === null || mcp.names.length === 0) && !extraServers.length) {
       if (thread) { state.file = []; state.programs = []; state.clis = {}; }
     } else {
       state.clis[input.cli] = { hash, thread, lines: built.warnings || [] };
@@ -785,7 +789,7 @@ class MachineService {
         if (cli === input.cli || !prior.lines.length || !(prior.hash === hash || (thread && prior.thread))) continue;
         const other = adapters[cli];
         if (!other) continue;
-        const result = other.command({ ...input, cli, role: 'worker' }, { ...session }, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: true });
+        const result = other.command({ ...input, cli, role: 'worker' }, { ...session }, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: true, extraServers });
         state.clis[cli] = { hash, thread, lines: result.warnings || [] };
       }
     }
@@ -860,6 +864,8 @@ class MachineService {
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     if (adapter.recordLaunch) adapter.recordLaunch(session, await this.versionGate(input.cli));
     let windowsTools;
+    this.startingToolPins ||= new Set();
+    this.startingToolPins.add(session);
     try {
     const prepared = await this.prepareLaunch(input, session, adapter, worktree, promptPath, rolePrompt, false);
     const commandText = prepared.commandText;
@@ -878,7 +884,7 @@ class MachineService {
       try { await this.win?.removeReady(name); } catch (cleanupError) { this.log(cleanupError); }
       await this.removeMcpConfig(name);
       throw error;
-    }
+    } finally { this.startingToolPins.delete(session); }
     if (windowsTools) this.win?.afterLaunch(session);
     await this.persistSessions();
     try {
@@ -961,6 +967,39 @@ class MachineService {
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
     const context = { resume, wsl, mount, launchExtras: await adapters[input.cli].launchContext?.(this) || {} };
+    let folder = [], scriptRows = [];
+    if (tools) {
+      if (!Object.hasOwn(session, 'shared_tools')) {
+        const choice = input.shared_tools;
+        session.shared_tools = { repo: choice?.repo || null, copy: null };
+        if (choice) {
+          if (await sharedTools.findSharedProject(choice.repo, [worktree])) session.shared_tools.own = true;
+          else {
+            const projectPath = await sharedTools.findSharedProject(choice.repo, choice.candidates);
+            if (!projectPath) session.shared_tools.reason = "the shared tools project isn't added on this machine";
+            else {
+              const result = await sharedTools.refreshShared({ stateDir: this.stateDir, projectPath, deadlineMs: this.sharedToolsDeadlineMs || 20000 });
+              session.shared_tools.copy = result.copy;
+              if (result.error && !result.copy) session.shared_tools.reason = `shared tools couldn't be fetched: ${result.error}`;
+              else if (result.error) console.error(`${name}: shared tools: ${result.error}`);
+              const pins = new Set([...Object.values(this.sessions), ...(this.startingToolPins || [])].filter(s => !s.ended_at && !['ended', 'stopped', 'failed'].includes(s.status)).map(s => s.shared_tools?.copy).filter(Boolean));
+              await sharedTools.cleanupCopies(this.stateDir, pins).catch(error => this.log(error));
+            }
+          }
+        }
+      }
+      const found = await folderTools.discover({ worktree, shared: session.shared_tools.copy, path: await this.tmuxPath() });
+      folder = [...found.problems];
+      if (session.shared_tools.reason) folder.push({ names: [], text: session.shared_tools.reason });
+      scriptRows = found.usable.filter(row => row.kind === 'script');
+      const servers = found.usable.filter(row => row.kind === 'server').sort((a, b) => a.name.localeCompare(b.name));
+      const entries = [...(scriptRows.length ? [folderTools.bridgeEntry(worktree, scriptRows)] : []), ...servers.map(row => folderTools.serverEntry(worktree, row))];
+      context.extraServers = entries.filter(entry => {
+        if (!mcp?.names.includes(entry.name)) return true;
+        folder.push({ names: [entry.name], text: `tool ${entry.name}: hidden by the .mcp.json server of the same name` });
+        return false;
+      });
+    }
     if (wsl && tools && mcp && connectors.manifest(input.cli).wrapProjectTools) {
       const common = await commandAsync('git', ['-C', worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
       const commonDir = common.ok && common.stdout.trim() || worktree;
@@ -994,7 +1033,7 @@ class MachineService {
     const windowsTools = loaded.some(entry => entry.windows);
     const wrappedTools = loaded.some(entry => entry.wrapped);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
-    if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
+    if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs, folder, context.extraServers);
     adapters[input.cli].disableProjectServers?.(built, read.dropped);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
     if (built.mcpConfig) {
@@ -1055,6 +1094,7 @@ class MachineService {
       try { version = (await fsp.readFile(path.join(worktree, 'ProjectSettings', 'ProjectVersion.txt'), 'utf8')).match(/^m_EditorVersion:\s*(\S+)/m)?.[1]; } catch {}
       const unityExists = !!version && fs.existsSync(path.join(mount, 'c/Program Files/Unity/Hub/Editor', version, 'Editor/Unity.exe'));
       const lines = require('./lib/win-prompt').promptLines({ health: this.win?.bridgeHealth(), wsl, loaded, mcp, copy: extra.WHEELCHAIR_WINDOWS_PROJECT, cli: session.cli, codexMode: session.codex_mode, version, unityExists });
+      if (!resume && scriptRows.length && adapters[session.cli].shellToolsOnly?.(session)) lines.push(`Folder tools: this session can't call them through MCP. Run \`node ${ROOT}/viewer/app/wc.js tool list\` to see them and \`node ${ROOT}/viewer/app/wc.js tool run <name> --input '<json>'\` to run a script tool; give that shell command a timeout longer than the tool's timeout_seconds (default 120 s).`);
       if (!resume && lines.length) await atomicWrite(promptPath, rolePrompt + "\n\n" + lines.join("\n"));
     }
     env.splice(adapter.sessionNameEnv ? 3 : 2, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
@@ -1172,7 +1212,7 @@ class MachineService {
         await this.persistSessions();
         await this.submit(session.name, initial);
       }
-      if (changed) await this.emitEvent({ type: 'ready', session: session.name, thread_id: session.thread_id, ...(session.active_switch ? { switch_id: session.active_switch } : {}) });
+      if (changed) await this.emitEvent({ type: 'ready', session: session.name, thread_id: session.thread_id, ...(session.relaunched_at ? { project_tools: session.project_tools, created_at: session.created_at } : {}), ...(session.active_switch ? { switch_id: session.active_switch } : {}) });
       if (session.active_switch) { session.switches[session.active_switch].state = 'done'; delete session.active_switch; await this.persistSessions(); }
       return true;
     }
@@ -2334,6 +2374,7 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, adapters[agent.cli]?.turnPoller ? { ignored: true } : await this.hook(agent.name, input)); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/win') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.win.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/screen') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.screens.handle(agent, await bodyOf(request))); }
+      if (request.method === 'POST' && url.pathname === '/v1/agent/tools') { const agent = await this.authorize(request, 'agent'); await bodyOf(request); return send(response, 200, { worktree: agent.worktree, shared_copy: agent.shared_tools?.copy || null }); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
       if (request.method === 'POST' && ['/v1/agent/assistant', '/v1/agent/project-lead'].includes(url.pathname)) {
         const agent = await this.authorize(request, 'agent');

@@ -16,6 +16,7 @@ function redactEvent(value) {
 function resolveCli() { const result = spawnSync('sh', ['-c', 'command -v pi'], { encoding: 'utf8' }); return result.status === 0 ? result.stdout.trim() || null : null; }
 const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 module.exports = {
+  shellToolsOnly() { return true; },
   checkVersion: (service, executable) => module.exports.checkPiVersion.call(service, executable),
   versionStatus(service, login) { const executable = resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } service.checkVersion('pi', executable); return module.exports.piVersionStatus(service.piVersions.get(JSON.stringify([executable, mtime]))?.version || null, login); },
   async beforeTurnEvent(service, session, event) {
@@ -133,7 +134,11 @@ module.exports = {
     const extension = template.replace('HOOK_PATH', JSON.stringify(path.join(c.root, 'machine/hook.sh'))).replace('SESSION_NAME', JSON.stringify(session.name));
     fs.mkdirSync(path.dirname(extensionPath), { recursive: true, mode: 0o700 });
     fs.writeFileSync(extensionPath, extension, { mode: 0o600 });
-    return { loaded: [], ...(context.tools && context.mcp?.names.length ? { warnings: [{ names: [...context.mcp.names], text: "project tools aren't supported on Pi yet; this agent runs without them" }] } : {}), argv: [resolveCli(), '--provider', 'openrouter', '--model', input.model || 'openrouter/auto', '--session-id', session.cli_session_id, session.project_lead === true ? '--no-approve' : '--approve', ...(session.effort ? ['--thinking', session.effort] : []), '-e', extensionPath, '--append-system-prompt', context.promptPath, ...(input.role === 'reviewer' ? ['--tools', 'read,grep,find,ls'] : [])] };
+    const warnings = [];
+    if (context.tools && context.mcp?.names.length) warnings.push({ names: [...context.mcp.names], text: "project tools aren't supported on Pi yet; this agent runs without them" });
+    const serverNames = context.tools ? (context.extraServers || []).filter(extra => extra.folder === 'server').map(extra => extra.name) : [];
+    if (serverNames.length) warnings.push({ names: serverNames, text: `server tools don't work on Pi: ${serverNames.join(', ')}` });
+    return { loaded: [], ...(warnings.length ? { warnings } : {}), argv: [resolveCli(), '--provider', 'openrouter', '--model', input.model || 'openrouter/auto', '--session-id', session.cli_session_id, session.project_lead === true ? '--no-approve' : '--approve', ...(session.effort ? ['--thinking', session.effort] : []), '-e', extensionPath, '--append-system-prompt', context.promptPath, ...(input.role === 'reviewer' ? ['--tools', 'read,grep,find,ls'] : [])] };
   },
   asideArgv(i, { prompt }) {
     return [resolveCli(), '--provider', 'openrouter', '--model', i.model, '--mode', 'json', '-p', ...(i.mode === 'fork' ? ['--fork', i.from, '--session-id', i.new_id] : ['--session', i.from]), '--append-system-prompt', prompt, '--no-extensions', ...(i.effort ? ['--thinking', i.effort] : []), '--tools', i.access === 'full' ? 'read,bash,edit,write,grep,find,ls' : 'read,grep,find,ls', ...(i.access === 'full' ? [] : ['-e', path.join(__dirname, 'guard.js')])];

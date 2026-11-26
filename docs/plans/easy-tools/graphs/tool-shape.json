@@ -1,0 +1,275 @@
+{
+  "schema": 1,
+  "title": "Proposed: what a tool is and how it reaches an agent",
+  "source": "plan-proposal",
+  "source_detail": "docs/plans/easy-tools/PLAN.md Q1 (option a) and Q2",
+  "explanation": "The proposal: a tool is just a described script, and [the one built-in tool server](#core) does the MCP work so nobody writes a server. Leaves out keys, how agents are asked to make tools, and the app screen; those are later questions.",
+  "groups": [
+    {
+      "id": "core",
+      "label": null,
+      "note": null,
+      "visible": false,
+      "nodes": [
+        "bridge",
+        "run"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "ai",
+      "label": "Which AI?",
+      "kind": "decision",
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 130,
+      "y": 700
+    },
+    {
+      "id": "bridge",
+      "label": "One built-in wheelchair tool server offers them all to the agent",
+      "kind": "module",
+      "exclusive": false,
+      "ref": null,
+      "note": "a single MCP server per session; replaces hand-written servers for these tools",
+      "graph": null,
+      "x": 130,
+      "y": 560
+    },
+    {
+      "id": "broken",
+      "label": "A broken tool is listed on a problems card in the thread",
+      "kind": "note",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 390,
+      "y": 560
+    },
+    {
+      "id": "mcp",
+      "label": "Claude, Codex, Antigravity: see each tool as a normal tool",
+      "kind": "external",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 840
+    },
+    {
+      "id": "old",
+      "label": "Existing .mcp.json servers keep working as today",
+      "kind": "note",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 850,
+      "y": 0
+    },
+    {
+      "id": "proj",
+      "label": "The project's tools folder, committed with the project",
+      "kind": "store",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 130,
+      "y": 280
+    },
+    {
+      "id": "run",
+      "label": "Wheelchair runs the script with the agent's inputs and hands back its output",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 130,
+      "y": 980
+    },
+    {
+      "id": "shared",
+      "label": "Your shared tools folder on the machine, for every project",
+      "kind": "store",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 390,
+      "y": 280
+    },
+    {
+      "id": "shell",
+      "label": "Kimi, Pi: run the tool by name from the shell (maybe for free)",
+      "kind": "external",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 840
+    },
+    {
+      "id": "start",
+      "label": "An agent starts: wheelchair finds every tool in both folders",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 420
+    },
+    {
+      "id": "where",
+      "label": "Where does it go?",
+      "kind": "decision",
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 140
+    },
+    {
+      "id": "write",
+      "label": "You, or an agent you asked, write a tool: a short description plus a script in any language",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "ai->mcp",
+      "from": "ai",
+      "to": "mcp",
+      "label": "loads tools",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "ai->shell",
+      "from": "ai",
+      "to": "shell",
+      "label": "loads none",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "bridge->ai",
+      "from": "bridge",
+      "to": "ai",
+      "label": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "mcp->run",
+      "from": "mcp",
+      "to": "run",
+      "label": "call",
+      "kind": "data",
+      "value": "the inputs",
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "proj->start",
+      "from": "proj",
+      "to": "start",
+      "label": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "shared->start",
+      "from": "shared",
+      "to": "start",
+      "label": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "shell->run",
+      "from": "shell",
+      "to": "run",
+      "label": "call",
+      "kind": "data",
+      "value": "the inputs",
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "start->bridge",
+      "from": "start",
+      "to": "bridge",
+      "label": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "start->broken",
+      "from": "start",
+      "to": "broken",
+      "label": "a tool is broken",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "where->proj",
+      "from": "where",
+      "to": "proj",
+      "label": "one project",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "where->shared",
+      "from": "where",
+      "to": "shared",
+      "label": "every project",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "write->where",
+      "from": "write",
+      "to": "where",
+      "label": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    }
+  ]
+}

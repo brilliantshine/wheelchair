@@ -1,0 +1,6 @@
+{
+  "name": "__NAME__",
+  "description": "Example MCP server",
+  "kind": "server",
+  "start": ["node", "server.js"]
+}

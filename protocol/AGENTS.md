@@ -15,6 +15,7 @@ missing gets optimized away by the next agent that finds it inconvenient.
 | `diagrams.md` | Which diagram a document gets, and what keeps it from lying |
 | `graphs.md` | The graph format: schema, how the viewer starts, the run-picture switch |
 | `sensitivity.md` | The diagram-sensitivity dial: the region rendered into present harnesses' always-on files, and what each level draws |
+| `tools.md` | Guide to making, connecting and testing folder tools |
 | `templates/` | The skeletons a plan is written from: `MAP.md`, `IDEA.md`, `PLAN.md`, `COMPLETION.md` |
 
 The old stage files (`planning.md`, `plan-review.md`, `implementation.md`, `verification.md`,

@@ -24,6 +24,8 @@ working.
 
 Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; echo "exit $?"; tail -n 80 <log>`. On a non-zero exit, read failures from the log with `grep -n -A30 'not ok\|FAIL\|Error' <log>` before reporting. Never pipe a suite straight into `tail`; paste the exit line and the tail in your report.
 
+For any request to make or change a tool, read `protocol/tools.md`.
+
 ## Rules
 
 - **Never run `sudo`.** If the task needs a command run as root, send the lead a `message` with the exact command (full paths, no `~`, written out rather than a script you wrote), what it changes and why, and carry on with what you can do meanwhile. Only the lead can ask the user to run it.

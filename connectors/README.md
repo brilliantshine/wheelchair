@@ -54,7 +54,7 @@ any of these is missing or not a function. `command` and `seed` are the ones peo
 
 | Member | Signature | When the service calls it |
 |---|---|---|
-| `command` | `command(input, session, worktree, context)` returns `{ argv, loaded, settingsPath?, settings?, mcpConfig? }` | Building the launch for a new or resumed session. `launchContext` keys reach `command` unless the service sets that key itself; the service's values win for `stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `wsl`, `mount`, `replaceEntries` and `resume`. |
+| `command` | `command(input, session, worktree, context)` returns `{ argv, loaded, settingsPath?, settings?, mcpConfig? }` | Building the launch for a new or resumed session. `launchContext` keys reach `command` unless the service sets that key itself; the service's values win for `stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `wsl`, `mount`, `replaceEntries`, `extraServers` and `resume`. Folder entries in `extraServers` are ordered bridge first, then server tools by name, and return loaded entries and warnings alongside project MCP servers. |
 | `firstMessage` | `firstMessage(input, promptPath, name)` returns the text typed once the tool is ready | Session start; the result becomes the session's pending first message. |
 | `readyText` | `readyText(session, pane)` returns a boolean | Each readiness poll of a starting session's tmux pane. |
 | `answerPrompts` | `answerPrompts(session, pane)` returns `{ step, keys }` or `null` | While a session is starting, to answer first-run screens (theme, trust, terms) with keystrokes. |
@@ -89,7 +89,7 @@ These are called only when present; they need no flag in the manifest.
 | `redact` | `redact(value)` | The tool's own redaction of transcript lines, events and aside output (Pi). The shared output scrub in `common.js` applies to every tool regardless. |
 | `stylePreviewArgv` | `stylePreviewArgv(model)` returns argv | The tool that runs the writing-style preview. Required when `stylePreview: true` (one manifest at most); forbidden otherwise. |
 | `disableProjectServers` | `disableProjectServers(built, dropped)` | Record project tools that were dropped into the built launch settings. |
-| `launchContext` | `async launchContext(service)` returns an object | Returned keys reach `command` except service-owned keys (`stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `wsl`, `mount`, `replaceEntries`, `resume`), whose service values override them. |
+| `launchContext` | `async launchContext(service)` returns an object | Returned keys reach `command` except service-owned keys (`stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `wsl`, `mount`, `replaceEntries`, `extraServers`, `resume`), whose service values override them. |
 | `launchPath` | `launchPath(service)` | Kimi's resolution of its launch executable and version. |
 | `recordLaunch` | `recordLaunch(session, status)` | Store the version check result on the session at launch (Pi). |
 | `startupCheck` | `startupCheck(session)` returns a reason or `null` | Why a session that never became ready ended, so the stop reason says more than "exited". |
