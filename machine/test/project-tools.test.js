@@ -470,14 +470,14 @@ test('folder key status and key-only refresh use the selected store', async () =
   const plain = path.join(f.repo, '.wheelchair/tools/plain'); await fs.mkdir(plain); await fs.writeFile(path.join(plain, 'tool.json'), JSON.stringify({ name: 'plain', description: 'Plain', kind: 'script', inputs: {}, run: ['node'] }));
   git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'tool'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
   const input = { path: f.repo }, read = (await f.tools.read(input)).body;
-  assert.equal(Object.hasOwn(read.folder_tools.rows[1], 'keys'), false); assert.equal(read.folder_tools.rows[0].key_missing, true); assert.deepEqual(read.key_info[0].tools, ['demo']);
+  assert.equal(Object.hasOwn(read.folder_tools.rows[1], 'keys'), false); assert.equal(read.folder_tools.rows[0].key_missing, true); assert.deepEqual(read.folder_tools.rows[0].key_lines, ['needs key TOKEN, not set on this machine']); assert.deepEqual(read.key_info[0].tools, ['demo']);
   await f.tools.save({ ...input, token: read.token, tools: null, keys: { TOKEN: 'short' } });
-  let status = (await f.tools.keyStatus(input)).body; assert.equal(status.key_revision, 1); assert.equal(status.key_info[0].folder_usable, false); assert.equal(status.source, undefined);
+  let status = (await f.tools.keyStatus(input)).body; assert.equal(status.key_revision, 1); assert.equal(status.key_info[0].folder_usable, false); assert.equal(status.source, undefined); assert.deepEqual(Object.keys(status).sort(), ['folder_tools', 'key_info', 'key_revision', 'keys']); assert.ok(status.key_info[0].reason); assert(!JSON.stringify(status).includes('short'));
   const read2 = (await f.tools.read(input)).body;
   await f.tools.save({ ...input, token: read2.token, tools: null, keys: { TOKEN: 'longvalue' } });
   status = (await f.tools.keyStatus(input)).body; assert.deepEqual(status.folder_tools.rows[0].key_lines, ['uses keys: not available to sandboxed Codex, Kimi or Pi']);
   const own = (await f.tools.keyStatus({ ...input, shared_tools: { repo: 'OWNER/NAME', candidates: [] } })).body;
-  assert.equal(own.folder_tools.rows[0].key_store, 'shared'); assert.match(own.folder_tools.rows[0].key_lines[0], /Shared keys/); assert.deepEqual(own.key_info[0].tools, []);
+  assert.equal(own.folder_tools.rows[0].key_store, 'shared'); assert.equal(own.folder_tools.rows[0].key_lines[0], 'needs key TOKEN, not set on this machine; set it in Settings, Shared tools, Shared keys'); assert.deepEqual(own.key_info[0].tools, []);
   await require('../lib/shared-keys').writeSharedKeys(path.join(f.root, 'state'), { set: { TOKEN: 'sharedvalue' } });
   const shared = (await f.tools.keyStatus({ ...input, shared_tools: { repo: 'owner/name', candidates: [] } })).body; assert.equal(shared.folder_tools.rows[0].key_missing, false);
 });
