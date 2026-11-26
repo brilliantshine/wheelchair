@@ -61,7 +61,7 @@ async function discover({ worktree, shared, path: pathText }) {
   const project = await readToolsDir(worktree, 'project'), others = shared ? await readToolsDir(shared, 'shared') : [];
   const names = new Set(project.map(r => r.name));
   for (const row of [...project, ...others]) {
-    if (row.source === 'shared' && names.has(row.name)) { row.status = 'hidden'; row.reason = 'hidden by the project tool of the same name'; }
+    if (row.source === 'shared' && names.has(row.name)) { row.status = 'hidden'; row.reason = 'hidden: this project has its own tool with the same name'; }
     else if (row.status === 'ok') { const program = row.tool.kind === 'script' ? row.tool.run[0] : row.tool.start[0]; if (!findProgram(program, row.dir, pathText)) { row.status = 'missing-program'; row.reason = `its program ${program} wasn't found`; } }
   }
   const rows = [...project, ...others];
