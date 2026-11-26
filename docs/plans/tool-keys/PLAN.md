@@ -599,7 +599,7 @@ at least one valid, not hidden, script tool declares keys.
 | T2b | K7 machine side: Tools page key statuses and folder-tool key names, key-only refresh, shared-keys read/save/remove routes with locking | `machine/lib/project-tools.js`, new `machine/lib/shared-keys-page.js`, `machine/service.js` `/v1/project-tools/*` and `/v1/shared-keys/*` route block; tests project-tools, shared-keys-page | standard / gpt-6.1-terra | wc-1d9da322519c-worker-5 | `node --test machine/test/project-tools.test.js machine/test/shared-keys-page.test.js machine/test/shared-keys.test.js` | running |
 | T3a | K5 hub card: keyed lines kept per session, dropped on end, dismissal by text, new lines first | `viewer/app/sessions.js` card code; `viewer/test/app-project-tools-card.test.js` | standard / gpt-6.1-terra | wc-1d9da322519c-worker-2 | `node --test viewer/test/app-project-tools-card.test.js viewer/test/app-shared-tools-setting.test.js` | done |
 | T3b | K7 pages: Tools page needs-key lines, key editor, key-only refresh; Settings Shared keys with machine chooser; hub pass-through routes | `viewer/pages/{project-tools,settings}.js`, `viewer/app/routes.js` shared-keys routes; viewer tests and specs for them | standard, Claude | — | K7 Validation commands | after T2b |
-| T3c | Follow-up to T3a: a dismissed card stays dismissed when lines only disappear; tests for the other session-end refreshes | `viewer/app/sessions.js` card code; `viewer/test/app-project-tools-card.test.js` | light / gpt-6-luna | wc-1d9da322519c-worker-3 | same as T3a | running |
+| T3c | Follow-up to T3a: a dismissed card stays dismissed when lines only disappear; tests for the other session-end refreshes | `viewer/app/sessions.js` card code; `viewer/test/app-project-tools-card.test.js` | light / gpt-6-luna | wc-1d9da322519c-worker-3 | same as T3a | done |
 | T4 | K6 `wc.js tool` list/check/run with keys | `viewer/app/tool-cli.js`, `viewer/test/wc-tool.test.js` | standard | — | `node --test viewer/test/wc-tool.test.js` | after T2a |
 | T5 | K8 guide `protocol/tools.md` | `protocol/tools.md` | standard | — | K8 greps and rendered read | after T2a, T2b |
 
@@ -612,3 +612,6 @@ at least one valid, not hidden, script tool declares keys.
 - 2026-11-26 — Choice: T1, shared-keys.js: writes return only `revision` and `keys`; the file also holds `shared: true`.
 - 2026-11-26 — Choice: T1, project-keys.js: exports `object` and `storeError` for reuse by shared-keys.js (seen in diff).
 - 2026-11-26 — T1 accepted (band: self): keys validation, usable values, shared store, keyed redaction in runScript; validation re-run 48/48 and 67/67 pass.
+- 2026-11-26 — Choice: T3c, failed-start test: passes the existing session as `_waiting` to drive the start-failure cleanup.
+- 2026-11-26 — Choice: T3c, tests (scout-listed): reach into the fake machine's session map for pollDead; call `archive` without `by`.
+- 2026-11-26 — T3c accepted (band: scout): dismissed card stays closed when lines only disappear; session-end refresh paths tested. The tests do not first assert the card is open (the earlier fixture test does).
