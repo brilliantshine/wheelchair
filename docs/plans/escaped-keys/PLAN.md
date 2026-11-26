@@ -213,6 +213,15 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 | mechanics | blocking | stderr runner fixture cannot give the stated output | downgraded: major | Fixture error, not design; fixture rewritten |
 | mechanics | major | Work limit does not cover the cut-edge search | upheld | One budget (Decision 9); fixture (d) |
 
+### Round 3 — 2026-11-26
+
+**Lanes:** intent: claude; mechanics: not claude.
+
+**Changed since Round 2:** E1 work limit now one shared budget with a per-run fallback (`[not checked for keys]`, Decision 9) and fixture (d); E2 rewritten as removals found on the capture as captured, plus the both-edges-cut rule (Decisions 10, 11) and the two places key-free output changes; E3 now the order inside `redactCapture` (search, then build, overlap example); E4 sentence on cut-edge drops and fallback; Validation (overlap, both-cut, fallback, stderr runner fixture).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
