@@ -120,3 +120,11 @@ test('an sse tool header key is a key reference', () => {
   const { references } = keyReferences({ s: { type: 'sse', url: 'https://example.test/sse', headers: { Authorization: 'Bearer ${SSE_TOKEN}' } } });
   assert.ok(Object.hasOwn(references, 'SSE_TOKEN'));
 });
+test('folder tool value usability boundaries', () => {
+  const { usableReason } = require('../lib/project-keys');
+  assert.equal(usableReason('a'.repeat(7)),'value too short (under 8 characters)');
+  assert.equal(usableReason('a'.repeat(8)),null); assert.equal(usableReason('a'.repeat(4096)),null);
+  assert.equal(usableReason('a'.repeat(4097)),'value too long');
+  assert.equal(usableReason('aA09._~+/=-'),null);
+  for (const value of ['abcdefghé','abcdefgh ','abcdefgh\n','abcdefgh\0',null]) assert.equal(usableReason(value),"value has characters folder tools can't use (letters, digits and . _ ~ + / = - only)");
+});
