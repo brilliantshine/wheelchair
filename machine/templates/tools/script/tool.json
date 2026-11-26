@@ -1,0 +1,7 @@
+{
+  "name": "__NAME__",
+  "description": "Example script tool",
+  "kind": "script",
+  "inputs": { "text": { "type": "string", "description": "Text to echo", "required": false } },
+  "run": ["./run.sh"]
+}
