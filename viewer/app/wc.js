@@ -183,6 +183,7 @@ async function postSessionWithRetry(url, token, body) {
 
 async function main(argv) {
   const [group, operation, ...tail] = argv;
+  if (group === 'tool') return require('./tool-cli').main([operation, ...tail].filter(x => x !== undefined), { request });
   if (group === 'diff') { process.stdout.write(`${JSON.stringify(diffSize(operation, tail))}\n`); return; }
   const full = group === 'session' && ['start', 'list'].includes(operation) && tail.includes('--full');
   const requestTail = full ? tail.filter(arg => arg !== '--full') : tail;
@@ -202,7 +203,7 @@ async function main(argv) {
         : group === 'win'
           ? winRequest(operation, tail)
       : null;
-  if (!input) throw new Error('usage: wc.js git|assistant|project-lead|session <start|stop|list|leads [--all-projects]>|screen|win …');
+  if (!input) throw new Error('usage: wc.js tool|git|assistant|project-lead|session <start|stop|list|leads [--all-projects]>|screen|win …');
   const result = (group === 'session' || (['assistant', 'project-lead'].includes(group) && ['projects', 'threads', 'thread', 'refresh'].includes(operation)))
     ? await postSessionWithRetry(`${base}${input.path}`, token, input.body)
     : await request(`${base}${input.path}`, token, input.body);
