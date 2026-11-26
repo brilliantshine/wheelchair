@@ -306,7 +306,11 @@ module.exports = {
   parseLogin(pane) { const url = pane.match(/Opening browser for Kimi device login:\s*(https?:\/\/\S+)/)?.[1]; const code = pane.match(/paste the URL above and enter code:\s*(\S+)/i)?.[1]; return url && code ? { url, code, wantsCode: false } : null; },
   loginDone() { return false; },
   command(input, session, worktree, context) {
-    return { loaded: [], ...(context.tools && context.mcp?.names.length ? { warnings: [{ names: [...context.mcp.names], text: "project tools aren't supported on Kimi Code yet; this agent runs without them" }] } : {}), argv: [context.kimiExecutable || resolveCli(), session.permission_mode === 'bypass' ? '--auto' : '--yolo', ...(input.model ? ['--model', input.model] : [])] };
+    const warnings = [];
+    if (context.tools && context.mcp?.names.length) warnings.push({ names: [...context.mcp.names], text: "project tools aren't supported on Kimi Code yet; this agent runs without them" });
+    const serverNames = context.tools ? (context.extraServers || []).filter(extra => extra.folder === 'server').map(extra => extra.name) : [];
+    if (serverNames.length) warnings.push({ names: serverNames, text: `server tools don't work on Kimi Code: ${serverNames.join(', ')}` });
+    return { loaded: [], ...(warnings.length ? { warnings } : {}), argv: [context.kimiExecutable || resolveCli(), session.permission_mode === 'bypass' ? '--auto' : '--yolo', ...(input.model ? ['--model', input.model] : [])] };
   },
   firstMessage(input, promptPath, name) { return `[wc:role] Role: ${input.role}\nSession: ${name}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${input.brief || input.first_message || ''}`; },
   readyText(session, pane) { return /│\s*>/.test(pane) && pane.includes('context:') && !pane.includes('Trust this folder?'); },
