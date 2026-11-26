@@ -298,10 +298,14 @@ at least one valid, not hidden, script tool declares keys.
   started with old arguments runs its keyless tools):
   `node --test machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js`.
 - K8 starting line in the actual starting instructions when the only script tool is keyed,
-  on Kimi and on sandboxed Codex, and without the keyed clause when no tool is keyed;
-  K5 lines for two keyed tools in one session; `node --test machine/test/name-guard.test.js`: `node --test machine/test/project-tools-service.test.js`.
-- Dismissed problems card returning for a new line, including with more than 20 lines; a
-  keyed shared tool hidden by a keyless project tool giving no unavailable line: `node --test viewer/test/app-project-tools-card.test.js`.
+  on Kimi and on sandboxed Codex, and without the keyed clause when no tool is keyed or the
+  only keyed tool is hidden; K5 lines for two keyed tools in one session; a keyed shared tool
+  hidden by a keyless project tool giving no unavailable line:
+  `node --test machine/test/project-tools-service.test.js`.
+- K5 texts chosen without naming providers outside `connectors/`:
+  `node --test machine/test/name-guard.test.js`.
+- Dismissed problems card returning for a new line, including with more than 20 lines:
+  `node --test viewer/test/app-project-tools-card.test.js`.
 - K6 (including `list` on sandboxed and on unrestricted Codex, a changed-tool error for a
   tool that gained `keys`, no session token, keyless `run` of a keyed tool and its message):
   `node --test viewer/test/wc-tool.test.js`.
@@ -555,7 +559,14 @@ at least one valid, not hidden, script tool declares keys.
 
 ### Round 14 — 2026-11-25
 
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
 **Changed since Round 13:** K3 (keyless entries and bridges unchanged; no key names means no keys), K5 (hidden tools excluded from reason lines; new lines first under the 20-line cap), K8 (hidden tools), Accepted Risks (two-tab draft overwrite), Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Hidden-tool rules tested only in the viewer suite | upheld | Validation: machine-side tests for K5 and K8 hidden cases |
+| intent | minor | Garbled name-guard Validation line | upheld | Validation: split into its own line |
 
 ## Implementation Tasks
 
