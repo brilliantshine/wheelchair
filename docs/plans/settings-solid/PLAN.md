@@ -1,6 +1,6 @@
 ---
 slug: settings-solid
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-26
 ---
 
@@ -36,6 +36,20 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 Law: `CONTRIBUTING.md` (Validation, Editing conventions). A spec that tests scroll or
 pixels goes on `viewer/test/firefox-specs.js`.
+
+```mermaid
+flowchart TD
+  U[usage answer arrives] --> P[repaint Usage]
+  U --> W{sign-in card open and still waiting?}
+  W -- yes --> K[leave Accounts as is]
+  W -- no --> A[repaint Accounts]
+  P --> H{holdPlace: first anchor below, on screen}
+  A --> H
+  H --> H1[pressed element] --> S[scroll so it stays put]
+  H --> H2[focused element] --> S
+  H --> H3[element under the mouse] --> S
+  H --> H4[sign-in card / next block] --> S
+```
 
 ### S1. Technical terms option wording
 
