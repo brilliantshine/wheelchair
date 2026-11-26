@@ -286,10 +286,11 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | tricky: escaped-spelling matcher, cut edges, budget/fallback in `redactCapture`; tests; E4 guide sentence | `machine/lib/key-redact.js` (+ optional `machine/lib/key-spell.js` and its `machine/AGENTS.md` row), `machine/test/key-redact.test.js` (+ optional `key-redact-speed.test.js`), `protocol/tools.md:70`, `docs/plans/escaped-keys/reports/T1.md` | standard / gpt-6.1-terra; rung 2: standard, effort high (attempt 1 delivered tests only, no matcher) | wc-ac4d5c6479fe-worker (t1-a1, stopped); wc-ac4d5c6479fe-worker-2 (t1-a2) | Spec Validation command; E4 greps; pick-tests | in progress |
+| T1 | tricky: escaped-spelling matcher, cut edges, budget/fallback in `redactCapture`; tests; E4 guide sentence | `machine/lib/key-redact.js` (+ optional `machine/lib/key-spell.js` and its `machine/AGENTS.md` row), `machine/test/key-redact.test.js` (+ optional `key-redact-speed.test.js`), `protocol/tools.md:70`, `docs/plans/escaped-keys/reports/T1.md` | standard / gpt-6.1-terra; rung 2: standard, effort high (attempt 1 delivered tests only, no matcher); rung 3: standard, effort xhigh (attempt 2 delivered an unconnected prototype) | wc-ac4d5c6479fe-worker (t1-a1, stopped); wc-ac4d5c6479fe-worker-2 (t1-a2, stopped); wc-ac4d5c6479fe-worker-3 (t1-a3) | Spec Validation command; E4 greps; pick-tests | in progress |
 
 ## Log
 
 - After round 3, budget card: Collin chose Keep going (budget reset).
 - 2026-11-26 — T1 dispatched (standard, gpt-6.1-terra, attempt t1-a1).
 - 2026-11-26 — T1 attempt 1 not accepted: tests only, no matcher, guide unchanged (worker reported it could not design the matcher; no choices section). Brief rewritten with the matcher design settled; attempt 2 at standard, effort raised medium to high.
+- 2026-11-26 — T1 attempt 2 not accepted: unconnected prototype in key-spell.js, no cut edges, fallback, rendering or tests. Brief defect found: it told the worker to drop non-key characters from inner layers. Brief fixed, budget accounting added; attempt 3 at standard, effort xhigh.
