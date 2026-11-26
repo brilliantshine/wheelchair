@@ -2,7 +2,10 @@
 slug: tool-keys
 date: 2026-11-26
 implemented-by: "standard / gpt-6.1-terra (T1, T2a, T2b, T2c, T2d attempts 1-2 (attempt 2 at xhigh), T3a, T3b attempts 1-2 (attempt 2 at xhigh), T4, T5 attempt 1); light / gpt-6-luna (T3c, T5 attempt 2); sub-lead: claude-opus-5-5. Claude was requested for T3b and T5 but unavailable."
-verified-by: []
+verified-by:
+  - round: 1
+    lane: verifier / claude (top tier)
+    checks: standard and light / gpt-6.1-terra, gpt-6-luna
 ---
 
 # Completion Report — Keys for folder tools
@@ -128,7 +131,21 @@ exit 1
 31b139ff8525b371425604b588ea1e2a4ddb795c
 ```
 
-Full run: started on the verified commit by the sub-lead (see below once it finishes).
+Full run (`bash test-support/full-run.sh`) on the verified commit, second run; the first run's only failure was `machine/test/screen.test.js` "marker mode and app umask preserve service umask" (ENOENT on a temp file), a file this change does not touch, which passed 3/3 alone and in the repeat run:
+
+```text
+commit 42bbb5cf647174ed2740c1673ae4b7edd5b643d9
+suite viewer-browser exit 0 seconds 356
+suite viewer-node exit 0 seconds 94
+suite machine exit 0 seconds 382
+suite test-support exit 0 seconds 24
+suite sensitivity exit 0 seconds 4
+suite codex exit 0 seconds 6
+suite install exit 0 seconds 33
+suite sudo-helper exit 0 seconds 9
+```
+
+Verification attempt 1 (claude verifier): PASS on `42bbb5cf`, no gaps. Its observations, not gaps: `machine/API.md` does not list the new routes (`/v1/shared-keys/*`, `/v1/project-tools/key-status`, `/v1/agent/tool-keys`, `keyed_unavailable`); the names routes call the field `stored` where K2 says `set`; two specs write screenshots to fixed `/tmp/t3b-*.png` paths.
 
 ## Known gaps / residual risks
 
