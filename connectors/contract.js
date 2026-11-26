@@ -21,7 +21,7 @@ const CAPABILITIES = Object.fromEntries(Object.entries(members).map(([name, mach
 const PIN_MODEL = /^[a-z0-9][a-z0-9._/:-]*$/;
 // Keep aligned with machine/service.js EFFORTS and viewer/app/sessions.js checkEffort.
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-const OPTIONAL = { machine: ['prepare', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'disableProjectServers', 'asideNewId', 'asidePrepare', 'asideMessage', 'asideProblem', 'stylePreviewArgv', 'recordLaunch', 'launchPath', 'launchContext', 'failureNote', 'beforeTurnEvent', 'loginResult', 'loginState', 'startupCheck', 'checkPiVersion', 'piVersionStatus', 'checkKimiVersion', 'kimiLaunchPath', 'kimiVersionStatus'], hub: [] };
+const OPTIONAL = { machine: ['prepare', 'shellToolsOnly', 'keyedToolsReason', 'sessionNameEnv', 'promptText', 'retryStartupEnter', 'onTurnEnded', 'loginCwd', 'loginPrompt', 'loginDone', 'codeNeedsPrompt', 'resolveCli', 'redact', 'stepVocabulary', 'bindTranscript', 'spoolWaiting', 'validTranscript', 'disableProjectServers', 'asideNewId', 'asidePrepare', 'asideMessage', 'asideProblem', 'stylePreviewArgv', 'recordLaunch', 'launchPath', 'launchContext', 'failureNote', 'beforeTurnEvent', 'loginResult', 'loginState', 'startupCheck', 'checkPiVersion', 'piVersionStatus', 'checkKimiVersion', 'kimiLaunchPath', 'kimiVersionStatus'], hub: [] };
 function validate(manifest, half, mod) {
   const fail = member => { throw new Error(`${manifest.cli}: ${member}`); };
   if (half === 'machine' && 'provider' in mod) fail('provider');

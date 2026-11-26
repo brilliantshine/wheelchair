@@ -83,3 +83,8 @@ test('key declarations and store choice', () => {
   assert.deepEqual(f.validateToolJson('weather',{name:'weather',description:'x',kind:'server',start:['sh']}).tool.keys,[]);
   assert.equal(f.toolKeyStore({source:'shared'},false),'shared'); assert.equal(f.toolKeyStore({source:'project'},true),'shared'); assert.equal(f.toolKeyStore({source:'project'},false),'project');
 });
+
+test('keyed bridge arguments carry names and store only', () => {
+  const rows = [{ dir: '/tool', tool: { keys: ['TOKEN', 'OTHER'] }, key_store: 'shared' }];
+  assert.deepEqual(f.bridgeEntry('/project', rows, { stateDir: '/state' }).entry.args.slice(1), ['--project-dir', '/project', '--state-dir', '/state', '--tool', '/tool', '--key-store', 'shared', '--key', 'TOKEN', '--key', 'OTHER']);
+});
