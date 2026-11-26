@@ -408,6 +408,20 @@ test('a project tool hides a shared tool with the same name', async t => {
   assert.match(session.project_tools.folder[0].text, /hidden/);
 });
 
+test('Codex orders shared and project servers by name after the bridge', async t => {
+  const f = await fixture(t);
+  const remote = await sharedRepo(f);
+  await putTool(remote.source, 'alpha', 'Shared server', 'server');
+  git(remote.source, 'add', '.wheelchair');
+  git(remote.source, 'commit', '-m', 'Add shared server');
+  git(remote.source, 'push', 'origin', 'main');
+  await putTool(f.worktree, 'zeta', 'Project server', 'server');
+  await f.start({ choice: remote.choice });
+  const command = await f.command();
+  const names = [...command.matchAll(/mcp_servers\.project_([^.]+)\.command=/g)].map(match => match[1]);
+  assert.deepEqual(names, ['wheelchair-tools', 'alpha', 'zeta']);
+});
+
 for (const step of ['ls-remote', 'fetch']) {
   test(`the shared refresh deadline kills a stalled git ${step} and launch completes`, { timeout: 7000 }, async t => {
     const f = await fixture(t);
