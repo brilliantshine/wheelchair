@@ -1,11 +1,10 @@
 'use strict';
-const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { makeTempSync } = require('../../test-support/run-dir');
-const connectors = require('../../connectors');
+const { makeTempSync } = require('../../../test-support/run-dir');
+const connectors = require('../../../connectors');
 const slots = ['light', 'standard', 'heavy', 'critical', 'lead', 'sub-lead'];
 
 function roundTrip(tools) {
@@ -16,7 +15,7 @@ function roundTrip(tools) {
     WHEELCHAIR_MODELS: path.join(dir, 'models'), WHEELCHAIR_MODELS_CACHE: path.join(dir, 'cache'), WHEELCHAIR_KIMI_CONFIG: path.join(dir, 'kimi.toml') };
   let context = 'init';
   function runExpected(expected, ...args) {
-    const result = spawnSync(path.resolve(__dirname, '../../codex/model.sh'), args, { env, encoding: 'utf8', timeout: 10000 });
+    const result = spawnSync(path.resolve(__dirname, '../../../codex/model.sh'), args, { env, encoding: 'utf8', timeout: 10000 });
     assert.equal(result.status, expected, `${context}: ${args.join(' ')}: exit ${result.status}: ${result.error || ''} ${result.stderr}`);
     assert.doesNotMatch(result.stdout + result.stderr, /Traceback|malformed pins file|is malformed/i, `${context}: ${args.join(' ')}: ${result.stderr}`);
     return result.stdout.trim();
@@ -72,27 +71,4 @@ function roundTrip(tools) {
   }
 }
 
-test('real model pin round trip for every connector', { timeout: 120000 }, () => roundTrip(connectors.list()));
-test('model round trip rejects invalid sixth connectors', { timeout: 120000 }, () => {
-  const cases = [
-    [t => { t.models.pins.light.effort = 'unlisted'; }, /malformed/i],
-    [t => { t.models.efforts.push('very-high'); }, /sixth light .*very-high.*(?:malformed|exit)/i],
-    [t => { t.models.pins['sub-lead'] = { model: 'sixth-sublead-model', effort: 'high' }; }, /init default sixth sub-lead .*sixth-sublead-model/i],
-    [t => { t.models.format = '[A-Za-z0-9][A-Za-z0-9._-]*'; }, /sixth light invalid model with capitals.*exit/i],
-    [t => { delete t.models.pins.light; }, /(?:Traceback|KeyError).*light/s],
-    [t => { t.models.pins.light.model = 'Capital'; }, /malformed/i],
-  ];
-  for (const [mutate, reason] of cases) {
-    const extra = structuredClone(connectors.list().find(t => t.provider === 'claude'));
-    extra.provider = 'sixth'; extra.cli = 'sixth'; mutate(extra);
-    assert.throws(() => roundTrip([...connectors.list(), extra]), reason);
-  }
-});
-
-test('sixth connector and none default round trip', { timeout: 120000 }, () => {
-  const extra = structuredClone(connectors.list().find(t => t.provider === 'claude'));
-  extra.provider = 'sixth'; extra.cli = 'sixth';
-  roundTrip([...connectors.list(), extra]);
-  for (const slot of ['light', 'standard', 'heavy', 'critical', 'lead']) extra.models.pins[slot] = { model: 'none' };
-  roundTrip([...connectors.list(), extra]);
-});
+module.exports = { roundTrip, slots };
