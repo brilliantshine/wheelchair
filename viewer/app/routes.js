@@ -376,6 +376,10 @@ async function handleSettings(hub, request, response, url, bits, body) {
         if (!['auto', 'bypass'].includes(body.permission_mode)) throw appError(400, 'permission_mode must be auto or bypass');
         value.permission_mode = body.permission_mode;
       }
+      if (body.shared_tools_repo !== undefined) {
+        if (body.shared_tools_repo !== null && (typeof body.shared_tools_repo !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(body.shared_tools_repo))) throw appError(400, 'shared_tools_repo must be owner/repo or null');
+        value.shared_tools_repo = body.shared_tools_repo;
+      }
       if (body.codex_mode !== undefined) {
         if (!['sandboxed', 'unrestricted'].includes(body.codex_mode)) throw appError(400, 'codex_mode must be sandboxed or unrestricted');
         value.codex_mode = body.codex_mode;
@@ -436,7 +440,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
       try { await require('./assistant.js').change(hub, value.assistant === 'on'); }
       catch (error) { if (!error.assistantStart) throw error; assistantError = error.message; }
     }
-    return send(response, 200, { ...(assistantError ? { assistant_error: assistantError } : {}), assistant: value.assistant, project_leads: value.project_leads, lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    return send(response, 200, { ...(assistantError ? { assistant_error: assistantError } : {}), assistant: value.assistant, project_leads: value.project_leads, lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, shared_tools_repo: value.shared_tools_repo, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));
