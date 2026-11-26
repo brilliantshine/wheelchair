@@ -553,6 +553,10 @@ at least one valid, not hidden, script tool declares keys.
 | mechanics | minor | Shadowing vs unavailable lines | upheld | K5, K8: hidden tools excluded |
 | mechanics | minor | 20-line cap hides the new line | upheld | K5: new lines first |
 
+### Round 14 — 2026-11-25
+
+**Changed since Round 13:** K3 (keyless entries and bridges unchanged; no key names means no keys), K5 (hidden tools excluded from reason lines; new lines first under the 20-line cap), K8 (hidden tools), Accepted Risks (two-tab draft overwrite), Validation.
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
