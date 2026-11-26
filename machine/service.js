@@ -983,7 +983,7 @@ class MachineService {
               session.shared_tools.copy = result.copy;
               if (result.error && !result.copy) session.shared_tools.reason = `shared tools couldn't be fetched: ${result.error}`;
               else if (result.error) console.error(`${name}: shared tools: ${result.error}`);
-              const pins = new Set([...Object.values(this.sessions), ...(this.startingToolPins || [])].filter(s => s.status !== 'stopped').map(s => s.shared_tools?.copy).filter(Boolean));
+              const pins = new Set([...Object.values(this.sessions), ...(this.startingToolPins || [])].filter(s => !s.ended_at && !['ended', 'stopped', 'failed'].includes(s.status)).map(s => s.shared_tools?.copy).filter(Boolean));
               await sharedTools.cleanupCopies(this.stateDir, pins).catch(error => this.log(error));
             }
           }
