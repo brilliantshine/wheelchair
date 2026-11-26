@@ -2,7 +2,13 @@
 slug: easy-tools
 date: 2026-11-25
 implemented-by: "standard (gpt-6.1-terra) for T1-T8; standard at effort xhigh for T1b, T2b, T4b attempt 1 and T6b; heavy (gpt-6.2-sol) for T4b attempt 2; light (gpt-6-luna) for T4c. Every worker ran on GPT: Claude was asked for T6, T6b and T7 but had no room. Sub-lead: claude-opus-5-5."
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (verifier)
+    checks: gpt-6.1-terra / gpt-6.2-sol / gpt-6-luna (all workers)
+  - round: 2
+    lane: claude-opus-5-5 (verifier)
+    checks: gpt-6.1-terra (remediation R1)
 ---
 
 # Completion Report — Easy, standard tools for agents
@@ -151,3 +157,9 @@ npm --prefix viewer run test:browser -- app-project-tools.spec.js
 204 passed (2.0m) — exit 0
 grep -rn "hidden by the project tool" machine viewer protocol   # no output
 ```
+
+### Verification attempt 2: PASS (commit 42f8bde5)
+
+Verifier claude-opus-5-5: both gaps fixed, every Spec validation command passed, screens match the mockups apart from the plan's allowed differences. No rare paths accepted. Full run on the verified commit ():
+
+No failures, so nothing had to be checked against main.
