@@ -101,10 +101,13 @@ behaves exactly as today.
   that shows key status (K6, K7) uses the same rule.
 
 ### K3. What reaches the tool, and what never reaches the agent
-- The generated bridge entry (`bridgeEntry`) passes, per offered tool, its folder as today
-  plus `project` or `shared` (the store, K2) and the key **names** discovery found declared
-  at agent start (none for a keyless tool), and `--state-dir` once. It never carries a key
-  value.
+- The generated bridge entry (`bridgeEntry`) is **exactly as today** for a keyless tool
+  (`--tool <dir>`), and a bridge with no keyed tools has exactly today's arguments, so its
+  size against Codex's entry budget does not change. Only a keyed tool adds, after its
+  folder, `project` or `shared` (the store, K2) and the key **names** discovery found
+  declared at agent start, and the bridge then also gets `--state-dir` once. A `--tool`
+  with no key names means no keys, which also covers a bridge started with an older
+  wheelchair's arguments. The entry never carries a key value.
 - The bridge (`machine/lib/tool-bridge.js`) reads that store itself on **each call** and
   adds exactly the entry's key names, with their values, to the environment it builds with
   `toolEnv`.
@@ -175,7 +178,8 @@ keyed tools in this plan (Decision 24).
 - **Claude, Antigravity (Gemini), unrestricted Codex:** keyed script tools through MCP, with
   keys, as in K3. No added prompt, setting or step (Decision 9).
 - Each such session has one **reason**, and its tool problems show `tool <name> needs keys,
-  which <reason>` for each valid keyed script tool:
+  which <reason>` for each valid keyed script tool that is not hidden by a same-named
+  project tool (shadowing is resolved first; `wc.js tool list` still shows `hidden`):
   - **sandboxed Codex:** `sandboxed Codex can't use; set Codex to unrestricted in Settings
     to use it`;
   - **Kimi and Pi (OpenRouter):** `this AI can't use yet`.
@@ -185,6 +189,8 @@ keyed tools in this plan (Decision 24).
   start in the same worktree. They are removed from the card when that session ends. If
   Collin dismissed the problems card, a line with a new text for a tool brings it back (a
   dismissal covers the lines it was shown with, not every later line for that tool's name).
+  When it comes back, the new lines are listed first, so the 20-line cap never hides the line
+  that brought it back.
 - `/v1/agent/tools` adds `keyed_unavailable`: `null`, or that session's reason (no tool
   name), and `wc.js tool list` shows `needs keys, which <reason>` on each keyed tool's row. `wc.js tool run` on a keyed tool runs it
   without keys in the caller's process, as for any other tool there, and its output starts
@@ -257,7 +263,7 @@ tool's files, which agents can use keyed tools (K5),
 and how to try one (K6), and that server tools can't have keys yet. The starting-instructions
 line for Kimi, Pi and sandboxed Codex (easy-tools S11) is shown when the session has any
 valid script tool, keyed or not. It adds that keyed tools are unavailable there only when
-at least one valid script tool declares keys.
+at least one valid, not hidden, script tool declares keys.
 
 ### Not doing (this plan)
 - No change to `.mcp.json` key injection (Decision 8).
@@ -287,12 +293,15 @@ at least one valid script tool declares keys.
 - K5 (per-AI availability and problems texts for sandboxed Codex, Kimi and Pi; keyed tools
   absent from generated entries there): `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/folder-tools-launch.test.js`. The hub card keeping a session's line through a Claude start and dropping it when its session ends: `node --test viewer/test/app-project-tools-card.test.js`.
 - K3 binding (a bridge started or reconnected after a tool gained, lost or changed `keys`
-  refuses it as changed; a keyless tool edited the same way behaves as today):
+  refuses it as changed; a keyless tool edited the same way behaves as today; an all-keyless
+  bridge's arguments unchanged, checked near Codex's existing budget boundary; a bridge
+  started with old arguments runs its keyless tools):
   `node --test machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js`.
 - K8 starting line in the actual starting instructions when the only script tool is keyed,
   on Kimi and on sandboxed Codex, and without the keyed clause when no tool is keyed;
   K5 lines for two keyed tools in one session; `node --test machine/test/name-guard.test.js`: `node --test machine/test/project-tools-service.test.js`.
-- Dismissed problems card returning for a new line: `node --test viewer/test/app-project-tools-card.test.js`.
+- Dismissed problems card returning for a new line, including with more than 20 lines; a
+  keyed shared tool hidden by a keyless project tool giving no unavailable line: `node --test viewer/test/app-project-tools-card.test.js`.
 - K6 (including `list` on sandboxed and on unrestricted Codex, a changed-tool error for a
   tool that gained `keys`, no session token, keyless `run` of a keyed tool and its message):
   `node --test viewer/test/wc-tool.test.js`.
@@ -315,6 +324,7 @@ at least one valid script tool declares keys.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A keyed server's own request to the client that contains a key value and is withheld may leave the server waiting or misroute the error | Rare path: needs a server-originated request carrying its key | review-round-3 |
+| A pending key value in a `.mcp.json` draft can overwrite the same key set meanwhile from another tab | Rare path: needs the same key edited in two tabs at once | review-round-13 |
 | An agent that reads the key store files on disk can find key values | Same OS account; IDEA.md Not doing | planning |
 
 ## Review Rounds
@@ -531,12 +541,17 @@ at least one valid script tool declares keys.
 
 ### Round 13 — 2026-11-25
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 12:** K3 (entry carries store and key names; calls refused when keys changed since agent start; hashes removed), K5 (per-session reason), K7 (shared project's editor), K8 (keyed clause), Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Pending draft value overwrites another tab's change | accepted-risk | Rare path: same key edited in two tabs at once |
+| mechanics | major | Keyless bridge grows past Codex's budget | upheld | K3: keyless entries and bridges unchanged |
+| mechanics | minor | Old bridge arguments after upgrade | upheld | K3: no key names means no keys |
+| mechanics | minor | Shadowing vs unavailable lines | upheld | K5, K8: hidden tools excluded |
+| mechanics | minor | 20-line cap hides the new line | upheld | K5: new lines first |
 
 ## Implementation Tasks
 
