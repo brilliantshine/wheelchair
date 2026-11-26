@@ -6,6 +6,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { makeDir, startServer } = require('./helpers/server.js');
+const { runDir } = require('../../test-support/run-dir');
 const { openPage } = require('./helpers/app-views-setup.js');
 
 let context;
@@ -1504,13 +1505,20 @@ test('folder tools show mixed and empty states', async ({ page }) => {
   await open(page, { read: readBody({ folder_tools: { notes: [], rows: [
     { name: 'search', source: 'project', kind: 'script', status: 'ok' },
     { name: 'browser', source: 'shared', kind: 'server', status: 'ok' },
-    { name: 'bad', source: 'project', kind: null, status: 'invalid', reason: 'tool.json is missing "start"' },
+    { name: 'bad<b>', source: 'shared', kind: null, status: 'invalid', reason: 'bad <b>reason</b>' },
+    { name: 'missing', source: 'shared', kind: 'script', status: 'missing-program', reason: 'program missing' },
+    { name: 'hidden', source: 'shared', kind: 'script', status: 'hidden', reason: 'hidden by the project tool of the same name' },
   ] } }) });
   const list = page.locator('.pt-folder-tools');
   await expect(list).toContainText('search');
   await expect(list).toContainText('Working');
   await expect(list).toContainText("server tools don't work on Kimi, Pi or sandboxed Codex");
-  await expect(list).toContainText('tool.json is missing "start"');
+  await expect(list).toContainText('bad<b>');
+  await expect(list).toContainText('bad <b>reason</b>');
+  await expect(list.locator('b')).toHaveCount(0);
+  await expect(list).toContainText('program missing');
+  await expect(list).toContainText('hidden by the project tool of the same name');
+  await expect(list.locator('button, input, select, textarea, [contenteditable]')).toHaveCount(0);
 });
 
 test('folder tools empty state', async ({ page }) => {
@@ -1519,7 +1527,8 @@ test('folder tools empty state', async ({ page }) => {
 });
 
 test('capture folder tool screens', async ({ page, browserName }) => {
-  test.skip(browserName !== 'chromium');
+  test.skip(browserName !== 'chromium' || !process.env.WHEELCHAIR_SCREENSHOTS);
+  const capture = async name => { const file = path.join(runDir(), name); await page.screenshot({ path: file }); await fs.copyFile(file, path.join(process.env.WHEELCHAIR_SCREENSHOTS, name)); };
   const rows = [
     { name: 'search_docs', source: 'project', kind: 'script', status: 'ok' },
     { name: 'browser', source: 'shared', kind: 'server', status: 'ok' },
@@ -1529,12 +1538,12 @@ test('capture folder tool screens', async ({ page, browserName }) => {
   let mixed = true;
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, { read: () => readBody({ folder_tools: { rows: mixed ? rows : [], notes: [] } }) });
-  await page.screenshot({ path: '/tmp/wc-t6-logs/tools-mixed-phone.png' });
+  await capture('tools-mixed-phone.png');
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.screenshot({ path: '/tmp/wc-t6-logs/tools-mixed-desktop.png' });
+  await capture('tools-mixed-desktop.png');
   mixed = false;
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#pt-project').selectOption('/tmp/proj-beta');
   await expect(page.locator('.pt-folder-tools')).toContainText('No folder tools yet.');
-  await page.screenshot({ path: '/tmp/wc-t6-logs/tools-empty-phone.png' });
+  await capture('tools-empty-phone.png');
 });
