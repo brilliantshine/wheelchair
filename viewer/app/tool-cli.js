@@ -53,16 +53,29 @@ async function main(args, io = {}) {
     if (tail.length > 1 || tail[0]?.startsWith('-')) throw new Error('usage: wc.js tool check [<name>]');
     const rows = tail.length ? found.rows.filter(row => row.name === tail[0] && row.status !== 'hidden') : found.rows;
     if (tail.length && !rows.length) throw new Error(`unknown tool: ${tail[0]}`);
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+    const handlers = new Map(signals.map(sig => [sig, () => { abort(); process.removeListener(sig, handlers.get(sig)); process.kill(process.pid, sig); }]));
+    process.on('exit', abort);
+    for (const sig of signals) process.on(sig, handlers.get(sig));
+    const timer = setTimeout(abort, Math.max(0, deadline - Date.now()));
     let failed = false;
-    for (const row of rows) {
-      if (row.status !== 'ok') { out.write(`${row.name}: ${row.reason}\n`); failed = true; continue; }
-      if (row.kind !== 'server') { out.write(`${row.name}: ok\n`); continue; }
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) { out.write(`${row.name}: check deadline exceeded\n`); failed = true; continue; }
-      const [program, ...argv] = row.tool.start;
-      const result = await handshake({ command: program.includes('/') ? path.resolve(row.dir, program) : program, args: argv, cwd: row.dir, env: toolEnv(process.env, worktree), timeoutMs: remaining });
-      if (!result.ok) { out.write(`${row.name}: ${result.error}\n`); failed = true; }
-      else out.write(`${row.name}: ${result.serverInfo?.name || '(unnamed server)'}${result.tools === null ? '' : ` tools: ${result.tools.join(', ')}`}\n`);
+    try {
+      for (const row of rows) {
+        if (row.status !== 'ok') { out.write(`${row.name}: ${row.reason}\n`); failed = true; continue; }
+        if (row.kind !== 'server') { out.write(`${row.name}: ok\n`); continue; }
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) { out.write(`${row.name}: check deadline exceeded\n`); failed = true; continue; }
+        const [program, ...argv] = row.tool.start;
+        const result = await handshake({ command: program.includes('/') ? path.resolve(row.dir, program) : program, args: argv, cwd: row.dir, env: toolEnv(process.env, worktree), timeoutMs: remaining, signal: controller.signal });
+        if (!result.ok) { out.write(`${row.name}: ${result.error}\n`); failed = true; }
+        else out.write(`${row.name}: ${result.serverInfo?.name || '(unnamed server)'}${result.tools === null ? '' : ` tools: ${result.tools.join(', ')}`}\n`);
+      }
+    } finally {
+      clearTimeout(timer);
+      process.removeListener('exit', abort);
+      for (const sig of signals) process.removeListener(sig, handlers.get(sig));
     }
     if (failed) throw new Error('tool check failed');
     return;
