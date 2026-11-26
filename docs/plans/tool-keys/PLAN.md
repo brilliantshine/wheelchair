@@ -105,6 +105,11 @@ behaves exactly as today.
   and adds exactly the tool's declared keys to the environment it builds with `toolEnv`.
   The generated bridge entry (`bridgeEntry`) passes only what it takes to find the store:
   `--state-dir`, and `project` or `shared` per tool. It never carries a key value.
+- **Bound to agent start.** The bridge entry also lists, for each tool it offers, a hash of
+  that tool's `tool.json` as discovery read it at agent start. The bridge's changed-tool
+  check compares against that hash, not against what it reads when its own process starts
+  or reconnects. So a tool edited after agent start (for example one that gains `keys`)
+  is refused as changed and never run with keys before the next agent start.
 - No key value is written into any generated MCP config, any connector config file, the
   agent's environment or its starting instructions. Folder tools never use the
   `.mcp.json` env injection (`injectProjectKeys`, `machine/lib/env-launch.js`), which is
@@ -173,7 +178,9 @@ keyed tools in this plan (Decision 24).
 - The machine works these lines out itself (using the connector's `sandboxed(session)` to
   pick the text) and keeps them with that session only. They stay on the problems card
   while that session runs, even when it has no MCP entries at all, and whatever other agents
-  start in the same worktree. They are removed from the card when that session ends.
+  start in the same worktree. They are removed from the card when that session ends. If
+  Collin dismissed the problems card, a line with a new text for a tool brings it back (a
+  dismissal covers the lines it was shown with, not every later line for that tool's name).
 - `/v1/agent/tools` adds `keyed_unavailable`: `null`, or that session's text, and
   `wc.js tool list` shows it for keyed tools. `wc.js tool run` on a keyed tool runs it
   without keys in the caller's process, as for any other tool there, and its output starts
@@ -187,8 +194,9 @@ keyed tools in this plan (Decision 24).
   unknown outside a session`.
 - `check`: never uses keys, as now. For a script tool that declares keys, its output says
   the tool was validated without using keys. A server tool with `keys` gets the K1 status.
-- `run`: always runs in the caller's process without keys, and for a keyed tool its output
-  starts by saying so. Keyed tools are tried for real through MCP, on the next call in a
+- `run`: always runs in the caller's process and adds no folder-tool keys. For a keyed tool
+  its output starts by saying it ran without folder-tool keys, and that variables already in
+  the caller's environment were passed as usual. Keyed tools are tried for real through MCP, on the next call in a
   session that offered them.
 - The bridge's changed-tool error, when the re-read `tool.json` declares keys (even if the
   definition offered at start did not), says to try it with keys from
@@ -203,7 +211,7 @@ keyed tools in this plan (Decision 24).
   including the shared tools project's own Tools page, where its tools use the shared keys.
   There, a missing-key line adds `set it in Settings, Shared tools, Shared keys`. A keyed
   tool that is otherwise working adds one line: `uses keys: not available to sandboxed
-  Codex`. Key values never reach the page.
+  Codex, Kimi or Pi`. Key values never reach the page.
 - The project's **Keys on this machine** editor also lists every key name declared by the
   folder tools that use the project store (K2), set or not set. Its usage and remove texts
   name those tools beside any `.mcp.json` servers. On the shared tools project's own page,
@@ -242,8 +250,8 @@ hashing or splitting are not),
 the rule that a tool must never print or log a key in any form, never writing a key into a
 tool's files, which agents can use keyed tools (K5),
 and how to try one (K6), and that server tools can't have keys yet. The starting-instructions
-line for Kimi, Pi and sandboxed Codex (easy-tools S11) is unchanged, except that it adds
-that keyed tools are unavailable there.
+line for Kimi, Pi and sandboxed Codex (easy-tools S11) is shown when the session has any
+valid script tool, keyed or not, and adds that keyed tools are unavailable there.
 
 ### Not doing (this plan)
 - No change to `.mcp.json` key injection (Decision 8).
@@ -272,8 +280,13 @@ that keyed tools are unavailable there.
   `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js` (key-redact new).
 - K5 (per-AI availability and problems texts for sandboxed Codex, Kimi and Pi; keyed tools
   absent from generated entries there): `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/folder-tools-launch.test.js`. The hub card keeping a session's line through a Claude start and dropping it when its session ends: `node --test viewer/test/app-project-tools-card.test.js`.
+- K3 binding (a bridge started after a tool gained `keys` refuses it as changed):
+  `node --test machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js`.
+- K8 starting line in the actual starting instructions when the only script tool is keyed,
+  on Kimi and on sandboxed Codex: `node --test machine/test/project-tools-service.test.js`.
+- Dismissed problems card returning for a new line: `node --test viewer/test/app-project-tools-card.test.js`.
 - K6 (including `list` on sandboxed and on unrestricted Codex, a changed-tool error for a
-  tool that gained `keys`, no session token, keyless `run` of a keyed tool):
+  tool that gained `keys`, no session token, keyless `run` of a keyed tool and its message):
   `node --test viewer/test/wc-tool.test.js`.
 - K7 (including the shared tools project's own Tools page, switching machine in Shared keys,
   two saves on the same revision, unusable-value marking and refusals, folder-tool names in
@@ -479,9 +492,24 @@ that keyed tools are unavailable there.
 
 ### Round 11 — 2026-11-25
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 10:** Kimi and Pi keyed runs dropped (Decision 24, IDEA.md): K5 rewritten (MCP only; per-session lines), K3 mid-session, K4 (bridge only), K6 `run` and `list`, K8, Not doing, Validation; one Accepted Risk removed. Round 10 fixes: K4 step 2 (marked runs).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Tools page line omits Kimi and Pi | upheld | K7 text |
+| intent | minor | Starting line undefined when only keyed scripts | upheld | K8: shown for any valid script tool |
+| mechanics | major | Bridge baseline taken at its own start | upheld | K3: entry carries discovery-time hashes |
+| mechanics | minor | Keyless run message vs inherited variables | upheld | K6 wording |
+| mechanics | minor | Dismissed card hides a new provider line | upheld | K5: dismissal covers shown lines only |
+| mechanics | minor | Starting line test | upheld | Validation: actual starting instructions |
+
+### Round 12 — 2026-11-25
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 11:** K3 (bridge bound to discovery-time hashes), K5 (dismissed card and new lines), K6 `run` message, K7 Tools page text, K8 starting line, Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
