@@ -190,7 +190,7 @@ function refreshProjectTools(thread) {
   const liveKeyed = projectToolProblems({ keyed: stored.state.keyed }, thread.sessions);
   const shown = new Set(stored.card_texts || dismissed?.items?.filter((item) => !/^and \d+ more$/.test(item)) || []);
   const newKeyed = dismissed ? liveKeyed.filter((line) => !shown.has(line.text)).map((line) => line.text) : [];
-  if (dismissed && JSON.stringify(names) === JSON.stringify(stored.card_names) && !newKeyed.length) return;
+  if (dismissed && names.every((name) => (stored.card_names || []).includes(name)) && !newKeyed.length) return;
   const present = new Set(liveKeyed.map((line) => line.text));
   stored.priority_texts = [...new Set([...(stored.priority_texts || []).filter((text) => present.has(text)), ...newKeyed])];
   const priority = new Set(stored.priority_texts);
