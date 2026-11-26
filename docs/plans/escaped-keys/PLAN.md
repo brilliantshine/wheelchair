@@ -1,6 +1,6 @@
 ---
 slug: escaped-keys
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-26
 ---
 
@@ -41,6 +41,19 @@ Builds on the merged K4 of `docs/plans/tool-keys/PLAN.md`. Only keyed script too
 (`runKeyedScript` in `machine/lib/tool-run.js`); `runKeylessScript`, server tools and key
 storage are untouched.
 
+```mermaid
+flowchart TD
+  A[Keyed script ends; stdout and stderr captured] --> B{Any % or \\ in it?}
+  B -- no --> C[Today's plain search only]
+  B -- yes --> D[Look for every escaped spelling of every key, starting at every byte, plus key pieces at cut edges]
+  D --> E{Done within the work budget?}
+  E -- yes --> F[Each key or key piece becomes key marker or output cut marker]
+  E -- no --> G[Escape-like stretches become not-checked marker; plain keys still hidden]
+  C --> H[1 MiB result cut and 4 KiB stderr tail, as today]
+  F --> H
+  G --> H
+```
+
 ### E1. Escaped spellings (`machine/lib/key-redact.js`)
 
 **Escapes of one character.** For an ASCII character `c` with code `p`, its escapes are:
@@ -72,7 +85,7 @@ Unmarked bytes are passed through unchanged.
 **Speed and the work limit.** A capture with no `%` and no `\` byte gives exactly today's
 result by today's plain search. Otherwise all searching for one capture (complete spellings
 here and cut-off pieces in E2) shares one work budget, counted by the implementation and
-fixed so that cases (o), (c) and (d) below finish within it. If the budget runs out, the
+fixed so that cases (o), (c) and (d) below and the 64 KiB stderr runner fixture in Validation finish within it without the fallback. If the budget runs out, the
 search stops and the **fallback** applies to that capture. All of it is found on the
 capture as captured: plain keys as today, K4's cut-edge trim, E2's both-edges-cut rule
 (so such a capture still gives `[output cut][output cut]`), and every run of bytes made
@@ -85,8 +98,8 @@ unchecked.
 Pinned fixtures, each through `redactCapture` with a timer on the test machine (random
 keys come from a fixed seed, using only usable key characters):
 - (o) ordinary JSON: 2 MiB of repeated `JSON.stringify` lines such as
-  `{"msg":"line 1 says \"hi\"\n","path":"a\/b"}`, 5 random 32-character keys, each placed
-  once as a two-layer spelling. Under 1 second, no fallback, all 5 replaced, everything else
+  `{"msg":"line 1 says \"hi\"\n","path":"a\/b"}`, lines joined by newlines, 5 random 32-character keys, each placed
+  once as a two-layer spelling on a line of its own (right after a newline, followed by one). Under 1 second, no fallback, all 5 replaced, everything else
   unchanged.
 - (a) noise: 2 MiB of repeats of `%5C%25\\u00%2`, 5 random 4096-character keys. Under
   3 seconds; the result is unchanged or the fallback.
@@ -96,7 +109,7 @@ keys come from a fixed seed, using only usable key characters):
   holding one three-layer spelling of one of them. Under 3 seconds, no fallback, all
   spellings replaced.
 - (d) cut edges: (o)'s JSON text with (c)'s 20 keys, one three-layer spelling of one of
-  them every 1000 bytes; the capture starts with the last 40 bytes of a three-layer spelling
+  them on a line of its own after the first newline past every 1000 bytes; the capture starts with the last 40 bytes of a three-layer spelling
   of key 1 followed by a space, and ends with a space followed by the first 40 bytes of one
   of key 2, each spelling chosen so every character is escaped (so each 40-byte piece holds
   a `%` or `\`); both `cutStart` and `cutEnd` set. Under 3 seconds, no fallback; the result is
@@ -186,9 +199,11 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
     ` tail`, and exiting, gives stderr exactly `[output cut] tail` (the 64 KiB window starts
     5 bytes into the spelling);
   - the speed cases in E1, run through `redactCapture` with a timer;
-  - one end-to-end `runScript` case: a script prints a key with `JSON.stringify` of an
-    escaped string and with `encodeURIComponent` of a URL holding the key, and neither
-    reaches `text` or `stderr`.
+  - one end-to-end `runScript` case with key `AB+CD/EF=GH`, failing with today's redactor: a
+    script prints to stdout `encodeURIComponent('https://x.test/?t=' + key)` (the key shows as
+    `AB%2BCD%2FEF%3DGH`) and to stderr `JSON.stringify('t=AB\\u002BCD/EF=GH')` (the key shows
+    as `AB\\u002BCD/EF=GH`); `text` contains `[key]` and no `CD%2FEF`, and `stderr` is
+    exactly `"t=[key]"`.
 - E4: `grep -n -i "never print or log a key" protocol/tools.md` finds the rule;
   `grep -n "not yet" protocol/tools.md` finds nothing about escaped forms; read the rendered
   guide.
@@ -254,12 +269,15 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 
 ### Round 4 — 2026-11-26
 
-**Lanes:** intent: claude / claude-opus-5-5; mechanics: not claude.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** E1 fallback now finds unchecked runs and plain keys on the capture as captured and renders once (Decision 12); fixture (d) rewritten; E2 one `[output cut]` per cut edge and three places key-free output changes; E3 step 2 rendering rule; E4 sentence; Validation (fallback cut-start cases, runner fixtures via timeout and a 64 KiB stderr spelling, name-guard test). Collin chose to keep going after three rounds (budget reset).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | End-to-end case may exercise no escape | upheld | Pinned key with `+ / =` and exact printed forms |
+| mechanics | minor | Fixture spellings can land after a JSON backslash | upheld | (o) and (d): spellings on their own lines |
+| mechanics | minor | Budget not sized for the 64 KiB stderr fixture | upheld | Added to the budget's list |
 | mechanics | major | Plain-key scan in fallback can stall on repeated-character keys | accepted-risk | Rare path; existing behaviour (Accepted Risks) |
 | mechanics | minor | Fallback skips the both-edges-cut rule | upheld | E1 fallback includes it; test |
 | mechanics | minor | Fixture (d) edge pieces may hold no escape byte | upheld | Edge spellings pinned |
