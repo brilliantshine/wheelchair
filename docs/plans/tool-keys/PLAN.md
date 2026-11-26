@@ -45,6 +45,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 19 | Supersedes 17: plain keys are replaced; if a key survives in any decoding (up to three rounds of JSON/backslash unescaping and percent-decoding), the stream is withheld; other transforms (base64, hashing, splitting) are the stated limit | One rule that ends the chase | review-round-5 |
 | 20 | Confirms 19: the redaction limit is common escapes (JSON/backslash, percent, up to three layers); base64, hashing and splitting are not caught and the guide forbids printing keys. IDEA.md "What good looks like" updated | Collin: common escapes, clear limit | idea-change |
 | 21 | Cut edges are trimmed by whole lines, not by a byte count | Keys contain no newline in any spelling, so this covers escaped keys at any cut | review-round-6 |
+| 22 | Supersedes 21: cut edges are trimmed back to the nearest byte no key spelling can contain, each edge on its own | Keeps long single-line output; covers both stderr ends | review-round-7 |
 
 ## Spec
 
@@ -127,20 +128,26 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
   2 MiB capture limit, and the last 64 KiB of stderr. Nothing is returned until the process
   has ended, whether it exits, times out or its pipes are closed by force. Then each capture
   is processed in this order:
-  1. **Cut edges, by whole lines.** Where a capture was cut (stdout at its limit, a stderr
-     window that starts mid-stream, or a pipe closed by force), the partial line at that cut
-     is dropped: stdout back to its last newline, a stderr window up to and including its
-     first newline. A key, and any escaped spelling of it, never contains a raw newline (K2),
-     so no piece of a key survives a cut, however it was escaped. If the capture has no
-     newline at all, all of it is dropped. Where something was dropped, the text ends (or
-     starts) with `[output cut]`.
+  1. **Cut edges.** Every edge where a capture was cut is trimmed on its own: the end of
+     stdout at its limit; both the start of a stderr window that began mid-stream and the end
+     of stderr; and the end of either stream on a timeout or a pipe closed by force. Each is
+     trimmed back to the nearest **separator**: a byte that no key spelling can contain,
+     meaning anything other than an ASCII letter, an ASCII digit, `. _ ~ + / = -`, `\` or
+     `%`. Examples are a space, `"`, `,`, `:` or a newline. That way no piece of a key, plain or
+     escaped, survives at a cut, and a long single line loses only its last unfinished word. If
+     an edge has no separator at all, that capture is dropped. Where something was dropped,
+     the text ends (or starts) with `[output cut]`.
   2. **Plain keys.** Every occurrence of a key value is replaced with `[key <NAME>]`.
-  3. **Disguised keys.** The text is decoded up to three times, in every order, with two
-     decoders: JSON/backslash unescaping (`\uXXXX`, `\/` and the like) and percent-decoding
-     (`%XX`). Each decoder decodes every valid escape it finds and leaves anything else as it
-     is (a stray `100%` or a lone backslash never stops it). If any decoded version contains a key value, that stream's whole text becomes
-     `[output withheld: it contained a key value]`. This catches .NET's `\u002B`, PHP's
-     `\/`, URL encoding, a URL inside a URL, and escaped text logged again as JSON.
+  3. **Disguised keys.** If the text contains a key in any spelling made by up to three
+     layers of JSON/backslash escapes (`\uXXXX`, `\/` and the like) and percent-encoding
+     (`%XX`), in any order and any hex case, that stream's whole text becomes `[output
+     withheld: it contained a key value]`. The search must find a spelling wherever it
+     starts, even right after text that itself looks like an escape. For example the key
+     `41CD+EFGH` inside `progress=100%41CD%2BEFGH` is found, so decoding the whole stream
+     first is not enough. One way is a matcher built per key, where each character may be
+     itself or any of its escape spellings, nested up to three layers. This catches .NET's
+     `\u002B`, PHP's `\/`, URL encoding, a URL inside a URL, and escaped text logged again
+     as JSON. A stray `100%` or a lone backslash elsewhere never stops the search.
   4. **Cuts for the agent.** Only then come the 1 MiB result cut and the 4 KiB stderr tail.
 - **The limit.** Redaction catches a key as written and under up to three layers of those
   standard escapes. Other transforms are not caught: base64 (for example an HTTP Basic auth
@@ -176,12 +183,14 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
     Kimi and Pi only). The connector rule forbids checking provider names outside
     `connectors/`; `connectors/contract.js` and `connectors/README.md` list the new field.
   - **How the CLI picks:** `/v1/agent/tools` adds `keyed_run: "machine" | "local"` from
-    that same eligibility.
+    that same eligibility, and `keyed_unavailable`: `null`, or the K5 sandboxed-Codex text
+    when the connector's existing `sandboxed(session)` says the session is sandboxed. `list`
+    shows that text for keyed tools.
   - **Reading the result:** the CLI collects the whole response body as bytes and decodes
     it as UTF-8 once, so a character split across chunks is never damaged. If the connection
     ends before the body is complete, or the body is not valid JSON, `run` exits non-zero
-    with `lost the connection to the machine before the tool's result arrived` and prints
-    no partial result.
+    with `lost the connection to the machine before the tool's result arrived; the tool may
+    already have run, so check before running it again`, and prints no partial result.
   - **Lifetime:** the route kills the tool's process group if the request's connection
     closes before the tool ends (the CLI exiting or being killed), as the CLI's own exit
     handlers do for a local run.
@@ -199,6 +208,9 @@ A tool with no keys gets no redaction, and its output is passed through exactly 
   (Claude, Antigravity, Codex, or no session token) it runs in the caller's process without
   keys, and for a keyed tool its output starts by saying so. On those AIs keyed tools are
   tried for real through MCP, on the next call in a session that offered them.
+- The bridge's changed-tool error, for a keyed script tool, says to try it with keys from
+  the next agent start (`wc.js tool run` there runs it without keys). The guide's matching
+  advice says the same.
 - `new`: the script template is unchanged. The guide shows how to add `keys`.
 
 ### K7. What you see
@@ -265,7 +277,9 @@ makes it usable mid-session (K3).
   `node --test machine/test/folder-tools.test.js machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js machine/test/project-keys.test.js machine/test/shared-keys.test.js` (shared-keys new).
 - K4 (redaction including a key split across chunks, at the 2 MiB capture limit and at the
   1 MiB cut and in a forced-close or timed-out stream, plain and escaped (a `\u`-escaped
-  key cut mid-way leaves nothing of it); a capture with no newline; plain keys replaced;
+  key cut mid-way leaves nothing of it); stderr trimmed at both ends, on timeout and on forced
+  close; a long single line keeping all but its last word; `41CD+EFGH` found in
+  `progress=100%41CD%2BEFGH`; plain keys replaced;
   a `%2B` key in a stream that also holds a stray `100%`; withheld for
   `\u002B`, `\/`, `%2B`, `%252B` (a URL inside a URL) and a `JSON.stringify` of
   already-escaped text; a base64 form is not caught (the stated limit); non-ASCII values
@@ -275,7 +289,7 @@ makes it usable mid-session (K3).
 - K5 (per-AI availability, sandboxed Codex problems text, Kimi/Pi route and its refusal
   for other providers):
   `node --test machine/test/project-mcp-codex.test.js machine/test/project-tools-service.test.js machine/test/kimi.test.js machine/test/pi.test.js machine/test/name-guard.test.js machine/test/connectors-contract.test.js`, after regenerating `connectors/registry.json` with `node connectors/export.js` (committed). The route tests cover refusals for a reviewer, an assistant, a project lead and a non-Kimi/Pi session, and killing the process group when the connection closes.
-- K6 (including no session token, a machine-run result with a multibyte character split
+- K6 (including `list` on sandboxed and on unrestricted Codex, no session token, a machine-run result with a multibyte character split
   across chunks, and a connection lost mid-body): `node --test viewer/test/wc-tool.test.js`.
 - K8 hint on Kimi/Pi when only a key is missing: `node --test machine/test/project-tools-service.test.js`.
 - K7 (including the shared tools project's own Tools page, switching machine in Shared keys,
@@ -419,12 +433,19 @@ makes it usable mid-session (K3).
 
 ### Round 7 — 2026-11-25
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 6:** K4 step 1 (trim by whole lines; Decision 21) and step 3 (decoders on mixed text), K2 and K8 wording on the limit, K5 interrupted response, K7 revision in refresh, K1 problems timing, Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Whole-line trim drops long single-line output | upheld | K4 step 1: trim to the nearest separator (Decision 22) |
+| intent | minor | Forced close after clean exit loses unterminated output | upheld | Same fix: only the last unfinished word is lost |
+| intent | minor | Lost-connection text invites a double run | upheld | K5: says the tool may have run |
+| mechanics | blocking | stderr end not trimmed on a cut | upheld | K4 step 1: each edge trimmed on its own |
+| mechanics | blocking | Whole-stream decoding swallows an escaped key | upheld | K4 step 3: find spellings at any start |
+| mechanics | minor | CLI can't tell sandboxed Codex | upheld | K5: `keyed_unavailable` field |
+| mechanics | minor | Changed-tool error points to keyless run | upheld | K6: error and guide point to next agent start |
 
 ## Implementation Tasks
 
