@@ -602,7 +602,7 @@ at least one valid, not hidden, script tool declares keys.
 | T3a | K5 hub card: keyed lines kept per session, dropped on end, dismissal by text, new lines first | `viewer/app/sessions.js` card code; `viewer/test/app-project-tools-card.test.js` | standard / gpt-6.1-terra | wc-1d9da322519c-worker-2 | `node --test viewer/test/app-project-tools-card.test.js viewer/test/app-shared-tools-setting.test.js` | done |
 | T3b | K7 pages: Tools page needs-key lines, key editor, key-only refresh; Settings Shared keys with machine chooser; hub pass-through routes | `viewer/pages/{project-tools,settings}.js`, `viewer/app/routes.js` shared-keys routes; viewer tests and specs for them | standard, Claude | — | K7 Validation commands | after T2b |
 | T3c | Follow-up to T3a: a dismissed card stays dismissed when lines only disappear; tests for the other session-end refreshes | `viewer/app/sessions.js` card code; `viewer/test/app-project-tools-card.test.js` | light / gpt-6-luna | wc-1d9da322519c-worker-3 | same as T3a | done |
-| T4 | K6 `wc.js tool` list/check/run with keys | `viewer/app/tool-cli.js`, `viewer/test/wc-tool.test.js` | standard / gpt-6.1-terra | wc-1d9da322519c-worker-7 | `node --test viewer/test/wc-tool.test.js` | running |
+| T4 | K6 `wc.js tool` list/check/run with keys | `viewer/app/tool-cli.js`, `viewer/test/wc-tool.test.js` | standard / gpt-6.1-terra | wc-1d9da322519c-worker-7 | `node --test viewer/test/wc-tool.test.js` | done |
 | T5 | K8 guide `protocol/tools.md` | `protocol/tools.md` | standard | — | K8 greps and rendered read | after T2a, T2b |
 
 ## Log
@@ -623,3 +623,8 @@ at least one valid, not hidden, script tool declares keys.
 - 2026-11-26 — Choice: T2b, project-tools.js: unreadable shared store treats keyed rows as missing.
 - 2026-11-26 — Choice: T2b, scout-listed and not reported: `fetched` gains `includeSource`; `withInfo` re-lists folder tools after every project save/remove; `keyStatus` reads from origin, not read's destination; hidden shared rows get key lines; empty shared save bumps the revision; shared refusals are 400; shared lock covers the whole action.
 - 2026-11-26 — T2b accepted with fixes to follow (band: scout): routes and shapes match the brief, validation re-run 58/58 and 139/139. Defects (cross-page `lastChoice` state, lock held over a possible 20 s fetch, network work on every project key save, hidden rows with key lines, empty save, unasserted texts, `machine/AGENTS.md` rows missing) go to T2d.
+- 2026-11-26 — Choice: T4, tool-cli.js: route entries matched by tool name and source, so hidden shared tools are told apart.
+- 2026-11-26 — Choice: T4, tool-cli.js: a keyed row missing from the route shows `key status unavailable: tool missing from machine response`.
+- 2026-11-26 — Choice: T4, tool-cli.js: `--json` keyless rows carry `key_status: null` (additive; my brief was ambiguous).
+- 2026-11-26 — Choice: T4, scout-listed: any non-default route reason is shown verbatim; the route is called only with a token and a keyed row; the `run` notice prints before the run, so also on failure.
+- 2026-11-26 — T4 accepted (band: scout): list/check/run key texts as briefed; validation re-run 7/7.
