@@ -54,13 +54,18 @@ pixels goes on `viewer/test/firefox-specs.js`.
 - The default free text (`DEFAULT_STYLE.text`, `viewer/app/settings.js:36`) drops its
   second line, becoming exactly
   `Be concise. Cut anything that makes it longer without changing the meaning.`
-  This only affects installs with no saved style; saved text is never rewritten.
+  This only affects installs with no saved style; saved text is never rewritten. The done
+  card's note tells Collin that a saved text still containing the old "Build up to
+  technical terms…" line now sits beside the new sentence and can be deleted in
+  Settings > You.
 
 ### S2. A waiting sign-in card is never rebuilt by a usage answer
 
 - In `refreshUsage` only (`viewer/pages/settings.js:1432`), Accounts is not repainted
-  while a sign-in card is open inside the Accounts block **and still waiting** (its
-  status poll is running: not yet signed in, failed or expired). Usage still repaints.
+  while a sign-in card is open inside the Accounts block **and still waiting**: from the
+  moment the card is attached (including "Starting sign-in…" while its start request is
+  pending) until it is signed in, failed (including a failed start request) or expired.
+  Usage still repaints.
   This applies to the 30-second timer and every other usage answer.
 - `accountsBusy()` and every other `paint('accounts')` caller (Collin's own actions:
   account edits, turning a harness on or off, opening the card) are unchanged.
@@ -105,12 +110,19 @@ New browser spec `viewer/test/app-settings-hold.spec.js`, added to
 `* { overflow-anchor: none !important; }` first, as `viewer/test/app-settings.spec.js:1030`
 does, so the browser's own anchoring cannot hide a missing hold. Tests:
 
+- Sign-in card open and waiting in Accounts, focus **not** in any field (moved to the
+  page body), a marker set on an account card; mouse pressed on Send code, a usage answer
+  released, mouse released: the marker survives and exactly one code request is sent.
 - Sign-in card open and waiting in Accounts, code box focused with text typed; a usage
   answer arrives (and the 30-second refresh fires): the card is the same node, the code
   box keeps focus and text, and Accounts was not rebuilt (a marker set on an account card
   survives); after the card is closed, Accounts shows the newer usage.
 - Sign-in card failed or expired (still shown): a usage answer repaints Accounts.
 - With the card open, turning another harness on still updates Accounts at once.
+- Lead order setup for the next three tests: Usage and balancing open, scrolled so part
+  of the Usage block is still visible below the sticky nav and Lead order buttons are on
+  screen, with enough page below for the hold to scroll; each test waits until the usage
+  bars are rendered before measuring the button again or releasing a press.
 - Usage and balancing open, Lead order buttons on screen below Usage, no usage answered
   yet: mouse pressed on a Lead order button, the first usage answer released (adding the
   bars), mouse released: the button's on-screen top changed by at most 1px and its action
@@ -132,6 +144,7 @@ Commands:
 
 ```bash
 node --test viewer/test/app-settings.test.js
+node --test machine/test/name-guard.test.js
 npm --prefix viewer run test:browser -- app-settings-hold.spec.js app-settings.spec.js app-accounts.spec.js app-harnesses.spec.js
 ```
 
@@ -175,6 +188,12 @@ npm --prefix viewer run test:browser -- app-settings-hold.spec.js app-settings.s
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | S2's focused-field test passes without S2 (`accountsBusy()` already covers a focused field) | upheld | Send code press test with focus off the field |
+| intent | minor | Saved style text on existing installs keeps the old "Build up…" line beside the new sentence | upheld | Done card note (S1) |
+| mechanics | minor | Card exposed while its start request is pending | upheld | Waiting starts at card attach; failed start ends it |
+| mechanics | minor | Waiting-card test passes on current code | upheld | Same fix as the intent finding |
+| mechanics | minor | Lead order tests could pass via the next-sibling fallback | upheld | Setup requires Usage partly visible, scroll room, bars rendered |
+| mechanics | minor | Missing targeted `machine/test/name-guard.test.js` | upheld | Added to Commands |
 
 ## Implementation Tasks
 
