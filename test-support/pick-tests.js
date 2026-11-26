@@ -3,6 +3,47 @@
 const path = require('node:path').posix;
 const { execFileSync } = require('node:child_process');
 
+const suites = [
+    ['viewer-node', 'node --test viewer/test/*.test.js'],
+    ['viewer-browser', 'npm --prefix viewer run test:browser'],
+    ['machine', 'bash machine/test/run.sh'],
+    ['test-support', 'node --test test-support/test/*.test.js'],
+    ['sensitivity', 'bash sensitivity/test/run.sh'], ['codex', 'bash codex/test/run.sh'],
+    ['install', 'bash install/test/run.sh'],
+    ['sudo-helper', ['python3 -m unittest discover -s sudo-helper/test', 'bash sudo-helper/test/install-test.sh']]
+  ];
+const testSuite = p => /^viewer\/test\/[^/]+\.test\.js$/.test(p) ? 'viewer-node' : /^viewer\/test\/[^/]+\.spec\.js$/.test(p) ? 'viewer-browser' : /^machine\/test\/[^/]+\.test\.js$/.test(p) ? 'machine' : null;
+const glob = pattern => {
+  let re = '^';
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '*' && pattern[i + 1] === '*') { i++; if (pattern[i + 1] === '/') { i++; re += '(?:.*/)?'; } else re += '.*'; }
+    else if (c === '*') re += '[^/]*';
+    else re += c.replace(/[\\^$+.?()|[\]{}]/g, '\\$&');
+  }
+  return new RegExp(re + '$');
+};
+
+function staleEntries(map, files) {
+  const tracked = new Set(files);
+  const names = new Set(suites.map(([name]) => name));
+  const problems = [];
+  for (const entry of map) {
+    if (![...tracked].some(file => glob(entry.glob).test(file))) {
+      problems.push({ glob: entry.glob, target: null, problem: 'glob matches no tracked file' });
+    }
+    for (const target of entry.tests) {
+      if (!names.has(target) && !(tracked.has(target) && testSuite(target))) {
+        problems.push({ glob: entry.glob, target, problem: 'not a suite name or a tracked test file' });
+      }
+    }
+  }
+  return problems;
+}
+
+module.exports = { staleEntries };
+
+if (require.main === module) {
 try {
   const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -17,31 +58,11 @@ try {
   }
   if (full === Boolean(base)) throw new Error('supply exactly one of --base or --full');
   git('rev-parse', '--verify', `${head}^{commit}`);
-  const suites = [
-    ['viewer-node', 'node --test viewer/test/*.test.js'],
-    ['viewer-browser', 'npm --prefix viewer run test:browser'],
-    ['machine', 'bash machine/test/run.sh'],
-    ['test-support', 'node --test test-support/test/*.test.js'],
-    ['sensitivity', 'bash sensitivity/test/run.sh'], ['codex', 'bash codex/test/run.sh'],
-    ['install', 'bash install/test/run.sh'],
-    ['sudo-helper', ['python3 -m unittest discover -s sudo-helper/test', 'bash sudo-helper/test/install-test.sh']]
-  ];
   const state = new Map(suites.map(([name]) => [name, { whole: false, files: new Set(), reasons: new Set() }]));
   const files = new Set(git('ls-tree', '-r', '--name-only', '-z', head).split('\0').filter(Boolean));
-  const testSuite = p => /^viewer\/test\/[^/]+\.test\.js$/.test(p) ? 'viewer-node' : /^viewer\/test\/[^/]+\.spec\.js$/.test(p) ? 'viewer-browser' : /^machine\/test\/[^/]+\.test\.js$/.test(p) ? 'machine' : null;
   const tests = [...files].filter(testSuite).sort();
   const mark = (suite, file, reason) => { const s = state.get(suite); if (!s) return false; if (file && !files.has(file)) return false; if (file) s.files.add(file); else s.whole = true; s.reasons.add(reason); return true; };
   const whole = (names, reason) => names.forEach(name => mark(name, null, reason));
-  const glob = pattern => {
-    let re = '^';
-    for (let i = 0; i < pattern.length; i++) {
-      const c = pattern[i];
-      if (c === '*' && pattern[i + 1] === '*') { i++; if (pattern[i + 1] === '/') { i++; re += '(?:.*/)?'; } else re += '.*'; }
-      else if (c === '*') re += '[^/]*';
-      else re += c.replace(/[\\^$+.?()|[\]{}]/g, '\\$&');
-    }
-    return new RegExp(re + '$');
-  };
   let changed = [];
   if (full) whole(suites.map(s => s[0]), 'full run');
   else {
@@ -107,4 +128,5 @@ try {
 } catch (error) {
   console.error(`test picker: ${String(error.message).split('\n')[0]}`);
   process.exitCode = 1;
+}
 }

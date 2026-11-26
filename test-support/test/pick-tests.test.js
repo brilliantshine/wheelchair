@@ -71,3 +71,31 @@ test('real repository changes include readers across suites', () => {
 });
 test('an additive map entry adds its reader without turning off the fallback', () => { const f = fixture(); f.write('test-support/test-map.json', JSON.stringify([{ glob: 'machine/**', additive: true, tests: ['viewer/test/foo.test.js'] }])); f.git('add', '.'); f.git('commit', '-qm', 'map'); f.write('machine/other.js', 'x'); const r = f.pick(); assert.deepEqual(names(r), ['viewer-node', 'machine']); assert.deepEqual(r.suites[0].files, ['viewer/test/foo.test.js']); assert.equal(r.suites[1].command, 'bash machine/test/run.sh'); });
 test('an import without an extension finds a .json file', () => { const f = fixture(); f.write('viewer/data.json', '{}'); f.write('machine/test/reads-data.test.js', "require('../../viewer/data')\n"); f.git('add', '.'); f.git('commit', '-qm', 'json'); f.write('viewer/data.json', '{"a":1}'); const r = f.pick(); assert.deepEqual(names(r), ['machine']); assert.deepEqual(r.suites[0].files, ['machine/test/reads-data.test.js']); });
+
+test('map entries reference tracked files and known suites at HEAD', () => {
+  const root = path.resolve(__dirname, '../..');
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  const map = JSON.parse(git('show', 'HEAD:test-support/test-map.json'));
+  const files = git('ls-tree', '-r', '--name-only', '-z', 'HEAD').split('\0').filter(Boolean);
+  const result = require('../pick-tests').staleEntries(map, files);
+  const message = result.map(({ glob, target, problem }) => `${glob} -> ${target ?? '(no matching file)'}: ${problem}`).join('\n');
+  assert.deepEqual(result, [], message);
+});
+
+test('stale map entries identify missing targets and unmatched globs', () => {
+  const { staleEntries } = require('../pick-tests');
+  const files = ['viewer/test/a.test.js', 'viewer/app/x.js', 'machine/m.js'];
+  const map = [
+    { glob: 'machine/**', tests: ['machine/test/gone.test.js'] },
+    { glob: 'viewer/app/**', additive: true, tests: ['no-such-suite'] },
+    { glob: 'nothing/here/**', tests: ['machine'] },
+    { glob: 'viewer/**', tests: ['viewer/test/a.test.js', 'machine'] }
+  ];
+  const result = staleEntries(map, new Set(files));
+  assert.deepEqual(result.map(({ glob, target }) => ({ glob, target })), [
+    { glob: 'machine/**', target: 'machine/test/gone.test.js' },
+    { glob: 'viewer/app/**', target: 'no-such-suite' },
+    { glob: 'nothing/here/**', target: null }
+  ]);
+  for (const { problem } of result) assert.ok(typeof problem === 'string' && problem.length > 0);
+});
