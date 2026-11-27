@@ -257,7 +257,7 @@ test('shell instructions require a usable script on Kimi, Pi or sandboxed Codex 
   for (const options of fallback) {
     const session = await f.start(options);
     const prompt = f.promptPath(session.name);
-    assert.equal(await fs.readFile(prompt, 'utf8'), `role prompt\n\n${line}`);
+    assert.equal(await fs.readFile(prompt, 'utf8'), `role prompt\n\n${line}${options.cli !== 'codex' ? ' `wc.js tool run` runs tools that need keys on the machine with their keys; their key values never appear in the result.' : ''}`);
     // Give the prompt a known mtime so even a rewrite with identical content is observable.
     await fs.utimes(prompt, 100, 100);
     await f.machine.prepareLaunch(session, session, connectors.machine(session.cli), f.worktree, prompt, 'role prompt', true);
@@ -517,7 +517,7 @@ test('agent tools endpoint and wc tool list use the session pin', async t => {
     assert.equal(denied.status, 401);
     const response = await request(session.token);
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { worktree: f.worktree, shared_copy: session.shared_tools.copy, keyed_unavailable: null });
+    assert.deepEqual(await response.json(), { worktree: f.worktree, shared_copy: session.shared_tools.copy, keyed_unavailable: null, keyed_run: 'local' });
     const result = await promisify(execFile)(process.execPath, [path.join(__dirname, '../../viewer/app/wc.js'), 'tool', 'list'], {
       env: { ...process.env, WHEELCHAIR_MACHINE_ORIGIN: origin, WHEELCHAIR_SESSION_TOKEN: session.token },
       timeout: 5000,
@@ -529,12 +529,19 @@ test('agent tools endpoint and wc tool list use the session pin', async t => {
 });
 
 test('shell-only sessions report keyed tools and include the starting clause', async t => {
-  const f = await fixture(t);
+  const f = await fixture(t); git(f.worktree, 'init');
   for (const name of ['first', 'second']) { const dir = await putTool(f.worktree, name, name); const file = path.join(dir, 'tool.json'); await fs.writeFile(file, JSON.stringify({ ...(await readJson(file)), keys: ['TOKEN'] })); }
   for (const options of [{cli:'kimi'}, {cli:'pi'}, {cli:'codex',mode:'sandboxed'}]) {
     const session = await f.start(options), lines = session.project_tools.keyed[session.name];
-    assert.equal(lines.length, 2); assert.deepEqual(lines.map(line => line.text), ['first','second'].map(name => `tool ${name} needs keys, which ${connectors.machine(session.cli).keyedToolsReason(session)}`)); assert.doesNotMatch(await f.command(), /tool-bridge\.js/);
-    assert.ok((await fs.readFile(f.promptPath(session.name),'utf8')).includes(` Tools that need keys aren't available in this session (${connectors.machine(session.cli).keyedToolsReason(session)}).`));
+    assert.equal(lines.length, 2); assert.doesNotMatch(await f.command(), /tool-bridge\.js/);
+    const prompt = await fs.readFile(f.promptPath(session.name), 'utf8');
+    if (options.cli === 'codex') {
+      assert.deepEqual(lines.map(line => line.text), ['first','second'].map(name => `tool ${name} needs keys, which ${connectors.machine(session.cli).keyedToolsReason(session)}`));
+      assert.match(prompt, /Tools that need keys aren't available/);
+    } else {
+      assert.deepEqual(lines.map(line => line.text), ['first','second'].map(name => `tool ${name} needs key TOKEN, not set on this machine when this session started; set it and run again`));
+      assert.match(prompt, /runs tools that need keys on the machine/); assert.doesNotMatch(prompt, /Tools that need keys aren't available/);
+    }
   }
 });
 
@@ -575,16 +582,16 @@ test('keyed server is excluded while keyless server connects', async t => {
 test('agent routes report key status and sandbox restriction without values', async t => {
   const {projectIdentity,writeKeyStore}=require('../lib/project-keys'); const f=await fixture(t); git(f.worktree,'init');
   await keyedTool(f.worktree,'secret',['SET','MISSING','BAD']); await writeKeyStore(f.stateDir,await projectIdentity(f.worktree),{set:{SET:'sentinelvalue',BAD:'short'}});
-  const unrestricted=await f.start(), sandbox=await f.start({mode:'sandboxed'}); const server=http.createServer((req,res)=>f.machine.handle(req,res)); server.listen(0,'127.0.0.1'); await once(server,'listening');
+  const unrestricted=await f.start(), sandbox=await f.start({mode:'sandboxed'}), eligible=await f.start({cli:'kimi'}); const server=http.createServer((req,res)=>f.machine.handle(req,res)); server.listen(0,'127.0.0.1'); await once(server,'listening');
   try {
     const request=async (session,route)=>{const response=await fetch(`http://127.0.0.1:${server.address().port}/v1/agent/${route}`,{method:'POST',headers:{'x-wheelchair-session-token':session.token},body:'{}',signal:AbortSignal.timeout(4000)}); assert.equal(response.status,200); return response.json();};
-    assert.equal((await request(unrestricted,'tools')).keyed_unavailable,null); assert.equal((await request(sandbox,'tools')).keyed_unavailable,connectors.machine('codex').keyedToolsReason(sandbox));
+    assert.equal((await request(eligible,'tools')).keyed_run,'machine'); assert.equal((await request(unrestricted,'tools')).keyed_run,'local'); assert.equal((await request(unrestricted,'tools')).keyed_unavailable,null); assert.equal((await request(sandbox,'tools')).keyed_unavailable,connectors.machine('codex').keyedToolsReason(sandbox));
     const result=await request(unrestricted,'tool-keys'); assert.ok(!JSON.stringify(result).includes('sentinelvalue')); assert.deepEqual(result.tools[0].keys,[{name:'SET',set:true,reason:null},{name:'MISSING',set:false,reason:'not set on this machine'},{name:'BAD',set:false,reason:'value too short (under 8 characters)'}]);
   } finally { await new Promise(resolve=>server.close(resolve)); }
 });
 
 test('shell-only keyed lines survive other sessions and disappear after end', async t => {
-  const f=await fixture(t); await keyedTool(f.worktree,'first'); await keyedTool(f.worktree,'second');
+  const f=await fixture(t); git(f.worktree,'init'); await keyedTool(f.worktree,'first'); await keyedTool(f.worktree,'second');
   const a=await f.start({cli:'kimi'}), b=await f.start({cli:'pi'});
   assert.equal(b.project_tools.keyed[a.name].length,2); assert.equal(b.project_tools.keyed[b.name].length,2);
   f.machine.sessions[a.name].status='ended'; const c=await f.start({mode:'sandboxed'});
