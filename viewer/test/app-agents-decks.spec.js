@@ -244,6 +244,13 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       const roundsOf = n => ({ review: Object.fromEntries(Array.from({ length: n }, (_, i) => [i + 1, { found: 1 }])) });
       const workers = (n, from = 0) => Array.from({ length: n }, (_, i) => node(`lw-${from + i}`, 'worker', -100 + from + i, { live: true, state: 'working' }));
       const raf2 = page => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+      const refreshed = async (page, oldPop, changed) => {
+        await page.waitForFunction(e => !e.isConnected, oldPop, { timeout: 8000 });
+        const pop = page.locator('.deck-pop');
+        await expect(pop).toHaveCount(1, { timeout: 8000 });
+        if (changed) await expect(pop.locator('[data-round="41"]')).toHaveCount(1, { timeout: 8000 });
+        await raf2(page);
+      };
       const scenario = (title, { before = [], expand = false, scrolled = false, change }) => test(title, async ({ page }) => {
         const state = { members: [...before, ...base()], rounds: roundsOf(40) };
         await open(page, () => lead(state.members, state.rounds));
@@ -258,11 +265,11 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
         const want = await pop.evaluate(e => e.scrollTop);
         expect(want).toBeGreaterThan(0);
         if (scrolled) expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
+        const oldPop = await pop.elementHandle();
         if (change) {
           change(state); await spacer(page, 3000);
         }
-        await page.waitForResponse(r => r.url().includes('/api/agents'), { timeout: 8000 });
-        await raf2(page);
+        await refreshed(page, oldPop, !!change);
         if (change) {
           const vh = page.viewportSize().height;
           await expect.poll(async () => { const d = await deck.boundingBox(); return !!d && (d.y > vh || d.y + d.height > vh); }).toBe(true);
@@ -299,10 +306,10 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
         const heightBefore = await pop.evaluate(e => e.clientHeight);
         const seen = await visibleRounds();
         expect(seen.length).toBeGreaterThan(0);
+        const oldPop = await pop.elementHandle();
         state.members = [...workers(W, W), ...state.members, reviewer(41, 0)]; state.rounds = roundsOf(41);
         await spacer(page, 3000);
-        await page.waitForResponse(r => r.url().includes('/api/agents'), { timeout: 8000 });
-        await raf2(page);
+        await refreshed(page, oldPop, true);
         const vh = page.viewportSize().height;
         await expect.poll(async () => { const d = await deck.boundingBox(); return !!d && (d.y > vh || d.y + d.height > vh); }).toBe(true);
         await expect(pop).toHaveCount(1);

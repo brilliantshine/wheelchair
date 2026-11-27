@@ -1341,8 +1341,11 @@ test('a verifier report survives a failed submit and the queue timer retries it'
     assert.equal(stored.sessions.find((session) => session.name === lead.name).queue.length, 1);
     assert.match(stored.sessions.find((session) => session.name === lead.name).delivery_error.text, /temporarily unavailable/);
     context.machine.submitOk = true;
-    const deadline = Date.now() + 1_000;
-    while (!(context.machine.sessions.get(lead.name).submits || []).length && Date.now() < deadline) {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+      const savedLead = stored.sessions.find((session) => session.name === lead.name);
+      if ((context.machine.sessions.get(lead.name).submits || []).length && savedLead.queue.length === 0 && !savedLead.delivery_error) break;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.deepEqual(context.machine.sessions.get(lead.name).submits, [

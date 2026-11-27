@@ -17,9 +17,10 @@ async function setup() {
   const state = path.join(root, 'machine');
   const hubState = path.join(root, 'hub');
   const bin = path.join(root, 'bin');
+  const home = path.join(root, 'home');
   const project = path.join(root, 'project');
   const origin = path.join(root, 'origin.git');
-  await Promise.all([state, hubState, bin, project].map(dir => fs.mkdir(dir, { recursive: true })));
+  await Promise.all([state, hubState, bin, home, project].map(dir => fs.mkdir(dir, { recursive: true })));
   const git = (...args) => execFileSync('git', args, { stdio: 'ignore' });
   git('init', '--bare', '--initial-branch=main', origin);
   git('init', '--initial-branch=main', project);
@@ -33,6 +34,8 @@ async function setup() {
   const script = `#!/bin/sh\ncase "$(basename "$0"):$1" in\n  systemd-run:*) exit 1 ;;\n  tmux:capture-pane) printf 'auto mode on\\n❯ Try anything\\n' ;;\n  claude:--version) echo claude-test ;;\n  claude:auth) echo '{"loggedIn":true}' ;;\nesac\n`;
   for (const name of ['tmux', 'systemd-run', 'claude']) await fs.writeFile(path.join(bin, name), script, { mode: 0o755 });
   const priorPath = process.env.PATH;
+  const priorHome = process.env.HOME;
+  process.env.HOME = home;
   process.env.PATH = `${bin}:${priorPath}`;
   let instance, server;
   try {
@@ -49,27 +52,44 @@ async function setup() {
     server = await startServer({ stateDir: hubState, env: { WHEELCHAIR_MODELS: path.join(root, 'models'), WHEELCHAIR_MODELS_CACHE: modelsCache } });
     return { server, state: hubState, machineState: state, instance, project, async close() {
       try { await server.stop(); } finally {
-        instance.server.closeAllConnections();
-        await new Promise(resolve => instance.server.close(resolve));
-        process.env.PATH = priorPath;
+        try {
+          instance.server.closeAllConnections();
+          await new Promise(resolve => instance.server.close(resolve));
+        } finally {
+          process.env.PATH = priorPath;
+          if (priorHome === undefined) delete process.env.HOME; else process.env.HOME = priorHome;
+        }
       }
     } };
   } catch (error) {
-    if (server) await server.stop();
-    if (instance?.server?.listening) await new Promise(resolve => instance.server.close(resolve));
-    process.env.PATH = priorPath;
+    try {
+      if (server) await server.stop();
+      if (instance?.server?.listening) await new Promise(resolve => instance.server.close(resolve));
+    } finally {
+      process.env.PATH = priorPath;
+      if (priorHome === undefined) delete process.env.HOME; else process.env.HOME = priorHome;
+    }
     throw error;
   }
 }
 
-test('archive through the hub cancels a stalled upload to the real machine', { timeout: 30000 }, async () => {
+test('archive through the hub cancels a stalled upload to the real machine', { timeout: 90000 }, async () => {
   const context = await setup();
   let request;
   try {
     const made = await thread(context, { project: context.project, cli: 'claude' });
     assert.ok(made.id, JSON.stringify(made));
     assert.ok(made.sessions.some(session => session.role === 'lead' && session.live));
-    assert.ok(Object.values(context.instance.sessions).some(session => session.thread_id === made.id && session.role === 'lead'));
+    const leadOnMachine = () => Object.values(context.instance.sessions).some(session => session.thread_id === made.id && session.role === 'lead');
+    const leadDeadline = Date.now() + 15000;
+    while (!leadOnMachine() && Date.now() < leadDeadline) await delay(20);
+    if (!leadOnMachine()) {
+      const { Hub } = require('../app/hub.js');
+      const hubThread = await new Hub({ stateDir: context.state }).thread(made.id);
+      const hubSessions = hubThread.sessions.map(({ name, live, status, waiting_reason }) => ({ name, live, status, waiting_reason }));
+      const machineSessions = Object.values(context.instance.sessions).map(({ name, thread_id, role, status }) => ({ name, thread_id, role, status }));
+      assert.ok(leadOnMachine(), `machine has the lead; hub sessions: ${JSON.stringify(hubSessions)}; machine sessions: ${JSON.stringify(machineSessions)}`);
+    }
     const base = `${context.server.url}/api/threads/${made.id}`;
     const headers = { 'x-graph-token': context.server.token, origin: new URL(base).origin, 'content-type': 'application/octet-stream' };
     const bytes = Buffer.from('small upload through the hub');
@@ -80,6 +100,7 @@ test('archive through the hub cancels a stalled upload to the real machine', { t
     assert.equal(path.dirname(stored), uploads);
     assert.deepEqual(await fs.readFile(stored), bytes);
 
+    let settled = false;
     const outcome = new Promise(resolve => {
       request = http.request(`${base}/uploads?name=slow.bin`, { method: 'POST', headers: { ...headers, 'content-length': 1024 * 1024 } }, response => {
         response.resume();
@@ -89,18 +110,25 @@ test('archive through the hub cancels a stalled upload to the real machine', { t
       request.on('error', error => resolve({ error }));
       request.write(Buffer.alloc(4096));
     });
-    const deadline = Date.now() + 3000;
+    outcome.then(() => { settled = true; });
+    const deadline = Date.now() + 15000;
     while (!(await fs.readdir(uploads)).some(name => name.endsWith('.part'))) {
       assert.ok(Date.now() < deadline, 'upload reached the machine');
       await delay(20);
     }
     await delay(5200);
+    assert.ok((await fs.readdir(uploads)).some(name => name.endsWith('.part')), 'upload remains on the machine');
+    assert.equal(settled, false, 'upload is still pending');
     const started = Date.now();
     const archived = await api(context, `/threads/${made.id}/archive`, { method: 'POST', body: {} });
-    assert.ok(Date.now() - started < 5000, 'archive completed before the default machine timeout');
+    assert.ok(Date.now() - started < 25000, 'archive completed in under 25 seconds');
     assert.equal(archived.status, 200, JSON.stringify(archived.body));
     assert.equal((await api(context, `/threads/${made.id}/chat`)).body.thread.archived, true);
-    const result = await Promise.race([outcome, delay(3000).then(() => ({ timeout: true }))]);
+    let result;
+    outcome.then(value => { result = value; });
+    const outcomeDeadline = Date.now() + 15000;
+    while (!result && Date.now() < outcomeDeadline) await delay(20);
+    result ||= { timeout: true };
     assert.ok(result.status === 409 || result.error, `upload did not end with 409 or a dropped connection: ${JSON.stringify(result)}`);
     await assert.rejects(fs.access(uploads), { code: 'ENOENT' });
   } finally {

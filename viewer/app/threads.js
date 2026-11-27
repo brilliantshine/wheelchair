@@ -231,7 +231,7 @@ async function archive(hub, id, by) {
   await hub.save(thread);
   const leads = new Set((thread.sessions || []).filter((s) => ['lead', 'sub-lead'].includes(s.role)).map((s) => s.name));
   const keep = [...new Set((thread.cards || []).filter((c) => ['file', 'image'].includes(c.kind) && !c.retracted_at && leads.has(c.session) && typeof c.file === 'string').map((c) => c.file))];
-  const result = await hub.call(thread.machine, '/v1/archive', 'POST', { thread_id: thread.id, keep });
+  const result = await hub.call(thread.machine, '/v1/archive', 'POST', { thread_id: thread.id, keep }, 30000);
   thread.archive = result;
   if (result.pending === true) {
     const names = result.pending_sessions?.join(', ') || 'a session';

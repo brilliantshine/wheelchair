@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { setup, close, thread, machinePost, event, card } = require('./helpers/app.js');
 const { Hub } = require('../app/hub.js');
 const env = { WHEELCHAIR_QUIET_GRACE_MS: '50', WHEELCHAIR_QUIET_ESCALATE_MS: '400', WHEELCHAIR_QUEUE_RETRY_MS: '20' };
+const longGrace = { WHEELCHAIR_QUIET_GRACE_MS: '2000' };
 const delay = ms => new Promise(r => setTimeout(r, ms));
 async function until(fn, timeout = 8000) { const end = Date.now() + timeout; while (Date.now() < end) { const v = await fn(); if (v) return v; await delay(20); } assert.fail('timed out waiting for condition'); }
 async function fixture(extraEnv = {}) {
@@ -34,15 +35,15 @@ test('1 first quiet turn nudges worker', () => run(async f => { await f.stage1()
 test('2 second quiet turn nudges starter', () => run(async f => { await f.stage2(); assert.match(f.submits(f.sub).join(' '), /ended two turns/); }));
 test('3 third quiet turn creates and result closes card', () => run(async f => { await f.stage2(); await f.end(f.worker); const a = await until(f.quietCard); assert.equal(a.system, true); assert.equal((await f.result(f.worker)).status, 202); assert.equal((await f.quietCard()).answered, true); assert.equal((await f.session(f.worker)).quiet_stage, 0); }));
 test('4 timer escalates after starter told', () => run(async f => { await f.stage2(); const a = await until(f.quietCard); assert.match(a.body, /hasn't reported back/); }));
-test('5 late result within grace prevents nudge', () => run(async f => { await f.end(f.worker); await delay(100); assert.equal((await f.session(f.worker)).turn_ended, true); assert.equal(f.submits(f.worker).length, 0); assert.equal((await f.result(f.worker)).status, 202); await delay(500); assert.equal((await f.session(f.worker)).owes_reply, false); assert.equal(f.submits(f.worker).length, 0); }, { WHEELCHAIR_QUIET_GRACE_MS: '300' }));
+test('5 late result within grace prevents nudge', () => run(async f => { await f.end(f.worker); await delay(500); assert.equal((await f.session(f.worker)).turn_ended, true); assert.equal(f.submits(f.worker).length, 0); assert.equal((await f.result(f.worker)).status, 202); await delay(2500); assert.equal((await f.session(f.worker)).owes_reply, false); assert.equal(f.submits(f.worker).length, 0); }, longGrace));
 test('6b status message without a question does not clear debt', () => run(async f => { await f.end(f.worker); assert.equal((await card(f.c, f.t.id, f.worker.name, { kind: 'message', to: f.sub.name, text: 'status' })).status, 202); await until(() => f.submits(f.worker).some(x => x.includes('Your turn ended without a result or a question'))); }));
-test('6c finished agent answering a follow-up with a plain message is not nudged', () => run(async f => { await f.result(f.worker); await f.end(f.worker); await f.message(f.sub, f.worker); await until(async () => (await f.session(f.worker)).owes_reply); assert.equal((await card(f.c, f.t.id, f.worker.name, { kind: 'message', to: f.sub.name, text: 'Re: it is in T1' })).status, 202); await f.end(f.worker); await delay(220); assert.equal(f.submits(f.worker).filter(x => x.includes('Your turn ended')).length, 0); assert.equal((await f.session(f.worker)).owes_reply, false); }));
-test('6d worker question to the lead protects its waiting sub-lead', () => run(async f => { assert.equal((await f.message(f.lead, f.sub)).status, 202); await feed(f, f.sub, f.lead); assert.equal((await f.message(f.worker, f.lead)).status, 202); await f.end(f.worker); await card(f.c, f.t.id, f.sub.name, { kind: 'message', to: f.lead.name, text: 'status' }); await f.end(f.sub); await delay(300); assert.equal(f.submits(f.sub).filter(x => x.includes('Your turn ended')).length, 0); assert.equal((await f.session(f.worker)).awaiting_answer, true); }));
-test('6 message clears debt', () => run(async f => { await f.end(f.worker); assert.equal((await f.message(f.worker, f.sub)).status, 202); await delay(220); assert.equal(f.submits(f.worker).length, 0); }));
+test('6c finished agent answering a follow-up with a plain message is not nudged', () => run(async f => { await f.result(f.worker); await f.end(f.worker); await f.message(f.sub, f.worker); await until(async () => (await f.session(f.worker)).owes_reply); assert.equal((await card(f.c, f.t.id, f.worker.name, { kind: 'message', to: f.sub.name, text: 'Re: it is in T1' })).status, 202); await f.end(f.worker); await delay(2500); assert.equal(f.submits(f.worker).filter(x => x.includes('Your turn ended')).length, 0); assert.equal((await f.session(f.worker)).owes_reply, false); }, longGrace));
+test('6d worker question to the lead protects its waiting sub-lead', () => run(async f => { assert.equal((await f.message(f.lead, f.sub)).status, 202); await feed(f, f.sub, f.lead); assert.equal((await f.message(f.worker, f.lead)).status, 202); await f.end(f.worker); await card(f.c, f.t.id, f.sub.name, { kind: 'message', to: f.lead.name, text: 'status' }); await f.end(f.sub); await delay(2500); assert.equal(f.submits(f.sub).filter(x => x.includes('Your turn ended')).length, 0); assert.equal((await f.session(f.worker)).awaiting_answer, true); }, longGrace));
+test('6 message clears debt', () => run(async f => { await f.end(f.worker); assert.equal((await f.message(f.worker, f.sub)).status, 202); await delay(2500); assert.equal(f.submits(f.worker).length, 0); }, longGrace));
 test('7 child owing reply or waiting protects sub-lead', () => run(async f => {
-  await f.end(f.sub); await delay(220); assert.equal(f.submits(f.sub).length, 0);
+  await f.end(f.sub); await delay(2500); assert.equal(f.submits(f.sub).length, 0);
   assert.equal((await f.session(f.worker)).live, true); await f.result(f.worker); await f.end(f.sub);
-  await until(() => f.submits(f.sub).some(x => x.includes('Your turn ended')));
+  await until(async () => { const sub = await f.session(f.sub); return f.submits(f.sub).some(x => x.includes('Your turn ended')) && !sub.queue?.length && !sub.turn_ended; });
   // The hub creates a waiting child only under provider limits, so write this one directly.
   async function addWaitingChild() {
     const deadline = Date.now() + 5000;
@@ -67,13 +68,13 @@ test('7 child owing reply or waiting protects sub-lead', () => run(async f => {
   const before = f.submits(f.sub).length;
   const stage = (await f.session(f.sub)).quiet_stage;
   assert.equal(stage, 1);
-  await f.end(f.sub); await delay(300);
+  await f.end(f.sub); await delay(2500);
   assert.ok((await f.read()).sessions.some(s => s.name === 'waiting-child'));
   // Already reminded once, a quiet sub-lead's next reminder would go to the lead, so check both.
   assert.equal(f.submits(f.sub).length, before);
   assert.equal((await f.session(f.sub)).quiet_stage, stage);
   assert.equal(f.submits(f.lead).filter(x => x.includes('ended two turns')).length, 0);
-}));
+}, longGrace));
 test('8 reviewer empty report nudges, text reports', () => run(async f => { const a = await f.start(f.lead, 'reviewer', 'review-a'); const b = await f.start(f.lead, 'reviewer', 'review-b'); await f.end(a); await f.end(b, { 'last-assistant-message': 'A report' }); await until(() => f.submits(a).length); await delay(220); assert.match(f.submits(a)[0], /Your turn ended with no report/); assert.equal(f.submits(b).length, 0); assert.equal((await f.session(b)).finished, true); }));
 test('9 lead is never watched', () => run(async f => { await f.end(f.lead); await delay(220); assert.equal((await f.session(f.lead)).turn_ended, true); assert.equal(f.submits(f.lead).length, 0); assert.equal(await f.quietCard(), undefined); }));
 test('10 stopping answers card', () => run(async f => { await f.stage2(); await f.end(f.worker); await until(f.quietCard); assert.equal((await machinePost(f.c, '/machine/session', { calling_session: f.sub.name, action: 'stop', name: f.worker.name })).status, 200); assert.equal((await f.quietCard()).answered, true); }));

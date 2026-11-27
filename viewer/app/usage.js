@@ -67,7 +67,7 @@ async function machineAccounts(hub) {
     const machines = await hub.machines();
     const entries = await Promise.all(Object.keys(machines).map(async (name) => {
       try {
-        const status = await Promise.race([hub.call(name, '/v1/status', 'GET', undefined, 3000), new Promise((_, reject) => { const t = setTimeout(() => reject(new Error('timeout')), 3000); t.unref(); })]);
+        const status = await Promise.race([hub.call(name, '/v1/status', 'GET', undefined, 15000), new Promise((_, reject) => { const t = setTimeout(() => reject(new Error('timeout')), 15000); t.unref(); })]);
         const accounts = {};
         const logins = {};
         const problems = {};

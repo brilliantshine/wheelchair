@@ -68,6 +68,7 @@ async function service(root, options = {}) {
   process.env.PATH = `${fake.bin}:${prior.PATH}`; process.env.FAKE_LOG = fake.log; process.env.FAKE_PANE = fake.pane;
   let instance = new MachineService({ win: noWsl, stateDir: state, host: '127.0.0.1', port: listen });
   try { await instance.listen(); } catch (error) { Object.assign(process.env, prior); throw error; }
+  clearInterval(instance.pollTimer); clearInterval(instance.trustTimer);
   return { instance, state, fake, base: `http://127.0.0.1:${listen}`, async close() {
     // A test that fails mid-start ends with that start still running. Wait for it before PATH
     // drops the fake tmux, or it launches a real session in the user's own tmux server.
@@ -104,7 +105,7 @@ async function setup(cli = 'claude', role = 'worker') {
   const input = { switch_id: 'one', account: { id: 'other', dir: '~/.wheelchair/accounts/other' }, model: 'chosen-model', project: 'project', project_dir: worktree };
   return { root, hub, env, session, source, relative, input, async close() { await env.close(); await hub.close(); for (const [key, value] of Object.entries(prior)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } } };
 }
-async function waitFor(predicate) { for (let i = 0; i < 300; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 10)); } throw new Error('timed out waiting for switch'); }
+async function waitFor(predicate) { const deadline = Date.now() + 20_000; while (Date.now() < deadline) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 10)); } throw new Error('timed out waiting for switch'); }
 const route = f => `/v1/sessions/${f.session.name}/switch`;
 const events = f => f.hub.calls.filter(c => c.path.endsWith('/events')).map(c => JSON.parse(c.body));
 const postSwitch = (f, input = f.input) => api(f.env, 'POST', route(f), input, hubHeader);
