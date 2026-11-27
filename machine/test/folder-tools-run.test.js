@@ -9,6 +9,26 @@ test('handshake lists tools and times out on silent server',async()=>{ const roo
 test('timeout kills the script process group',async()=>{ const f=await fixture("const {spawn}=require('child_process'); const c=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); require('fs').writeFileSync('pid',String(c.pid)); setInterval(()=>{},1000)"); const r=await runScript({dir:f.dir,tool:f.tool,input:{},env:process.env}); assert.equal(r.timedOut,true); const pid=Number(await fs.promises.readFile(path.join(f.dir,'pid'),'utf8')); await stopped(pid); });
 async function stopped(pid) { const deadline=Date.now()+3000; while(Date.now()<deadline) { try { process.kill(pid,0); if (fs.existsSync('/proc/self/stat')) { const stat=await fs.promises.readFile(`/proc/${pid}/stat`,'utf8'); if (stat.slice(stat.lastIndexOf(')')+2).startsWith('Z')) return; } } catch(e) { if(e.code==='ESRCH'||e.code==='ENOENT') return; throw e; } await new Promise(r=>setTimeout(r,50)); } assert.fail(`process ${pid} survived`); }
 async function pidFile(file) { const deadline=Date.now()+4000; while(Date.now()<deadline) { try { return Number(await fs.promises.readFile(file,'utf8')); } catch(e) { if(e.code!=='ENOENT') throw e; } await new Promise(r=>setTimeout(r,50)); } assert.fail('pid file not written'); }
+for (const keys of [[], ['secretvalue']]) {
+  const mode=keys.length?'keyed':'keyless';
+  test(`runner ${mode} abort kills only its own process group`,async()=>{
+    const f=await fixture("const c=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); require('fs').writeFileSync('pid',String(c.pid)); setInterval(()=>{},1000)",{timeout_seconds:6});
+    const other=await fixture("setTimeout(()=>console.log('other completed'),500)",{timeout_seconds:6});
+    const controller=new AbortController();
+    const pending=runScript({dir:f.dir,tool:f.tool,input:{},env:process.env,keys,signal:controller.signal});
+    const concurrent=runScript({dir:other.dir,tool:other.tool,input:{},env:process.env,keys});
+    const pid=await pidFile(path.join(f.dir,'pid')); controller.abort();
+    await stopped(pid); const result=await pending, second=await concurrent;
+    assert.equal(result.ok,false); assert.equal(result.timedOut,false);
+    assert.equal(second.ok,true); assert.equal(second.text.trim(),'other completed');
+  });
+  test(`runner ${mode} already aborted signal starts nothing`,async()=>{
+    const f=await fixture("require('fs').writeFileSync('started','yes')"), controller=new AbortController(); controller.abort();
+    const result=await runScript({dir:f.dir,tool:f.tool,input:{},env:process.env,keys,signal:controller.signal});
+    assert.deepEqual(result,{ok:false,text:'',code:null,signal:null,timedOut:false,truncated:false,stderr:'cancelled'});
+    assert.equal(fs.existsSync(path.join(f.dir,'started')),false);
+  });
+}
 for (const mode of ['stdin','signal']) test(`bridge ${mode} stops tool group`,async()=>{ const f=await fixture("const c=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); require('fs').writeFileSync('pid',String(c.pid)); setInterval(()=>{},1000)",{timeout_seconds:60}); const child=spawn(process.execPath,[path.join(__dirname,'../lib/tool-bridge.js'),'--project-dir',f.root,'--tool',f.dir]); child.stdout.resume(); child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'example'}})+'\n'); const pid=await pidFile(path.join(f.dir,'pid')); try { if(mode==='stdin') child.stdin.end(); else child.kill('SIGTERM'); await stopped(pid); } finally { child.kill('SIGTERM'); } });
 test('launcher stdin close stops server group',async()=>{ const f=await fixture("const c=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); require('fs').writeFileSync('pid',String(c.pid)); setInterval(()=>{},1000)",{kind:'server',start:[process.execPath,'main.js']}); const child=spawn(process.execPath,[path.join(__dirname,'../lib/tool-launch.js'),'--project-dir',f.root,'--tool',f.dir]); child.stdout.resume(); const pid=await pidFile(path.join(f.dir,'pid')); child.stdin.end(); await stopped(pid); });
 test('bridge reports exit code and stderr',async()=>{ const f=await fixture("process.stderr.write('bad tail'); process.exit(9)"); const child=spawn(process.execPath,[path.join(__dirname,'../lib/tool-bridge.js'),'--project-dir',f.root,'--tool',f.dir]); const call=rpc(child); try { const r=await call('tools/call',{name:'example'}); assert.equal(r.result.isError,true); assert.match(r.result.content[0].text,/exit code 9/); assert.match(r.result.content[0].text,/bad tail/); } finally {child.stdin.end();} });

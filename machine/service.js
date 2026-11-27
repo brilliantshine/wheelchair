@@ -7,6 +7,7 @@ const { providers, loadRecipes } = require('./lib/harness-recipes');
 const harnessInstall = require('./lib/harness-install');
 const { createProjectTools } = require('./lib/project-tools');
 const folderTools = require('./lib/folder-tools');
+const { toolEnv, runScript, installExitHandlers } = require('./lib/tool-run');
 const { readSharedKeys } = require('./lib/shared-keys');
 const sharedTools = require('./lib/shared-tools');
 const { TOOL_ROLES, readProjectMcp, hasWindowsProgram, serverLabel } = require('./lib/project-mcp');
@@ -38,6 +39,7 @@ const defaultAccount = cli => `default-${connectors.manifest(cli).provider}`;
 const { scrubOutput } = require('../connectors/common');
 const listWords = items => items.slice(0, -1).join(', ') + ' or ' + items.at(-1);
 const adapters = Object.fromEntries(connectors.list().map(m => [m.cli, connectors.machine(m.cli)]));
+function machineKeyedTools(session) { const adapter = adapters[session.cli]; return !!(TOOL_ROLES.has(session.role) && !session.assistant && !session.project_lead && adapter?.shellToolsOnly?.(session) && adapter?.keyedToolsByMachine?.(session)); }
 const { limitedUntil } = require('./lib/limits');
 const { AsideTurns } = require('./lib/aside-turns');
 const { SudoRequests } = require('./lib/sudo');
@@ -291,6 +293,7 @@ class MachineService {
     this.config = {};
     this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir, { problem: async cli => { await this.checkVersion(cli); const status = this.cliStatus(cli), manifest = connectors.manifest(cli); return status.installed ? status.problem : `${manifest.shortName || manifest.displayName} is not installed`; } });
     this.sessions = {};
+    this.toolRuns = new Map();
     this.projectToolsBoot = crypto.randomUUID();
     this.projectToolsState = new Map();
     this.projectToolsWrites = new Map();
@@ -1000,20 +1003,21 @@ class MachineService {
       for (const row of found.rows) row.key_store = folderTools.toolKeyStore(row, !!session.shared_tools.own);
       hasValidScript = found.rows.some(row => row.tool?.kind === 'script');
       validScripts = found.rows.filter(row => row.tool?.kind === 'script' && row.status !== 'hidden');
-      if (adapter.shellToolsOnly?.(session)) { const keyedNames = new Set(validScripts.filter(row => row.tool.keys.length).map(row => row.name)); folder = folder.filter(line => !(line.names.length === 1 && keyedNames.has(line.names[0]))); }
+      const machineKeys = machineKeyedTools(session);
+      if (adapter.shellToolsOnly?.(session) && !machineKeys) { const keyedNames = new Set(validScripts.filter(row => row.tool.keys.length).map(row => row.name)); folder = folder.filter(line => !(line.names.length === 1 && keyedNames.has(line.names[0]))); }
       const reason = adapter.keyedToolsReason?.(session) || null;
-      if (adapter.shellToolsOnly?.(session)) keyedLines = validScripts.filter(row => row.tool.keys.length).map(row => ({ names: [row.name], text: `tool ${row.name} needs keys, which ${reason}` }));
+      if (adapter.shellToolsOnly?.(session) && !machineKeys) keyedLines = validScripts.filter(row => row.tool.keys.length).map(row => ({ names: [row.name], text: `tool ${row.name} needs keys, which ${reason}` }));
       scriptRows = [];
       for (const row of found.usable.filter(row => row.kind === 'script')) {
-        if (row.tool.keys.length && adapter.shellToolsOnly?.(session)) continue;
+        if (row.tool.keys.length && adapter.shellToolsOnly?.(session) && !machineKeys) continue;
         if (row.tool.keys.length) {
           try {
             const store = row.key_store === 'shared' ? await readSharedKeys(this.stateDir) : await readKeyStore(this.stateDir, await projectIdentity(worktree));
             const missing = row.tool.keys.filter(k => !Object.hasOwn(store.keys, k) || usableReason(store.keys[k]));
-            if (missing.length) { folder.push({ names: [row.name], text: `${row.source === 'shared' ? 'shared tool' : 'tool'} ${row.name} needs ${missing.length === 1 ? 'key' : 'keys'} ${missing.join(', ')}, not set on this machine` }); continue; }
+            if (missing.length) { (machineKeys ? keyedLines : folder).push({ names: [row.name], text: `${row.source === 'shared' ? 'shared tool' : 'tool'} ${row.name} needs ${missing.length === 1 ? 'key' : 'keys'} ${missing.join(', ')}, not set on this machine${machineKeys ? ' when this session started; set it and run again' : ''}` }); continue; }
           } catch (error) { folder.push({ names: [row.name], text: error.message }); continue; }
         }
-        scriptRows.push(row);
+        if (!(machineKeys && row.tool.keys.length)) scriptRows.push(row);
       }
       const servers = found.usable.filter(row => row.kind === 'server').sort((a, b) => a.name.localeCompare(b.name));
       const entries = [...(scriptRows.length ? [folderTools.bridgeEntry(worktree, scriptRows, { stateDir: this.stateDir })] : []), ...servers.map(row => folderTools.serverEntry(worktree, row))];
@@ -1117,7 +1121,7 @@ class MachineService {
       try { version = (await fsp.readFile(path.join(worktree, 'ProjectSettings', 'ProjectVersion.txt'), 'utf8')).match(/^m_EditorVersion:\s*(\S+)/m)?.[1]; } catch {}
       const unityExists = !!version && fs.existsSync(path.join(mount, 'c/Program Files/Unity/Hub/Editor', version, 'Editor/Unity.exe'));
       const lines = require('./lib/win-prompt').promptLines({ health: this.win?.bridgeHealth(), wsl, loaded, mcp, copy: extra.WHEELCHAIR_WINDOWS_PROJECT, cli: session.cli, codexMode: session.codex_mode, version, unityExists });
-      if (!resume && hasValidScript && adapters[session.cli].shellToolsOnly?.(session)) lines.push(`Folder tools: this session can't call them through MCP. Run \`node ${ROOT}/viewer/app/wc.js tool list\` to see them and \`node ${ROOT}/viewer/app/wc.js tool run <name> --input '<json>'\` to run a script tool; give that shell command a timeout longer than the tool's timeout_seconds (default 120 s).${validScripts.some(row => row.tool.keys.length) ? ` Tools that need keys aren't available in this session (${adapter.keyedToolsReason?.(session)}).` : ''}`);
+      if (!resume && hasValidScript && adapters[session.cli].shellToolsOnly?.(session)) lines.push(`Folder tools: this session can't call them through MCP. Run \`node ${ROOT}/viewer/app/wc.js tool list\` to see them and \`node ${ROOT}/viewer/app/wc.js tool run <name> --input '<json>'\` to run a script tool; give that shell command a timeout longer than the tool's timeout_seconds (default 120 s).${machineKeyedTools(session) ? ' `wc.js tool run` runs tools that need keys on the machine with their keys; their key values never appear in the result.' : validScripts.some(row => row.tool.keys.length) && adapter.keyedToolsReason?.(session) ? ` Tools that need keys aren't available in this session (${adapter.keyedToolsReason(session)}).` : ''}`);
       if (!resume && lines.length) await atomicWrite(promptPath, rolePrompt + "\n\n" + lines.join("\n"));
     }
     env.splice(adapter.sessionNameEnv ? 3 : 2, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
@@ -1145,7 +1149,9 @@ class MachineService {
     try { await fsp.rm(path.join(this.stateDir, 'settings', `${name}.mcp.json`), { force: true }); }
     catch (error) { this.log(error); }
   }
+  abortToolRuns(name) { for (const controller of this.toolRuns?.get(name) || []) controller.abort(); }
   async stopFatal(session) {
+    this.abortToolRuns(session.name);
     await this.removeMcpConfig(session.name);
     this.win?.onStop(session);
     this.tmux(['kill-session', '-t', `=${session.name}`]);
@@ -1314,6 +1320,7 @@ class MachineService {
   }
   async stop(name) {
     const session = this.managed(name);
+    this.abortToolRuns(name);
     if (session.end_reason) return this.stopFatal(session);
     await this.removeMcpConfig(name);
     this.tmux(['kill-session', '-t', name]);
@@ -1420,6 +1427,7 @@ class MachineService {
     const keptWorktrees = new Set(kept.map(item => path.resolve(item.worktree)));
     for (const session of sessions) {
       const worktree = typeof session.worktree === 'string' ? path.resolve(session.worktree) : null;
+      this.abortToolRuns(session.name);
       if (worktree && keptWorktrees.has(worktree)) {
         // A rebase cannot be safely archived. Keep enough ownership information for a later
         // archive after it is resolved, while making clear that this session is no longer live.
@@ -2410,7 +2418,45 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, adapters[agent.cli]?.turnPoller ? { ignored: true } : await this.hook(agent.name, input)); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/win') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.win.handle(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/screen') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.screens.handle(agent, await bodyOf(request))); }
-      if (request.method === 'POST' && url.pathname === '/v1/agent/tools') { const agent = await this.authorize(request, 'agent'); await bodyOf(request); return send(response, 200, { worktree: agent.worktree, shared_copy: agent.shared_tools?.copy || null, keyed_unavailable: adapters[agent.cli].keyedToolsReason?.(agent) || null }); }
+      if (request.method === 'POST' && url.pathname === '/v1/agent/tools') { const agent = await this.authorize(request, 'agent'); await bodyOf(request); return send(response, 200, { worktree: agent.worktree, shared_copy: agent.shared_tools?.copy || null, keyed_unavailable: adapters[agent.cli].keyedToolsReason?.(agent) || null, keyed_run: machineKeyedTools(agent) ? 'machine' : 'local' }); }
+      if (request.method === 'POST' && url.pathname === '/v1/agent/tools/run') {
+        const agent = await this.authorize(request, 'agent');
+        const controller = new AbortController();
+        let runs = this.toolRuns.get(agent.name);
+        if (!runs) this.toolRuns.set(agent.name, runs = new Set());
+        runs.add(controller);
+        const closed = () => { if (!response.writableEnded) controller.abort(); };
+        response.on('close', closed);
+        try {
+          const refuse = (status, error) => { if (!response.destroyed) send(response, status, { error }); };
+          const live = this.liveTmux();
+          if (agent.ended_at || ['ended', 'stopped', 'failed'].includes(agent.status) || !live?.has(agent.name)) return refuse(403, 'this session has ended');
+          if (!machineKeyedTools(agent)) return refuse(403, "this session can't run keyed tools through the machine");
+          const input = await bodyOf(request);
+          const object = value => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+          if (typeof input?.name !== 'string') return refuse(400, 'invalid name');
+          if (!object(input.input)) return refuse(400, 'invalid input');
+          if (!object(input.env) || !Object.values(input.env).every(value => typeof value === 'string') || !Object.hasOwn(input.env, 'PATH')) return refuse(400, 'invalid env');
+          const found = await folderTools.discover({ worktree: agent.worktree, shared: agent.shared_tools?.copy, path: input.env.PATH });
+          const row = found.rows.find(row => row.name === input.name && row.status !== 'hidden');
+          if (!row) return refuse(404, `unknown tool: ${input.name}`);
+          if (row.status !== 'ok') return refuse(422, `${row.name}: ${row.reason}`);
+          if (row.kind !== 'script') return refuse(422, 'server tools must be used through MCP or check');
+          if (!row.tool.keys.length) return refuse(422, `${row.name} has no keys; run it with wc.js tool run in your own shell`);
+          const storeName = folderTools.toolKeyStore(row, !!agent.shared_tools?.own);
+          const store = storeName === 'shared' ? await readSharedKeys(this.stateDir) : await readKeyStore(this.stateDir, await projectIdentity(agent.worktree));
+          const missing = row.tool.keys.filter(key => !Object.hasOwn(store.keys, key) || usableReason(store.keys[key]));
+          if (missing.length) return refuse(422, `tool ${row.name} needs ${missing.length === 1 ? 'key' : 'keys'} ${missing.join(', ')}, not set on this machine`);
+          const env = toolEnv(input.env, agent.worktree), keys = [];
+          for (const key of row.tool.keys) { env[key] = store.keys[key]; keys.push(store.keys[key]); }
+          if (controller.signal.aborted) return refuse(403, 'this session has ended');
+          installExitHandlers();
+          const result = await runScript({ dir: row.dir, tool: row.tool, input: input.input, env, keys, signal: controller.signal });
+          if (response.destroyed) return;
+          if (result.refused) return refuse(422, result.refused);
+          return send(response, 200, { ok: result.ok, text: result.text, stderr: result.stderr, code: result.code, signal: result.signal, timed_out: result.timedOut, truncated: result.truncated });
+        } finally { response.off('close', closed); runs.delete(controller); if (!runs.size) this.toolRuns.delete(agent.name); }
+      }
       if (request.method === 'POST' && url.pathname === '/v1/agent/tool-keys') { const agent = await this.authorize(request, 'agent'); await bodyOf(request); const found = await folderTools.discover({ worktree: agent.worktree, shared: agent.shared_tools?.copy, path: await this.tmuxPath() }); const rows = found.rows.filter(row => row.tool?.keys.length); const result = []; for (const row of rows) { const storeName = folderTools.toolKeyStore(row, !!agent.shared_tools?.own); const store = storeName === 'shared' ? await readSharedKeys(this.stateDir) : await readKeyStore(this.stateDir, await projectIdentity(agent.worktree)); result.push({ name: row.name, source: row.source, store: storeName, keys: row.tool.keys.map(name => { const reason = Object.hasOwn(store.keys, name) ? usableReason(store.keys[name]) : 'not set on this machine'; return { name, set: reason === null, reason }; }) }); } return send(response, 200, { tools: result }); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
       if (request.method === 'POST' && ['/v1/agent/assistant', '/v1/agent/project-lead'].includes(url.pathname)) {
