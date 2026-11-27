@@ -75,6 +75,7 @@ These are called only when present; they need no flag in the manifest.
 |---|---|---|
 | `shellToolsOnly` | `shellToolsOnly(session)` returns a boolean | Whether folder scripts require shell calls. |
 | `keyedToolsReason` | `keyedToolsReason(session)` returns text or `null` | Why keyed folder tools cannot run in this session. |
+| `keyedToolsByMachine` | `keyedToolsByMachine(session)` returns a boolean | Whether keyed folder tools in a shell-only session run through the machine (`wc.js tool run` posts them to `/v1/agent/tools/run`). |
 | `prepare` | `prepare(dir)` | Extra account-folder or config setup after `seed`, before launch or login (Antigravity merges its Stop hook into its config here). |
 | `sessionNameEnv` | boolean | Set `WHEELCHAIR_SESSION_NAME` in the launch environment, for hooks that take the session from it. |
 | `promptText` | `promptText(pane)` returns boolean | Watch a ready pane for a permission prompt the tool has no hook for; the service then posts a `prompt` event. |
