@@ -231,7 +231,7 @@ Plus any new test file named above, run with `node --test <file>`.
 
 ### Round 1 — 2026-11-27
 
-**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
