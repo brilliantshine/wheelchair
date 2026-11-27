@@ -1,6 +1,6 @@
 ---
 slug: install-real-home-check
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-26
 ---
 
@@ -10,18 +10,7 @@ created: 2026-11-26
 
 ## Open Questions
 
-### Q1: Which of wheelchair's files does the real-folder check compare?
-- **Context:** The code the install suite runs (`install.sh` and its children) can write only
-  `~/.wheelchair/models` and `~/.wheelchair/.lock` there (`codex/model.sh:45,143-164,455-456`;
-  nothing in `install.sh` seeds accounts, runs agy discovery or touches `installs/`). The live
-  app also writes wheelchair files there during a run: account metadata
-  (`connectors/common.js:9-14`), `agy-models.json` (`codex/model.sh:290-324`), `installs/`
-  logs, results and PIDs (`machine/lib/harness-install.js:39-49,128-133`). Those live writes
-  are what drew the blocking findings in the earlier attempt
-  (`docs/plans/load-flaky-tests/PLAN.md:328`).
-- **Options:** (a) only the files the installer can write, byte for byte; (b) every file
-  wheelchair writes there, including the live app's (the earlier design).
-- **Recommendation:** (a).
+(none)
 
 ## Watch List
 
@@ -36,17 +25,92 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |---|----------|-----------|--------|
 | 1 | Plan mode is thorough | Collin's pick | user |
 | 2 | Carried over from `docs/plans/load-flaky-tests/` Decisions 6 and 8: byte-check only what wheelchair itself writes in the real folder, listing wheelchair's files rather than skipping the AI tools' files | AI-tool file names change by version and event | user |
+| 3 | The real-folder check compares only the files the installer and its children can write in `~/.wheelchair`: `models` and `.lock`, byte for byte | The check exists to catch tested code leaking; that code can write only these two (`codex/model.sh:45,143-164,455-456`). The running app's other writes there cannot trip it | user |
+| 4 | The after-copy is taken after the last case, not at run.sh:705 | Darwin, screen and sudo cases run after :705 and could leak unseen | defaulted |
+| 5 | The suite's other `tree_state` uses (refusal cases, idempotence) stay full-tree and unchanged | Their job is to compare everything; IDEA.md "What good looks like" | defaulted |
+| 6 | `run_case` removes `WHEELCHAIR_MODELS` and `WHEELCHAIR_MODELS_CACHE` from the installer's environment | An exported override in the suite's shell would send the installer's model writes to a real file (`codex/model.sh:45-46`) | defaulted |
+| 7 | A model pin changed in Settings while the suite runs makes the check fail; accepted, rerun | Bytes cannot tell a live pin from a leak; the consequence is one false failure in a test run | defaulted |
 
 ## Spec
 
-(Grows as decisions land.)
+All changes are in `install/test/run.sh`. No other file changes.
+
+### S1. The real-folder list
+
+Near the other helpers, define the list of real-folder paths the installer can write,
+relative to `$HOME/.wheelchair`: `models` and `.lock`. A comment above it says: this is
+everything `install.sh` and the programs it runs can write under `~/.wheelchair`
+(`codex/model.sh` `init`: `models` only if absent, `.lock` on every locked write); add a
+path here when the installer gains a new write there; the running app's own files
+(accounts, `agy-models.json`, `installs/`) are deliberately left out because they change
+during a run.
+
+### S2. Recording the real folder
+
+A helper `real_wheelchair_state <dir>` prints one line per listed path, in list order:
+`<path> <file_state of <dir>/<path>>` (so `absent`, or `present:<hash>`). It uses the
+existing `file_state`. A listed path that is a directory or symlink is recorded by
+`file_state` as it is today (no special case).
+
+### S3. Before and after
+
+- Replace `real_wheelchair_before=$(tree_state "$HOME/.wheelchair" 1)` (run.sh:234) with
+  `real_wheelchair_before=$(real_wheelchair_state "$HOME/.wheelchair")`, still before the
+  first case.
+- Remove the assertion at run.sh:705. After the last case (after the sudo-hint checks,
+  immediately before the `RESULT` line), compare `real_wheelchair_state "$HOME/.wheelchair"`
+  with the before value. On a match: `pass 'real wheelchair files the installer writes are byte-identical after suite'`.
+  On a mismatch: `fail` with a message naming every listed path whose line differs, such as
+  `real wheelchair file changed during suite: models`.
+- The five real harness-file checks at run.sh:700-704 stay where they are, unchanged.
+- `tree_state` keeps its signature and behaviour; its `skip` argument may be removed only
+  if no caller passes it after this change.
+
+### S4. Self-check of the helper
+
+Before the real before-copy, the suite checks the helper on a scratch directory under
+`$fixture`: record it, then (a) change `models`, (b) create `.lock` where it was absent,
+(c) add an unlisted file `agy-models.json` and an `accounts/x/wheelchair-account.json`.
+Assert that (a) and (b) are reported as changed, naming the path, and that (c) alone
+leaves the state equal. Use the same mismatch-message code as S3, so the self-check proves
+the message names the file.
+
+### S5. Installer environment
+
+`run_case` starts the installer with `WHEELCHAIR_MODELS` and `WHEELCHAIR_MODELS_CACHE`
+removed (`env -u`), in both the normal and the `detect_path` command forms.
+
+### Non-goals
+
+- No check of the AI tools' files, the running app's files, or anything else under
+  `~/.wheelchair` beyond the S1 list.
+- No change to the five real harness-file checks, to `install.sh`, `codex/model.sh` or any
+  writer.
+
+### Validation
+
+```bash
+bash install/test/run.sh      # passes on a machine with wheelchair and AI sessions running; includes the S4 self-check
+grep -n 'real wheelchair directory is byte-identical' install/test/run.sh   # prints nothing
+```
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Changing a model pin in Settings while the install suite runs fails the real-folder check | One false failure in a test run, fixed by rerunning; bytes cannot tell it from a leak (Decision 7) | planning |
+| A first-ever `.lock` created by the live app during the suite fails the check | Needs the machine's very first model write to land inside one suite run | planning |
 
 ## Review Rounds
+
+### Round 1 — 2026-11-26
+
+**Lanes:** intent (claude); mechanics (other family); cross-family: yes.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 
