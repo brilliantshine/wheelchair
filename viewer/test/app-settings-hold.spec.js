@@ -1,9 +1,8 @@
 'use strict';
 
-// The accounts interface: Settings Accounts and Usage, the sign-in card, the terminal page in
-// login mode, the lead order editor, the Settings dot and the lead waiting line. The hub's
-// usage and sign-in routes are answered by page.route here (their own tests live in
-// app-usage.test.js and app-hub.test.js); the pages, the real server and the thread world are real.
+// Settings repaints keep what is in use in place: a waiting sign-in card is not rebuilt by a usage
+// answer, and a pressed, focused or hovered control below a repainted block holds its screen position.
+// Usage and sign-in routes are answered by page.route; the pages and the real server are real.
 const { test, expect } = require('@playwright/test');
 const { startWorld, signIn } = require('./helpers/app-threads-world');
 
@@ -164,7 +163,6 @@ test('phone Technical terms wording fits', async ({ page }) => {
   await expect(select.locator('xpath=ancestor::div[contains(@class,"row-line")]')).toContainText('How the lead handles technical terms');
   const widths = await select.evaluate((el) => { const s = getComputedStyle(el); const c = document.createElement('canvas').getContext('2d'); c.font = s.font; return { text: c.measureText(el.selectedOptions[0].textContent).width, room: el.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) - 24 }; });
   expect(widths.text).toBeLessThanOrEqual(widths.room);
-  await page.screenshot({ path: '/tmp/settings-solid-you-390.png', fullPage: true });
 });
 
 for (const mode of ['press', 'hover', 'focus']) {
@@ -202,7 +200,8 @@ for (const mode of ['press', 'hover', 'focus']) {
     expect(Math.abs(after.y - box.y)).toBeLessThanOrEqual(1);
     if (mode === 'press') {
       await page.mouse.up();
-      await expect(page.locator('[data-order="lead_order"] li').first()).not.toContainText('Claude');
+      await expect(page.locator('[data-order="lead_order"] li').nth(0)).toContainText('GPT');
+      await expect(page.locator('[data-order="lead_order"] li').nth(1)).toContainText('Claude');
     }
   });
 }
