@@ -77,3 +77,14 @@ Worker reports with full outputs: docs/plans/shell-tool-keys/reports/T1.md … T
 - Accepted Risks in PLAN.md (service crash mid-run; caller-chosen env; edited tool script) stand.
 
 ## Remediation rounds
+
+### Remediation 1
+
+Verification attempt 1 (verifier claude-opus-5-5, on d81671ee): PASS, no gaps. The full run on that commit failed suite `machine`: 7 tests in kimi-turns, pi and switch build the service with `Object.create(MachineService.prototype)`, so `abortToolRuns` read an undefined `this.toolRuns`. Fix R1-1 (light / gpt-6-luna): machine/service.js:1152 uses `this.toolRuns?.get(name)`.
+
+```
+$ node --test machine/test/kimi-turns.test.js machine/test/pi.test.js machine/test/switch.test.js machine/test/tool-machine-run.test.js
+# pass 58
+# fail 0
+```
+
