@@ -90,6 +90,15 @@ node test-support/pick-tests.js --base <comparison commit>   # and run the comma
 
 ## Review Rounds
 
+### Round 1 — 2026-11-27
+
+**Lanes:** claude / opus (intent); gpt (mechanics); cross-family: yes.
+
+**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
