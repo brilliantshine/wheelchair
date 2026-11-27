@@ -311,3 +311,4 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 - 2026-11-26 — Lead chose option A for the speed gap: Decision 13, E1 limits changed (CPU time; (o) under 3 s, (a)-(d) under 10 s). Remediation 2 sets the test limits to match.
 - 2026-11-26 — R2-T1: worker didn't report its choices; I listed 0 (scout found none).
 - 2026-11-26 — R2-T1 accepted (band: scout): exactly the five limits changed; 50/50 pass on my re-run.
+- 2026-11-26 — Verification attempt 3 on c93c384d: verifier (claude-opus-5-5) PASS, no gaps, no rare paths. Full run: speed fixtures pass; failures only in untouched files (install already on main; others left to the lead's full run against main, as it asked).
