@@ -4,13 +4,14 @@ wheelchair runs coding agents on your machine and lets you steer them from a bro
 
 Each piece of work is a thread with a lead agent, and ends in one pull request:
 
-- **Small fixes** the lead just makes, checks and pushes.
+- **Small fixes**: the lead makes the change, has another agent check it, and opens the
+  pull request.
 - **Features** go through a plan. The lead maps the code, asks you one question at a time,
-  and writes a spec. Fresh reviewers (from a different model family when one is signed in)
+  and writes a spec. Fresh reviewers (from both model families when Settings asks for both)
   check the plan, workers build it, and a separate verifier checks the result.
 
 The plan lives in `docs/plans/<slug>/` in the repo, not in an agent's memory, so you can stop
-and pick it up later.
+and pick it up later. The lead's full rules are in `protocol/app/lead.md`.
 
 ## Using the app
 
