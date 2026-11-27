@@ -38,8 +38,28 @@ stop_run() {
   trap - TERM HUP
   [[ -z $browser_pid ]] || kill -TERM -- "-$browser_pid" 2>/dev/null
   [[ -z $current_pid ]] || kill -TERM -- "-$current_pid" 2>/dev/null
-  [[ -z $browser_pid ]] || wait "$browser_pid" 2>/dev/null
-  [[ -z $current_pid ]] || wait "$current_pid" 2>/dev/null
+  local deadline pid alive
+  deadline=$((SECONDS + 45))
+  while :; do
+    alive=0
+    for pid in "$browser_pid" "$current_pid"; do
+      if [[ -n $pid ]] && kill -0 -- "-$pid" 2>/dev/null; then alive=1; fi
+    done
+    (( alive && SECONDS < deadline )) || break
+    sleep 0.1
+  done
+  for pid in "$browser_pid" "$current_pid"; do
+    if [[ -n $pid ]] && kill -0 -- "-$pid" 2>/dev/null; then kill -KILL -- "-$pid" 2>/dev/null; fi
+  done
+  deadline=$((SECONDS + 2))
+  while :; do
+    alive=0
+    for pid in "$browser_pid" "$current_pid"; do
+      if [[ -n $pid ]] && kill -0 -- "-$pid" 2>/dev/null; then alive=1; fi
+    done
+    (( alive && SECONDS < deadline )) || break
+    sleep 0.1
+  done
   exit 1
 }
 trap stop_run TERM HUP
