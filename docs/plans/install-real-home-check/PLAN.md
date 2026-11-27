@@ -141,5 +141,6 @@ grep -n 'real wheelchair directory is byte-identical' install/test/run.sh   # pr
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | S1-S5: narrow real-folder check to `models`/`.lock`, move after-check to end, self-check, strip model env overrides | `install/test/run.sh` | standard, gpt gpt-6.1-terra | wc-baaac1dda694-worker | `bash install/test/run.sh`; grep for old assert prints nothing | in progress |
 
 ## Log
