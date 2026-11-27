@@ -25,9 +25,9 @@ assert() {
 hash_stream() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'; else shasum -a 256 | awk '{print $1}'; fi; }
 hash_file() { hash_stream < "$1"; }
 tree_state() {
-  python3 - "$1" "${2:-0}" <<'PYCODE'
+  python3 - "$1" <<'PYCODE'
 import hashlib, os, sys
-root, skip = sys.argv[1:]
+root = sys.argv[1]
 if not os.path.exists(root):
     print('absent', end='')
     sys.exit()
@@ -37,8 +37,6 @@ for base, dirs, files in os.walk(root, followlinks=False):
     for name in sorted(dirs + files):
         path = os.path.join(base, name)
         rel = os.path.relpath(path, root)
-        if skip == '1' and rel.startswith('accounts/') and '/tmp' in rel:
-            continue
         h.update(os.fsencode(rel))
         if os.path.islink(path): h.update(b'L' + os.fsencode(os.readlink(path)))
         elif os.path.isfile(path):
@@ -52,12 +50,36 @@ file_state() {
   if [[ -e $1 ]]; then printf 'present:%s' "$(hash_file "$1")"; else printf absent; fi
 }
 
+# These are the lasting files install.sh and its children can write under ~/.wheelchair.
+# codex/model.sh init writes models only if absent, via a short-lived .models.* file
+# renamed into place, and writes .lock on every locked write. Add paths here when the
+# installer gains another write. The running app's accounts, agy-models.json and
+# installs/ are deliberately excluded because they change during a run.
+real_wheelchair_paths=(models .lock)
+real_wheelchair_state() {
+  local dir=$1 path
+  for path in "${real_wheelchair_paths[@]}"; do
+    printf '%s %s\n' "$path" "$(file_state "$dir/$path")"
+  done
+}
+real_wheelchair_mismatch() {
+  local before=$1 after=$2 path changed=''
+  for path in "${real_wheelchair_paths[@]}"; do
+    if [[ $(printf '%s\n' "$before" | grep -F "$path ") != "$(printf '%s\n' "$after" | grep -F "$path ")" ]]; then
+      changed="${changed:+$changed, }$path"
+    fi
+  done
+  [[ -z $changed ]] || printf 'real wheelchair file changed during suite: %s' "$changed"
+}
+
 no_retired_wrappers() {
   local name
   for name in spine plan adopt plan-review implement verify graph diagram-sensitivity; do
     [[ ! -e $1/skills/$name && ! -L $1/skills/$name && ! -e $2/prompts/$name.md && ! -L $2/prompts/$name.md ]] || return 1
   done
 }
+
+model_overrides_ignored() { [[ ! -e $1 && ! -e $2 && -e $3 ]]; }
 
 last_line_is() { [[ ${1##*$'\n'} == "$2" ]]; }
 
@@ -179,7 +201,7 @@ run_case() {
     command_path=${shim[$name]}
     [[ ${tailscale_absent[$name]} == 1 ]] && rm -f "${shim[$name]}/tailscale"
   fi
-  local -a command=(env -u DISPLAY -u WAYLAND_DISPLAY
+  local -a command=(env -u DISPLAY -u WAYLAND_DISPLAY -u WHEELCHAIR_MODELS -u WHEELCHAIR_MODELS_CACHE
     "HOME=${home[$name]}" "USER=fixture-user" "PATH=${shim[$name]}:$command_path"
     "WHEELCHAIR_SHIM_LOG=${home[$name]}/commands.log"
     "WHEELCHAIR_PRESENT=${present[$name]}" WHEELCHAIR_SKIP_DEPS=1
@@ -231,7 +253,20 @@ real_codex_before=$(file_state "$HOME/.codex/AGENTS.md")
 real_seen_settings_before=$(file_state "$HOME/.claude/settings.json")
 real_seen_hooks_before=$(file_state "$HOME/.codex/hooks.json")
 real_seen_config_before=$(file_state "$HOME/.codex/config.toml")
-real_wheelchair_before=$(tree_state "$HOME/.wheelchair" 1)
+selfcheck_a=$fixture/real-state-selfcheck-a
+selfcheck_b=$fixture/real-state-selfcheck-b
+mkdir -p "$selfcheck_a" "$selfcheck_b/accounts/x"
+printf 'initial\n' > "$selfcheck_a/models"
+printf 'initial\n' > "$selfcheck_b/models"
+selfcheck_before=$(real_wheelchair_state "$selfcheck_a")
+printf 'changed\n' > "$selfcheck_a/models"
+touch "$selfcheck_a/.lock"
+selfcheck_after=$(real_wheelchair_state "$selfcheck_a")
+assert 'real wheelchair mismatch names both changed files' test "$(real_wheelchair_mismatch "$selfcheck_before" "$selfcheck_after")" = 'real wheelchair file changed during suite: models, .lock'
+selfcheck_before=$(real_wheelchair_state "$selfcheck_b")
+touch "$selfcheck_b/agy-models.json" "$selfcheck_b/accounts/x/wheelchair-account.json"
+assert 'real wheelchair state ignores unlisted files' test "$selfcheck_before" = "$(real_wheelchair_state "$selfcheck_b")"
+real_wheelchair_before=$(real_wheelchair_state "$HOME/.wheelchair")
 
 # A checkout the guard must refuse: install.sh and its guard copied into <dir>, which the caller
 # has made a linked git worktree or placed under the app's worktree directory.
@@ -280,7 +315,10 @@ assert 'claude-only install does not create the absent Codex home' test ! -e "${
 
 new_case codex_only
 present[codex_only]=codex
+export WHEELCHAIR_MODELS=$fixture/leak/codex_only/models WHEELCHAIR_MODELS_CACHE=$fixture/leak/codex_only/models-cache
 run_case codex_only
+unset WHEELCHAIR_MODELS WHEELCHAIR_MODELS_CACHE
+assert 'codex_only ignores model path overrides' model_overrides_ignored "$fixture/leak/codex_only/models" "$fixture/leak/codex_only/models-cache" "${home[codex_only]}/.wheelchair/models"
 assert 'codex-only install succeeds and reports Codex' bash -c '[[ $1 == 0 && $2 == *"harness found: codex"* ]]' _ "${status[codex_only]}" "${output[codex_only]}"
 assert 'codex-only install creates no retired wrappers' no_retired_wrappers "${claude[codex_only]}" "${codex[codex_only]}"
 assert 'codex-only install does not create the absent Claude home' test ! -e "${claude[codex_only]}"
@@ -350,7 +388,10 @@ new_case kimi_on_path
 detect_path[kimi_on_path]=1
 printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[kimi_on_path]}/kimi"
 chmod +x "${shim[kimi_on_path]}/kimi"
+export WHEELCHAIR_MODELS=$fixture/leak/kimi_on_path/models WHEELCHAIR_MODELS_CACHE=$fixture/leak/kimi_on_path/models-cache
 run_case kimi_on_path
+unset WHEELCHAIR_MODELS WHEELCHAIR_MODELS_CACHE
+assert 'kimi_on_path ignores model path overrides' model_overrides_ignored "$fixture/leak/kimi_on_path/models" "$fixture/leak/kimi_on_path/models-cache" "${home[kimi_on_path]}/.wheelchair/models"
 assert 'kimi on PATH is detected without other providers' bash -c '[[ $1 == 0 && $2 == *"harness found: kimi"* ]]' _ "${status[kimi_on_path]}" "${output[kimi_on_path]}"
 
 new_case codex_pins_preserved
@@ -702,7 +743,6 @@ assert 'real AGENTS.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]'
 assert 'real Claude settings are byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_settings_before" "$(file_state "$HOME/.claude/settings.json")"
 assert 'real Codex hooks are byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_hooks_before" "$(file_state "$HOME/.codex/hooks.json")"
 assert 'real Codex config is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_config_before" "$(file_state "$HOME/.codex/config.toml")"
-assert 'real wheelchair directory is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_wheelchair_before" "$(tree_state "$HOME/.wheelchair" 1)"
 
 # Exercise Darwin with XML-sensitive HOME and a Tailscale app fallback.
 case_platform=Darwin
@@ -797,6 +837,14 @@ run_case sudo_hint
 assert 'missing sudo helper prints install hint and no test password' bash -c '[[ $1 == *"sudo helper not installed; to let agents ask for sudo from a card, run: sudo $2/sudo-helper/install.sh"* ]] && [[ $1 != *hunter2-TESTPW-9f3a* ]]' _ "${output[sudo_hint]}" "$repo"
 for captured in ${output[@]+"${output[@]}"}; do [[ $captured != *hunter2-TESTPW-9f3a* ]] || fail "test password appeared in output"; done
 if grep -R -F -q "hunter2-TESTPW-9f3a" "$fixture"; then fail "test password appeared in fixture"; fi
+
+real_wheelchair_after=$(real_wheelchair_state "$HOME/.wheelchair")
+real_wheelchair_error=$(real_wheelchair_mismatch "$real_wheelchair_before" "$real_wheelchair_after")
+if [[ -z $real_wheelchair_error ]]; then
+  pass 'real wheelchair files the installer writes are byte-identical after suite'
+else
+  fail "$real_wheelchair_error"
+fi
 
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"
 (( failures == 0 ))
