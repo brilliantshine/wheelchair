@@ -2323,7 +2323,12 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+// card.js loads this file to check a graph before a diagram card is posted; only a direct run serves.
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { ClientError, parseJson, validateGraph };

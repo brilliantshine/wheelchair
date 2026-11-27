@@ -37,6 +37,24 @@ test('CLI checks mockup files before asking for a token', async () => {
   result = run(); assert.notEqual(result.status, 0); assert.match(result.stderr, /exceeds 2 MiB/);
 });
 
+test('CLI refuses a graph diagram the viewer would not draw, before asking for a token', async () => {
+  const dir = await makeTemp('graph-cli-');
+  execFileSync('git', ['init', '-q', dir]);
+  const file = path.join(dir, 'card.json');
+  await fs.writeFile(file, JSON.stringify({ kind: 'diagram', plan: 'p', graph: 'flow', title: 'Flow' }));
+  const run = () => spawnSync(process.execPath, [path.resolve(__dirname, '../app/card.js'), 'diagram', file], { cwd: dir, env: { ...process.env, WHEELCHAIR_SESSION_TOKEN: '' }, encoding: 'utf8' });
+  let result = run(); assert.notEqual(result.status, 0); assert.match(result.stderr, /graph file could not be read/);
+  const graphs = path.join(dir, 'docs/plans/p/graphs'); await fs.mkdir(graphs, { recursive: true });
+  const graph = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures/canonical.json'), 'utf8'));
+  await fs.writeFile(path.join(graphs, 'flow.json'), JSON.stringify(graph));
+  result = run(); assert.notEqual(result.status, 0); assert.match(result.stderr, /WHEELCHAIR_SESSION_TOKEN is required/);
+  graph.groups = [...(graph.groups || []), { id: 'held', label: 'held back', nodes: [graph.nodes[0].id] }];
+  await fs.writeFile(path.join(graphs, 'flow.json'), JSON.stringify(graph));
+  result = run(); assert.notEqual(result.status, 0); assert.match(result.stderr, /group-hidden-text \(held\)/);
+  await fs.writeFile(path.join(graphs, 'flow.json'), '{');
+  result = run(); assert.notEqual(result.status, 0); assert.match(result.stderr, /invalid-json/);
+});
+
 test('hub discovers and stores the plan while checking mockup files', { timeout: 5000 }, async () => {
   const dir = await makeTemp('mockup-hub-');
   execFileSync('git', ['init', '-q', dir]);

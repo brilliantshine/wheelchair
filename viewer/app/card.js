@@ -311,6 +311,22 @@ function post(urlText, token, body) {
   });
 }
 
+function checkGraphFile(card) {
+  let top;
+  try { top = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { top = process.cwd(); }
+  const filePath = path.join(top, 'docs', 'plans', card.plan, 'graphs', `${card.graph}.json`);
+  let bytes;
+  try { bytes = fs.readFileSync(filePath); } catch { throw new Error(`graph file could not be read: ${filePath}`); }
+  const { ClientError, parseJson, validateGraph } = require('../server.js');
+  try {
+    validateGraph(parseJson(bytes));
+  } catch (error) {
+    if (!(error instanceof ClientError)) throw error;
+    const ids = Array.isArray(error.extra && error.extra.ids) && error.extra.ids.length ? ` (${error.extra.ids.join(', ')})` : '';
+    throw new Error(`graph file would not draw: ${error.code}${ids}: ${error.detail} See protocol/graphs.md; fix ${filePath} and post again`);
+  }
+}
+
 async function main(argv) {
   const [kind, file] = argv;
   if (!kind || !file) throw new Error('usage: card.js <kind> <json-file>');
@@ -331,6 +347,8 @@ async function main(argv) {
     if (!stat.isFile()) throw new Error('mockup file is not a regular file');
     if (stat.size > 2 * 1024 * 1024) throw new Error('mockup file exceeds 2 MiB');
   }
+  // A graph the viewer would refuse to draw shows only its error in the thread, so refuse it here.
+  if (kind === 'diagram' && (card.format === undefined || card.format === 'graph')) checkGraphFile(card);
   const token = process.env.WHEELCHAIR_SESSION_TOKEN;
   if (!token) throw new Error('WHEELCHAIR_SESSION_TOKEN is required');
   // The service listens on its tailnet address only, and names it in each session's environment.
