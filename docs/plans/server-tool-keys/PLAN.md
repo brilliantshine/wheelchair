@@ -33,6 +33,9 @@ None.
 | 4 | Keyed server tools connect wherever server tools connect today (Claude, Antigravity, unrestricted Codex); nowhere new | Server tools already don't connect on sandboxed Codex, Kimi or Pi, with their own warnings | defaulted |
 | 5 | Server stdout is handled one complete line at a time, three outcomes: unchanged bytes; plain replacement when the result checks clean; otherwise held back (parent Decision 13) | Keeps ids and numbers byte-exact and never waits for more output | defaulted |
 | 6 | A held-back reply is answered with an error whose `id` is copied byte for byte from the client's own matching request, never from the server's line | Closes the parent's round-3 findings (key in `id`, large `id` rounded): the client's own bytes hold no key and are never re-encoded | defaulted |
+| 10 | Supersedes 6: the error reply copies the server reply's own `id` bytes when they hold no key; a reply whose `id` holds a key is dropped. No pending-request list | Simpler with the same result: the client never sends a key, so a key-bearing id matches no waiting request | review-round-1 |
+| 11 | In-place replacement only changes string values; any change to names, numbers, structure or top-level `jsonrpc`/`id`/`method` holds the line back | A replaced method or name would mislead the client | review-round-1 |
+| 12 | Keyed servers: 32 MiB line limit; client stdin end closes the server's stdin and waits up to 5 s for it to finish, flushing everything before exit | Bounded memory; no reply cut off at shutdown | review-round-1 |
 | 7 | A held-back request from the server to the client is answered on the server's stdin with an error, not dropped silently | Closes the parent's accepted risk of a server left waiting | defaulted |
 | 8 | Server stderr is piped and redacted with the same capture redaction as script output (`redactCapture`), line by line, with cut marks for very long lines | Keys can't contain newlines (parent Decision 16), so the parent's multiline finding is moot | defaulted |
 | 9 | Detection is the parent's rule (Decision 19): any plain or escaped spelling `key-spell.js` finds; a work-budget overrun counts as a key | One rule for scripts and servers | defaulted |
@@ -60,10 +63,10 @@ None.
   `decorate`) and `wc.js tool list` show keyed servers' key status exactly as for keyed
   scripts (set / needs key X, not set on this machine). `key_store` is already set for keyed
   rows of any kind; confirm it is shown for servers.
-- `wc.js tool check` on a keyed server runs the handshake without keys and says so, using the
-  existing wording for keyed scripts adapted: `ok (checked without its keys)` on success, and on
-  failure adds `it ran without its keys; that may be why`. `wc.js tool run` keeps refusing
-  servers.
+- `wc.js tool check` on a keyed server runs the handshake without keys. Its output stays as
+  today (`<server name> tools: a, b` on success, the failure text on failure) with
+  ` (checked without its keys)` added at the end of the success line, and on failure one more
+  line: `it ran without its keys; that may be why`. `wc.js tool run` keeps refusing servers.
 
 ### S3. Starting the server
 
@@ -71,17 +74,21 @@ None.
   <project|shared>` and one `--key <NAME>` per declared key, like `bridgeEntry`. No value is
   ever in the MCP entry, its args or env.
 - `machine/lib/tool-launch.js` reads these, revalidates tool.json as today, and before
-  spawning:
+  spawning a keyed server:
+  - if Node child-process debug output is on (`debuglog('child_process').enabled`, as in
+    `runKeyedScript`, `machine/lib/tool-run.js`), it does not start: stderr
+    `tool <name>: Node debug output for child processes is on; keyed tools won't run`, exit 1;
   - if the tool's current `keys` differ (as a set) from the `--key` names, it does not start:
     stderr `tool <name>: its keys changed; they are used from the next agent start (a new
     session, a resume or an account switch)`, exit 1;
   - reads the store fresh (`readKeyStore` with `projectIdentity`, or `readSharedKeys`); a
     missing or unusable key: stderr the S2 needs-key text, exit 1; a read error: stderr its
-    message, exit 1;
-- The values go only into the spawned server's env (`toolEnv(...)` plus the keys). Spawn
-  and start errors print only the tool name, the program and the error code, never env.
-- A keyless server keeps today's behaviour, except that S4–S6 piping applies only when the
-  tool has keys; keyless servers keep direct pipes and inherited stderr.
+    message, exit 1.
+- The values go only into the spawned server's env (`toolEnv(...)` plus the keys), read once
+  at start: a value changed or removed later reaches the server only when it next starts.
+  Spawn and start errors print only the tool name, the program and the error code, never env.
+- A keyless server keeps today's behaviour exactly (direct pipes, inherited stderr, today's
+  shutdown). S4–S7 apply only to keyed servers.
 
 ### S4. Server stdout: line handling
 
@@ -89,67 +96,87 @@ None.
   up to and including `\n`, `\r` kept as part of the line) is handled as soon as its newline
   arrives and written out before the next line; nothing waits on a timer or on more output.
   Order of lines is kept.
+- **JSON tokenizer.** A small hand-written lossless tokenizer (not `JSON.parse`) turns a line
+  into its token sequence (punctuation, property names, string values, numbers, `true`,
+  `false`, `null`), each with its exact source bytes, and reports whether the line is one
+  well-formed JSON value. From it, for a top-level object: its members' names and each
+  member value's exact source text.
 - Outcomes for a line, checked in order:
-  1. **Unchanged.** `findSpellings` (via the same entry as `redactCapture`, no cut edges)
+  1. **Unchanged.** Detection (`findSpellings`, the entry `redactCapture` uses, no cut edges)
      finds no key and does not run out of budget: the original bytes are written.
   2. **Replaced.** Otherwise compute `redactCapture(line)`. It is written only if all hold:
-     it contains no `[not checked for keys]` marker; it parses as JSON; running detection on
-     it again finds nothing; and, when the original line is a JSON object with a top-level
-     `id` member, the raw text of that `id` value (S5's scanner) is byte-identical in both.
-  3. **Held back.** Otherwise, by what the original line is (S5's scanner on the original):
-     - an object with `id` and `result` or `error` (a reply): S5;
-     - an object with `method` and `id` (a request from the server): S6;
-     - anything else (a notification, a batch array, non-JSON): dropped.
-     Each held-back line also writes one stderr line (S7 path):
+     it contains no `[not checked for keys]` marker; detection on it finds nothing; both the
+     original and the result are well-formed JSON; their token sequences have the same length
+     and kinds; every token is byte-identical except string values; and the string values of
+     top-level `jsonrpc`, `id` and `method` are byte-identical. So only string values inside
+     the message can change; names, numbers, ids, methods and structure never do.
+  3. **Held back.** Otherwise, by the original line's top-level members:
+     - `id` and `result` or `error` (a reply): S5;
+     - `method` and `id` (a request from the server): S6;
+     - anything else (a notification, a batch array, not well-formed): dropped.
+     Each held-back line also writes one stderr line through S7:
      `tool <name>: held back a <reply|request|message> that contained one of its keys`.
-- When the server's stdout ends, a final line without `\n` is handled the same way (without
-  adding a newline). The launcher exits only after every stdout and stderr byte it accepted is
-  handled and its own stdout and stderr have flushed (`write` callbacks / `drain`), so no
-  output is cut at exit. When the client's stdin ends, the launcher keeps today's behaviour
-  (kill the server group, exit).
+- **Size limit.** A line is held in memory up to 32 MiB. When a line passes 32 MiB without a
+  newline, the rest up to the next `\n` is discarded unread, and the line is held back as in
+  S4.3 using only the bytes held, where a reply or request is recognized only if its `id`
+  value is complete within them; the stderr line says `held back a … that was over 32 MiB`.
+- **Shutdown.**
+  - Client stdin ends: the launcher ends the server's stdin and keeps relaying. When the
+    server's stdout and stderr have ended and the server has exited, it handles any final line
+    without `\n` the same way (without adding a newline), waits for its own stdout and stderr
+    writes to flush, and exits with the server's code (1 on a signal). If the server has not
+    exited 5 seconds after stdin ended, the launcher kills its process group as today and then
+    exits the same way.
+  - Server exits first: the same flush, then exit with its code.
+  - A signal to the launcher (SIGINT, SIGTERM, SIGHUP): kill the group and exit, as today; no
+    flush promise.
 
-### S5. Held-back replies keep request/reply matching
+### S5. Held-back replies
 
-- The launcher passes the client's stdin bytes to the server unchanged and immediately. On
-  the side it assembles client lines and, for each line that is a JSON object with `method`
-  and a top-level `id`, records the `id` value's raw text in a pending list (at most 10,000;
-  the oldest is dropped when full).
-- A **raw-value scanner** finds a top-level member of a JSON object and returns its value's
-  exact source text, without converting numbers or decoding strings (a small hand-written
-  scanner; `JSON.parse` must not be used to obtain ids). The same scanner tells reply from
-  request from other (S4.3).
-- For a reply (passed on in S4.1/S4.2, or held back), its `id` raw text is matched against
-  the pending list: first by exact text; else by equal value, where strings compare by their
-  decoded content and numbers by exact decimal value (`1`, `1.0`, `1e0` equal; no
-  floating-point conversion). A match is removed from the list.
-- A held-back reply that matches writes, in its place:
-  `{"jsonrpc":"2.0","id":<the request's recorded raw id text>,"error":{"code":-32603,"message":"tool <name>: its reply contained one of its keys and was held back"}}\n`.
-  One with no match is dropped (only the stderr line).
+- A held-back reply gets an error reply in its place only when the original reply's `id`
+  value (its exact source text from the tokenizer) itself contains no key under detection:
+  `{"jsonrpc":"2.0","id":<that exact id text>,"error":{"code":-32603,"message":"tool <name>: its reply contained one of its keys and was held back"}}\n`
+  (or `…its reply was over 32 MiB and was held back` for the size limit).
+  The id bytes are copied, never re-encoded, so large numbers and odd spellings survive.
+- A reply whose `id` text contains a key is dropped: the client never sent a key (it doesn't
+  know any), so no request is waiting on that id.
+- Before any generated line is written, detection runs on it; if it finds a key the line is
+  not written.
 
 ### S6. Held-back requests from the server
 
 - For a held-back server request, the launcher writes to the server's stdin
-  `{"jsonrpc":"2.0","id":<the server line's raw id text>,"error":{"code":-32603,"message":"held back by wheelchair: the request contained one of this tool's keys"}}\n`.
+  `{"jsonrpc":"2.0","id":<the server line's exact id text>,"error":{"code":-32603,"message":"held back by wheelchair: the request contained one of this tool's keys"}}\n`.
   (That id goes back to the server, which already knows it.)
-- It never splits a client line: if a client line is part-way through being passed on, the
-  injected line is queued and written right after the client's next `\n`.
+- The launcher passes the client's stdin bytes to the server unchanged and immediately, and
+  tracks only whether a client line is part-way through. An injected line is never written
+  inside a client line: it is queued and written right after the client's next `\n` (or at
+  once if none is part-way). After client stdin ends, a queued line is written before the
+  server's stdin is ended.
 
 ### S7. Server stderr
 
 - For a keyed server, stderr is piped (not inherited) and written to the launcher's stderr a
   complete line at a time through `redactCapture`. A run of more than 64 KiB with no newline is
   handled in 64 KiB pieces using `redactCapture`'s `cutEnd` on a piece and `cutStart` on the
-  next, as script output capture does. The launcher's own messages (S3, S4) never contain a
+  next, as script output capture does. The launcher's own messages (S3–S6) never contain a
   value.
 
 ### S8. Guide
 
 - `protocol/tools.md`: the server-keys refusal line is replaced with: server tools may list
-  `keys`; values arrive as environment variables of the server process only; replies and error
-  output are checked for keys (same spellings as scripts); a reply that can't be cleaned is
-  replaced by an error reply to the same request, a request from the server gets an error, and
-  other messages are dropped; `check` runs without keys; same availability as other server
-  tools. Keep "Never print or log a key in any form."
+  `keys`; values arrive as environment variables of the server process only, read when it
+  starts; replies and error output are checked for keys (same spellings as scripts); only text
+  inside a reply can be replaced, and a reply that can't be cleaned that way (or is over 32 MiB)
+  is replaced by an error reply to the same request; a request from the server carrying a key
+  gets an error; other messages are dropped; `check` runs without keys; same availability as
+  other server tools.
+- The key lifecycle paragraph ("A replaced value applies from the next call; a removed key
+  makes the next call fail without running") is reworded so it says that holds for script
+  tools, while a server tool gets a replaced or removed value only at its next start (the next
+  agent start).
+- The `NODE_DEBUG` sentence covers keyed server tools too. Keep "Never print or log a key in
+  any form."
 
 ### Non-goals
 
@@ -160,8 +187,9 @@ None.
 ### Validation
 
 - S1: `node --test machine/test/folder-tools.test.js` (keyed server accepted; old refusal gone).
-- S2: `node --test machine/test/folder-tools-run.test.js viewer/test/wc-tool.test.js machine/test/project-tools.test.js` — keyed server with missing key not offered with the needs-key line; set key offered; `check` wording; list status.
-- S3–S7: `node --test machine/test/folder-tools-launch.test.js machine/test/key-redact.test.js` with a fake keyed server covering at least: keys reach the server env and not argv/MCP entry; keys-changed and missing-key refusals; keyless lines byte-identical (odd spacing, `1.0`, `9007199254740993`); a key echoed in a result string replaced with `[key]`; a key echoed as `\u`-escaped and `\/` forms replaced or held back, never passed; a key in a property name or in the reply's `id` held back and answered with the request's own raw `id` (including `9007199254740993` and a string id); a held-back unmatched reply dropped; a server request carrying a key answered on the server's stdin with its id, not interleaved inside a client line; a notification carrying a key dropped; a client that waits for each reply before sending the next request completes (no stall); stderr key replaced, including across a 64 KiB cut; 1,000,000 bytes of stdout fully delivered before exit; keyless server unchanged (stderr inherited).
+- S2: `node --test machine/test/folder-tools-run.test.js viewer/test/wc-tool.test.js machine/test/project-tools.test.js` — keyed server with missing key not offered with the needs-key line; set key offered; `check` keeps the server name and tool list and adds the note; list status.
+- S3–S7: `node --test machine/test/folder-tools-launch.test.js machine/test/key-redact.test.js` with a fake keyed server covering at least: keys reach the server env and not argv/MCP entry; `NODE_DEBUG=child_process` refusal with no value on stderr; keys-changed and missing-key refusals; keyless lines byte-identical (odd spacing, `1.0`, `9007199254740993`); a key echoed in a result string replaced with `[key]`; a key echoed in `\u`-escaped and `\/` forms replaced or held back, never passed; a key in a property name held back and answered with the reply's own `id` bytes (including `9007199254740993` and a string id); a key in the reply's `id` dropped; a server request whose `method` is the key (`roots/list` as the key value) held back and answered on the server's stdin, never reaching the client; a server request carrying a key answered on the server's stdin and not inside a client line; a notification carrying a key dropped; a client that waits for each reply before sending the next request completes (no stall); a line over 32 MiB discarded without the launcher's memory growing past the limit, with an error reply when its `id` came first; client stdin closed while a reply is still being written, and the reply arrives whole; stderr key replaced, including across a 64 KiB cut; 1,000,000 bytes of stdout fully delivered before exit; keyless server unchanged (stderr inherited).
+- Name guard: `node --test machine/test/name-guard.test.js`.
 - S8: `grep -n -i "aren't supported yet" protocol/tools.md` finds nothing; `grep -n -i "never print or log a key" protocol/tools.md` finds the rule; read the rendered guide (CONTRIBUTING.md).
 
 ## Accepted Risks
@@ -171,6 +199,8 @@ None.
 | A key transformed (base64, hashing, split across fields) is not found | Parent's stated limit (its Decision 19) | planning |
 | A held-back batch array is dropped, so a client that sent a batch may wait | Rare path: current MCP has no batches and the harnesses don't send them | planning |
 | An agent that reads the key store files on disk can find values | Same OS user; parent IDEA Not doing | planning |
+| A keyed server's error output without newlines shows up only at a newline or every 64 KiB | Rare path: servers that write unterminated error output | review-round-1 |
+| A client that itself sends an id spelling a key gets no reply when the server echoes it | Rare path: the client would have to guess a key | review-round-1 |
 
 ## Check Once Built
 
@@ -184,6 +214,26 @@ None.
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Pending-request matching in S5 is more than needed | upheld | S5 rewritten: copy the reply's own clean id, drop a key-bearing one (Decision 10) |
+| intent | minor | Guide says replaced/removed keys apply next call; servers read keys at start | upheld | S3, S8 lifecycle wording |
+| intent | minor | `check` wording would replace the server name and tool list | upheld | S2: note appended to existing output |
+| intent | minor | Rare path: unterminated stderr delayed | accepted-risk | Accepted Risks |
+| mechanics | blocking | `NODE_DEBUG` makes spawn print the env | upheld | S3: same refusal as keyed scripts |
+| mechanics | blocking | Replacement can change `method` or names while staying valid JSON | upheld | S4.2 token comparison (Decision 11) |
+| mechanics | blocking | Rare path: client id spelling a key reflected back | accepted-risk | Accepted Risks; S5 also drops key-bearing ids and checks generated lines |
+| mechanics | major | Exit on client stdin end can cut accepted output | upheld | S4 Shutdown (Decision 12) |
+| mechanics | major | Unbounded line buffering | upheld | S4 Size limit (Decision 12) |
+| mechanics | minor | Guide lifecycle text wrong for servers | upheld | S8 |
+| mechanics | minor | `name-guard` test missing from Validation | upheld | Added |
+
+### Round 2 — 2026-11-27
+
+**Lanes:** (filled at start)
+
+**Changed since Round 1:** S2 (`check` note appended to existing output), S3 (`NODE_DEBUG` refusal; keys read once at start), S4 (lossless tokenizer; replacement only of string values; 32 MiB line limit; shutdown and flush), S5 (rewritten: copy the reply's own clean id, drop key-bearing ids, check generated lines), S6 (client-line tracking moved here), S8 (lifecycle and `NODE_DEBUG` wording), Validation (new cases, name guard), Decisions 10–12, Accepted Risks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
