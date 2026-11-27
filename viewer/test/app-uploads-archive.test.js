@@ -17,9 +17,10 @@ async function setup() {
   const state = path.join(root, 'machine');
   const hubState = path.join(root, 'hub');
   const bin = path.join(root, 'bin');
+  const home = path.join(root, 'home');
   const project = path.join(root, 'project');
   const origin = path.join(root, 'origin.git');
-  await Promise.all([state, hubState, bin, project].map(dir => fs.mkdir(dir, { recursive: true })));
+  await Promise.all([state, hubState, bin, home, project].map(dir => fs.mkdir(dir, { recursive: true })));
   const git = (...args) => execFileSync('git', args, { stdio: 'ignore' });
   git('init', '--bare', '--initial-branch=main', origin);
   git('init', '--initial-branch=main', project);
@@ -33,6 +34,8 @@ async function setup() {
   const script = `#!/bin/sh\ncase "$(basename "$0"):$1" in\n  systemd-run:*) exit 1 ;;\n  tmux:capture-pane) printf 'auto mode on\\n❯ Try anything\\n' ;;\n  claude:--version) echo claude-test ;;\n  claude:auth) echo '{"loggedIn":true}' ;;\nesac\n`;
   for (const name of ['tmux', 'systemd-run', 'claude']) await fs.writeFile(path.join(bin, name), script, { mode: 0o755 });
   const priorPath = process.env.PATH;
+  const priorHome = process.env.HOME;
+  process.env.HOME = home;
   process.env.PATH = `${bin}:${priorPath}`;
   let instance, server;
   try {
@@ -49,15 +52,23 @@ async function setup() {
     server = await startServer({ stateDir: hubState, env: { WHEELCHAIR_MODELS: path.join(root, 'models'), WHEELCHAIR_MODELS_CACHE: modelsCache } });
     return { server, state: hubState, machineState: state, instance, project, async close() {
       try { await server.stop(); } finally {
-        instance.server.closeAllConnections();
-        await new Promise(resolve => instance.server.close(resolve));
-        process.env.PATH = priorPath;
+        try {
+          instance.server.closeAllConnections();
+          await new Promise(resolve => instance.server.close(resolve));
+        } finally {
+          process.env.PATH = priorPath;
+          if (priorHome === undefined) delete process.env.HOME; else process.env.HOME = priorHome;
+        }
       }
     } };
   } catch (error) {
-    if (server) await server.stop();
-    if (instance?.server?.listening) await new Promise(resolve => instance.server.close(resolve));
-    process.env.PATH = priorPath;
+    try {
+      if (server) await server.stop();
+      if (instance?.server?.listening) await new Promise(resolve => instance.server.close(resolve));
+    } finally {
+      process.env.PATH = priorPath;
+      if (priorHome === undefined) delete process.env.HOME; else process.env.HOME = priorHome;
+    }
     throw error;
   }
 }
@@ -72,7 +83,13 @@ test('archive through the hub cancels a stalled upload to the real machine', { t
     const leadOnMachine = () => Object.values(context.instance.sessions).some(session => session.thread_id === made.id && session.role === 'lead');
     const leadDeadline = Date.now() + 15000;
     while (!leadOnMachine() && Date.now() < leadDeadline) await delay(20);
-    assert.ok(leadOnMachine());
+    if (!leadOnMachine()) {
+      const { Hub } = require('../app/hub.js');
+      const hubThread = await new Hub({ stateDir: context.state }).thread(made.id);
+      const hubSessions = hubThread.sessions.map(({ name, live, status, waiting_reason }) => ({ name, live, status, waiting_reason }));
+      const machineSessions = Object.values(context.instance.sessions).map(({ name, thread_id, role, status }) => ({ name, thread_id, role, status }));
+      assert.ok(leadOnMachine(), `machine has the lead; hub sessions: ${JSON.stringify(hubSessions)}; machine sessions: ${JSON.stringify(machineSessions)}`);
+    }
     const base = `${context.server.url}/api/threads/${made.id}`;
     const headers = { 'x-graph-token': context.server.token, origin: new URL(base).origin, 'content-type': 'application/octet-stream' };
     const bytes = Buffer.from('small upload through the hub');
