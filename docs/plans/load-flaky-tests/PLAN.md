@@ -369,7 +369,7 @@ A first start of this round's reviewers was stopped before they reported, becaus
 | Task | Objective | Ownership boundary | Lane | Validation | Status |
 |------|-----------|--------------------|------|------------|--------|
 | T1 | S1 load harness | `test-support/under-load.sh`, `test-support/test/under-load.test.js` | standard (gpt-6.1-terra) | S1 check; harness smoke runs | done |
-| T1b | S1 test races: pid file, trap readiness, affinity match | `test-support/test/under-load.test.js` | light (gpt-6-luna) | S1 check, under load `--repeat 10` | not started |
+| T1b | S1 test races: pid file, trap readiness, affinity match | `test-support/test/under-load.test.js` | light (gpt-6-luna) | S1 check, under load `--repeat 10` | done |
 | T2 | S2 + S10 full-run stop and one start per command `tricky` | `test-support/full-run.sh`, `test-support/test/full-run.test.js` | standard (gpt-6.1-terra) | S2/S10 checks, under load `--repeat 10` | not started |
 | T3 | S3 + S5 + S7 holder port, verifier retry, switch timers | `viewer/test/lifecycle.test.js`, `viewer/test/app-hub.test.js` (that test), `machine/test/switch-http.test.js` | standard (gpt-6.1-terra) | S3/S5/S7 checks, each under load | not started |
 | T4 | S4 + S6 quiet graces, archive 30 s `tricky` | `viewer/test/app-quiet.test.js`, `viewer/test/app-uploads-archive.test.js`, archive call in `viewer/app/threads.js` | standard (gpt-6.1-terra) | S4/S6 checks, each under load | not started |
@@ -382,3 +382,5 @@ A first start of this round's reviewers was stopped before they reported, becaus
 - 2026-11-26 — Choice: T1, under-load.sh options: `--cpus`, `--hogs`, `--repeat` must be positive integers; `--hogs` counts helpers per CPU; a signal exits 1.
 - 2026-11-26 — Choice: T1, under-load.test.js TERM case: the command's child writes a marker when it receives TERM, so leader-only signalling fails the test.
 - 2026-11-26 — T1 accepted (band: scout): harness matches S1; scout found two races in the TERM test (pid file read before written; child trap may be unset when TERM lands) and a weak affinity regex. Fixed in follow-up T1b.
+- 2026-11-26 — Choice: T1b, under-load.test.js TERM case: the trap-ready marker is `<signalled>.trap`, written by the grandchild with `touch "$2"` right after its trap; wait messages renamed to match. Worker reported "none"; scout listed these.
+- 2026-11-26 — T1b accepted (band: scout): fixes match the brief; the grandchild's trap now expands its path unquoted (`under-load.test.js:71`), which breaks only if the temp directory path has a space (rare path, not chased).
