@@ -256,6 +256,15 @@ Plus any new test file named above, run with `node --test <file>`.
 | mechanics | major | Service crash bypassing handlers leaves tools running | accepted-risk | Rare path: crash and mid-run tool together; Accepted Risks |
 | mechanics | minor | AI limits paragraph; rendered guide review | upheld | S7 (as intent finding); Validation names the rendered review |
 
+### Round 2 — 2026-11-27
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 1:** Decision 10 (live key reads, no launch binding; S2 record and old S4 check 4 removed); S4 check 1 refuses ended sessions and a stopped-session note; S5 `list` sentence; S7 names all three `protocol/tools.md` places; Validation (negative grep, rendered guide review, new test cases); Accepted Risks (service crash).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
