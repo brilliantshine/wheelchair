@@ -1,6 +1,7 @@
 'use strict';
 
 module.exports = [
+  'app-settings-hold.spec.js', // Settings scroll anchoring.
   'browser.spec.js', // Graph rendering and geometry.
   'touch.spec.js', // Touch gestures.
   'background-rendering.spec.js', // Pixel sampling.
