@@ -15,8 +15,8 @@ context, and a lead starts only when Collin opens it.
 
 ## Why — the problem
 
-Today a stub can only be made by a lead inside another thread. When Collin has an idea he
-wants to park for later, the only option is Start, which launches a lead (and spends its
+Today a stub can only be made by a lead inside another thread. When Collin has an idea they
+want to park for later, the only option is Start, which launches a lead (and spends its
 tokens) immediately, or keeping the idea somewhere outside the app.
 
 ## What good looks like
