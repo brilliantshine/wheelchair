@@ -310,7 +310,7 @@ Plus any new test file named above, run with `node --test <file>`.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S6: `runScript` optional abort signal | machine/lib/tool-run.js, machine/test/folder-tools-run.test.js | standard / gpt-6.1-terra | | folder-tools-run, -launch, key-redact tests | not started |
-| T2 | S1 connector part: `keyedToolsByMachine` in contract, Kimi, Pi, README; export | connectors/contract.js, README.md, kimi/machine.js, pi/machine.js, registry.json, machine/test/connectors-contract.test.js | light / gpt-6-luna | | connectors-contract, name-guard, export --check | not started |
+| T2 | S1 connector part: `keyedToolsByMachine` in contract, Kimi, Pi, README; export | connectors/contract.js, README.md, kimi/machine.js, pi/machine.js, registry.json, machine/test/connectors-contract.test.js | light / gpt-6-luna | wc-c5d33de8d545-worker-2 | connectors-contract, name-guard, export --check | done |
 | T3 | tricky: S1 eligibility helper, S2 launch, S3, S4 run route, API.md | machine/service.js, machine/API.md, machine/test/project-tools-service.test.js, machine/test/folder-tools-launch.test.js, machine/test/tool-machine-run.test.js | standard | | Spec Validation machine command | not started (after T1, T2) |
 | T4 | S5: CLI machine runs | viewer/app/tool-cli.js, viewer/app/wc.js, viewer/test/wc-tool.test.js | standard / gpt-6.1-terra | | wc-tool, app-project-tools-card tests | not started |
 | T5 | S7 guide text in protocol/tools.md | protocol/tools.md | standard / gpt-6.1-terra | wc-c5d33de8d545-worker-4 | negative grep; rendered read | done |
@@ -325,3 +325,6 @@ Plus any new test file named above, run with `node --test <file>`.
 - 2026-11-27 — Choice: T5, protocol/tools.md AI limits: kept the exact `set Codex to unrestricted in Settings to use it` message text.
 - 2026-11-27 — Choice: T5, protocol/tools.md Keys: "Sandboxed Codex cannot use keyed tools; set Codex to unrestricted in Settings to use them."
 - 2026-11-27 — T5 accepted (band: scout): guide edits at all three S7 places; negative grep passes.
+- 2026-11-27 — Choice: T2, connectors/contract.js: `keyedToolsByMachine` placed right after `keyedToolsReason`.
+- 2026-11-27 — Choice: T2, machine/test/connectors-contract.test.js: one test looping over the Kimi and Pi machine halves; absence checked with `in`; contract acceptance checked by membership in OPTIONAL.machine (the scout listed these; the report did not).
+- 2026-11-27 — T2 accepted (band: scout): contract, Kimi, Pi, README row; registry unchanged by export. The launch test "shell-only sessions report keyed tools…" now fails (the prompt would say "(undefined)") until T3 lands, as briefed.
