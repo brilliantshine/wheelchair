@@ -313,8 +313,15 @@ Plus any new test file named above, run with `node --test <file>`.
 | T2 | S1 connector part: `keyedToolsByMachine` in contract, Kimi, Pi, README; export | connectors/contract.js, README.md, kimi/machine.js, pi/machine.js, registry.json, machine/test/connectors-contract.test.js | light / gpt-6-luna | | connectors-contract, name-guard, export --check | not started |
 | T3 | tricky: S1 eligibility helper, S2 launch, S3, S4 run route, API.md | machine/service.js, machine/API.md, machine/test/project-tools-service.test.js, machine/test/folder-tools-launch.test.js, machine/test/tool-machine-run.test.js | standard | | Spec Validation machine command | not started (after T1, T2) |
 | T4 | S5: CLI machine runs | viewer/app/tool-cli.js, viewer/app/wc.js, viewer/test/wc-tool.test.js | standard / gpt-6.1-terra | | wc-tool, app-project-tools-card tests | not started |
-| T5 | S7 guide text in protocol/tools.md | protocol/tools.md | standard / gpt-6.1-terra | | negative grep; rendered read | not started |
+| T5 | S7 guide text in protocol/tools.md | protocol/tools.md | standard / gpt-6.1-terra | wc-c5d33de8d545-worker-4 | negative grep; rendered read | done |
 
 ## Log
 
 - 2026-11-27 Ready check: hub and machine answer; claude 2.1.332 and codex installed; Codex preflight passed (token fresh).
+- 2026-11-27 — T5: worker reported "none" for choices; the scout listed 5, logged below.
+- 2026-11-27 — Choice: T5, protocol/tools.md Make and test: kept "Otherwise, `run` runs in your own shell…" after the new Kimi/Pi sentence.
+- 2026-11-27 — Choice: T5, protocol/tools.md Make and test: "On the other AIs, to try a keyed tool for real, use it through MCP…".
+- 2026-11-27 — Choice: T5, protocol/tools.md Make and test: lost-connection advice as its own sentence.
+- 2026-11-27 — Choice: T5, protocol/tools.md AI limits: kept the exact `set Codex to unrestricted in Settings to use it` message text.
+- 2026-11-27 — Choice: T5, protocol/tools.md Keys: "Sandboxed Codex cannot use keyed tools; set Codex to unrestricted in Settings to use them."
+- 2026-11-27 — T5 accepted (band: scout): guide edits at all three S7 places; negative grep passes.
