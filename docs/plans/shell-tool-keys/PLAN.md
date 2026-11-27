@@ -312,7 +312,7 @@ Plus any new test file named above, run with `node --test <file>`.
 | T1 | S6: `runScript` optional abort signal | machine/lib/tool-run.js, machine/test/folder-tools-run.test.js | standard / gpt-6.1-terra | wc-c5d33de8d545-worker | folder-tools-run, -launch, key-redact tests | done |
 | T2 | S1 connector part: `keyedToolsByMachine` in contract, Kimi, Pi, README; export | connectors/contract.js, README.md, kimi/machine.js, pi/machine.js, registry.json, machine/test/connectors-contract.test.js | light / gpt-6-luna | wc-c5d33de8d545-worker-2 | connectors-contract, name-guard, export --check | done |
 | T3 | tricky: S1 eligibility helper, S2 launch, S3, S4 run route, API.md | machine/service.js, machine/API.md, machine/test/project-tools-service.test.js, machine/test/folder-tools-launch.test.js, machine/test/tool-machine-run.test.js | standard / gpt-6.1-terra | wc-c5d33de8d545-worker-5 | Spec Validation machine command | running |
-| T4 | S5: CLI machine runs | viewer/app/tool-cli.js, viewer/app/wc.js, viewer/test/wc-tool.test.js | standard / gpt-6.1-terra | | wc-tool, app-project-tools-card tests | not started |
+| T4 | S5: CLI machine runs | viewer/app/tool-cli.js, viewer/app/wc.js, viewer/test/wc-tool.test.js | standard / gpt-6.1-terra | wc-c5d33de8d545-worker-3 | wc-tool, app-project-tools-card tests | done |
 | T5 | S7 guide text in protocol/tools.md | protocol/tools.md | standard / gpt-6.1-terra | wc-c5d33de8d545-worker-4 | negative grep; rendered read | done |
 
 ## Log
@@ -332,3 +332,10 @@ Plus any new test file named above, run with `node --test <file>`.
 - 2026-11-27 — Choice: T1, machine/lib/tool-run.js: the already-aborted check runs before the keyed NODE_DEBUG refusal (the scout listed this; the report did not).
 - 2026-11-27 — Choice: T1, machine/test/folder-tools-run.test.js: both cancel tests run for keyed and keyless paths, with timeout_seconds 6 fixtures.
 - 2026-11-27 — T1 accepted (band: scout): `runScript` takes `signal`; abort kills only that run's group; already-aborted runs nothing.
+- 2026-11-27 — Choice: T4, viewer/app/tool-cli.js: "did not run" only for ECONNREFUSED, ENOENT, EHOSTUNREACH, ENETUNREACH, ENOTFOUND before the socket connected and the request finished; every other transport failure says "may already have run".
+- 2026-11-27 — Choice: T4, viewer/app/tool-cli.js: all seven result fields type-checked before printing.
+- 2026-11-27 — Choice: T4, viewer/app/tool-cli.js: a non-200 without a string `error` is reported as "may already have run" (scout-listed).
+- 2026-11-27 — Choice: T4, viewer/app/tool-cli.js: any `keyed_run` other than "machine" runs locally (scout-listed).
+- 2026-11-27 — Choice: T4, viewer/app/tool-cli.js: `run`'s `roots()` call uses the new request, so every `run` (keyless too) says "did not run" when the machine is unreachable, as S5 asks for roots() (scout-listed).
+- 2026-11-27 — Choice: T4, viewer/test/wc-tool.test.js: refused-connection stub closes its server with `Connection: close` (scout-listed).
+- 2026-11-27 — T4 accepted (band: scout): CLI machine path per S5; 29/29 tests pass on rerun. Scout noted weak spots left for verification: the emoji split test does not assert two chunks arrived, and only one mutation was shown.
