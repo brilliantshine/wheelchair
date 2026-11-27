@@ -203,10 +203,15 @@ Checks, each passing under load (`--repeat 5`):
 The check names what wheelchair writes; it never lists what the AI tools write, since
 those change with each tool version and event (Decision 6).
 
-- Outside `accounts/`, the real `~/.wheelchair` stays checked in full, as today.
+- Outside `accounts/`, the real `~/.wheelchair` stays checked in full, except files the
+  running hub or machine service rewrite in normal use, which get the create-or-delete
+  check described for shared files below. Known: `agy-models.json` (rewritten by
+  `codex/model.sh` when the Settings page loads with a cache over an hour old,
+  `codex/model.sh:272,290-300`). The worker searches for others (for example under
+  `models/`, and `.lock`) and names each with its writer in the comment.
 - Inside each `accounts/<name>/`, only the files wheelchair's code writes there are
-  checked, byte for byte: `CLAUDE.md`, `AGENTS.md`, `wheelchair-account.json`, and
-  wheelchair's entries under `skills/`. The worker confirms the list by searching the
+  checked, byte for byte: `CLAUDE.md`, `AGENTS.md` and `wheelchair-account.json`.
+  `skills/` is not checked: wheelchair writes nothing there; Claude and Codex own it. The worker confirms the list by searching the
   code that writes into account folders (for example `connectors/common.js`,
   `machine/lib/harness-install.js`, `viewer/app/`) and names every writer in a comment
   beside the list. Everything else inside an account folder is not checked.
@@ -252,6 +257,7 @@ Check: `node --test test-support/test/full-run.test.js`
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A session start rewrites `wheelchair-account.json` in place (truncate, then write); a snapshot inside that sub-second window reads it empty and reports a mismatch | Rare path: a sub-second race between two actors (`realism.md`) | review-round-2 |
 
 ## Review Rounds
 
@@ -287,5 +293,8 @@ Check: `node --test test-support/test/full-run.test.js`
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | S9 allowlists "wheelchair's entries under skills/", but wheelchair writes nothing there and live sessions change it | upheld | skills/ removed from the allowlist |
+| intent | minor | `agy-models.json` outside accounts/ is rewritten by the live hub when Settings loads | upheld | Live-service files outside accounts/ get the create-or-delete check, each named |
+| intent | minor | Rare path: in-place rewrite of `wheelchair-account.json` at session start | accepted-risk | Accepted Risks |
 
 ## Implementation Tasks
