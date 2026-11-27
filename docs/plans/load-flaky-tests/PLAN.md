@@ -281,7 +281,7 @@ Check: `node --test test-support/test/full-run.test.js`
 
 ### Round 2 — 2026-11-26
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:** S1 (2 allowed CPUs, 2 helpers each, taskset skip); S2 (scope to the suites' own groups, KILL then re-poll, stub PID checks; Decision 10); S3 (15 s ready deadline, cleanup, stderr); S4 (rules for tests 5 and 7); S5 (wait for saved state too); S6 (two budgets, archive call timeout 30 s, Decision 11; upload asserted pending); S8 (npm commands; deck test waits for the popover to be replaced); S9 (allowlist of wheelchair files in account folders, Decision 8; skip by path; snapshot after the last case; `install/test/tree-state.sh` and its self-check); S10 (one start per stub).
 
