@@ -207,7 +207,7 @@ app uses to hide traffic the user did not write:
 |---|---|---|
 | `[wc:role]` | Your role instruction (Codex sessions get it as their first message) | hidden, and your reply to it |
 | `[wc:from <session>]`, then for another thread's lead `[thread <id>: <title>]` | Another session's `message`, or a `result` delivered to you | hidden, and your reply to it |
-| `[wc:context stub]` | Context for a lead that starts a stub thread: the stub's summary | hidden, your reply **shown**, with "Started from <parent thread>" in its place |
+| `[wc:context stub]` | Context for a lead that starts a stub thread: the stub's summary | hidden, your reply **shown**, with "Started from <parent thread>", or "Started from a saved idea" for a stub saved from the New thread screen, in its place |
 | `[wc:context restart]` | Context for a lead that replaces a dead one: the plan and the cards so far | hidden, your reply **shown**, with "Lead restarted" in its place |
 | `[wc:context import]` | Context for a lead continuing an imported thread | hidden, your reply **shown**, with "Imported from a handoff" in its place |
 | `[wc:context switch]` | Tells an agent its conversation was moved to another account after a usage limit, and to carry on | hidden with no line in its place, your reply **shown** |
