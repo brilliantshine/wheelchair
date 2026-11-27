@@ -10,11 +10,6 @@ created: 2026-11-26
 
 ## Open Questions
 
-### Q1: Should the full run re-run a failed test before calling the run failed?
-- **Context:** Fixing each named test removes the known flakes, but new ones will appear under load. A re-run rule would stop one-off failures from blocking a push, at the cost of letting a real race through when it passes on the second try.
-- **Options:** (a) No re-run: fix tests only; a failure is a failure. (b) Re-run each failed test file once; the run passes if the re-run passes, and summary.txt names it as flaky so it can be fixed later. (c) Re-run once only to label the failure as "flaky" or "fails again" in summary.txt; the run still fails either way.
-- **Recommendation:** (a), because IDEA.md rules out retries that hide failures, and (b) does exactly that.
-
 ### Q2: How should the install suite's check of the real wheelchair folder work?
 - **Context:** `install/test/run.sh:234,705` hashes all of `~/.wheelchair` before and after the suite. Live AI sessions keep writing there (conversations, history, caches under `accounts/<name>/`), so on a machine running wheelchair it always fails. It exists to catch the suite or the code it runs writing into the real folder instead of its fake home.
 - **Options:** (a) Byte-check only the files wheelchair's own code writes there (everything outside the AI tools' own folders and files under `accounts/<name>/`), and ignore what the AI tools write while running. (b) Give every fixture a unique marker and fail if any file under the real folder that changed during the suite contains or is named by it. (c) Both.
@@ -35,6 +30,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 2 | Flaky tests are fixed by widening the gap between the good and bad outcome (longer budgets, waiting on events instead of fixed sleeps, time deadlines instead of loop counts), never by removing or loosening an assertion | IDEA.md: tests stay as strong as before | defaulted |
 | 3 | The full-run stop test is fixed in the runner too: after a stop signal the runner waits for every process in both suites to end before exiting | The runner leaves browser test processes running after it exits; the test is right to expect them stopped | defaulted |
 | 4 | No mockups: nothing here is visible in an app | Test-only and runner change | defaulted |
+| 5 | The full run never re-runs a failed test; any failure fails the run | Collin picked "No re-run": a retry could let a real timing bug through | user |
 
 ## Spec
 
@@ -107,7 +103,7 @@ Pending Q2.
 
 ### S10. Full-run pass rule
 
-Pending Q1.
+Unchanged: no re-runs. Any suite exit other than 0 fails the run (Decision 5).
 
 ## Accepted Risks
 
