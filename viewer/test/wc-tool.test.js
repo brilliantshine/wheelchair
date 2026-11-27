@@ -113,3 +113,42 @@ test('bridge reports keys added after the tool was offered', async () => {
     assert.equal(result.isError, true); assert.match(result.content[0].text, /keys are used from the next agent start/); assert.match(result.content[0].text, /wc\.js tool run runs it now without keys/);
   } finally { p.stdin.end(); lines.close(); }
 });
+
+test('machine keyed runs handle results, transport failures, and local fallback', async () => {
+  const dir = repo();
+  tool(dir, 'keyed', { kind: 'script', inputs: {}, run: ['./run.sh'], keys: ['TOKEN'] }, { 'run.sh': '#!/bin/sh\nprintf local' });
+  let mode = 'success', keyedRun = 'machine', calls = 0;
+  const resultBody = { ok: true, text: 'hello 🌍', stderr: '', code: 0, signal: null, timed_out: false, truncated: false };
+  const server = http.createServer((req, res) => {
+    if (req.url === '/v1/agent/tools') { res.end(JSON.stringify({ worktree: dir, shared_copy: null, keyed_run: keyedRun })); return; }
+    assert.equal(req.url, '/v1/agent/tools/run'); calls++;
+    const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => {
+      const body = JSON.parse(Buffer.concat(chunks)); assert.equal(body.name, 'keyed'); assert.deepEqual(body.input, { x: 1 }); assert.equal(body.env.WC_TEST_PRESENT, 'present');
+      if (mode === 'refuse') { res.writeHead(422); res.end(JSON.stringify({ error: 'missing key' })); }
+      else if (mode === 'cut') { res.writeHead(200, { 'content-length': 100 }); res.write('{"text":"partial'); res.socket.destroy(); }
+      else if (mode === 'invalid') res.end('{"text":"partial');
+      else if (mode === 'failure') res.end(JSON.stringify({ ...resultBody, ok: false, code: 7, stderr: 'bad', timed_out: true }));
+      else { const bytes = Buffer.from(JSON.stringify(resultBody)); const split = bytes.indexOf(Buffer.from('🌍')) + 2; res.write(bytes.subarray(0, split)); setImmediate(() => res.end(bytes.subarray(split))); }
+    });
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const extra = { WHEELCHAIR_SESSION_TOKEN: 'secret', WHEELCHAIR_MACHINE_URL: `http://127.0.0.1:${server.address().port}/v1/agent`, WC_TEST_PRESENT: 'present' };
+  const invoke = () => done(child(dir, ['run', 'keyed', '--input', '{"x":1}'], extra));
+  try {
+    let result = await invoke(); assert.equal(result.code, 0, result.stderr); assert.equal(result.stdout, 'hello 🌍');
+    mode = 'failure'; result = await invoke(); assert.notEqual(result.code, 0); assert.match(result.stderr, /tool failed \(exit code 7, signal null, timed out\): bad/); assert.equal(result.stdout, '');
+    mode = 'refuse'; result = await invoke(); assert.notEqual(result.code, 0); assert.match(result.stderr, /missing key/); assert.equal(result.stdout, '');
+    for (mode of ['cut', 'invalid']) { result = await invoke(); assert.notEqual(result.code, 0); assert.match(result.stderr, /may already have run/); assert.equal(result.stdout, ''); }
+    for (keyedRun of ['local', undefined]) { result = await invoke(); assert.equal(result.code, 0, result.stderr); assert.match(result.stdout, /^Ran without folder-tool keys;.*\nlocal$/); }
+    assert.equal(calls, 5);
+  } finally { await new Promise(r => server.close(r)); }
+  const result = await invoke(); assert.notEqual(result.code, 0); assert.match(result.stderr, /couldn't reach the machine service; the tool did not run/); assert.equal(result.stdout, '');
+});
+
+test('machine run reports refusal after successful discovery', async () => {
+  const dir = repo(); tool(dir, 'keyed', { kind: 'script', inputs: {}, run: ['node'], keys: ['TOKEN'] });
+  const server = http.createServer((req, res) => { res.setHeader('Connection', 'close'); res.end(JSON.stringify({ worktree: dir, shared_copy: null, keyed_run: 'machine' })); server.close(); });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const result = await done(child(dir, ['run', 'keyed'], { WHEELCHAIR_SESSION_TOKEN: 'secret', WHEELCHAIR_MACHINE_URL: `http://127.0.0.1:${server.address().port}/v1/agent` }));
+  assert.notEqual(result.code, 0); assert.match(result.stderr, /couldn't reach the machine service; the tool did not run/); assert.equal(result.stdout, '');
+});
