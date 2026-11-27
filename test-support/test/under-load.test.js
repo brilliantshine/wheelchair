@@ -38,8 +38,8 @@ test('counts passing and failing commands and pins command affinity', t => {
   const pass = run(['--repeat', '2', '--', 'bash', '-c', 'taskset -pc $$']);
   assert.equal(pass.status, 0, pass.stderr);
   assert.match(pass.stdout, /under-load: pass 2 of 2/);
-  const selected = pass.stdout.match(/under-load: cpus (\d+)/)[1];
-  const affinities = [...pass.stdout.matchAll(/current affinity list: (\d+)/g)];
+  const selected = pass.stdout.match(/under-load: cpus ([0-9,-]+)$/m)[1];
+  const affinities = [...pass.stdout.matchAll(/current affinity list: ([0-9,-]+)$/gm)];
   assert.equal(affinities.length, 2);
   for (const affinity of affinities) assert.equal(affinity[1], selected);
   const fail = run(['--repeat', '2', '--', 'false']);
@@ -67,9 +67,12 @@ test('TERM reaps helper and command child', async t => {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const marker = path.join(dir, 'child');
   const signalled = path.join(dir, 'signalled');
-  const { child, closed } = start(['--repeat', '1', '--', 'bash', '-c', `bash -c 'trap \"touch \\\"$1\\\"; exit\" TERM; while :; do sleep .05; done' _ \"$2\" & echo $! > \"$1\"; trap 'wait; exit' TERM; wait`, '_', marker, signalled]);
-  await until(() => fs.existsSync(marker), 'command child did not start');
+  const trapped = `${signalled}.trap`;
+  const { child, closed } = start(['--repeat', '1', '--', 'bash', '-c', `bash -c 'trap "touch \"$1\"; exit" TERM; touch "$2"; while :; do sleep .05; done' _ "$2" "$3" & echo $! > "$1.tmp" && mv "$1.tmp" "$1"; trap 'wait; exit' TERM; wait`, '_', marker, signalled, trapped]);
+  await until(() => fs.existsSync(marker), 'command child PID was not written');
   const descendant = Number(fs.readFileSync(marker, 'utf8'));
+  assert.ok(Number.isInteger(descendant) && descendant > 0, `invalid command child PID: ${descendant}`);
+  await until(() => fs.existsSync(trapped), 'command child did not install TERM trap');
   assert.ok(alive(descendant));
   const pids = children(child.pid);
   assert.ok(pids.length >= 2, `expected helper and command, got ${pids}`);
