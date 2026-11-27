@@ -18,6 +18,13 @@ async function withContext(work) {
 
 const workerTemplate = (name, scope = 'all', text = 'Work carefully.') => ({ name, role: 'worker', scope, switches: { packages: 'ask', unsettled: 'decide' }, text });
 
+test('style rendering uses the plain-words-first sentence and one-line default text', () => {
+  const sentence = "Use plain words when they work. Use a technical term only when it's truly needed, and then build up to it and ground it first. Don't add a term's name to something already said plainly.";
+  const rendered = settings.renderStyle({ length: 'short', lists: 'when-helpful', terms: 'build-up', never_say: [], text: '' });
+  assert.ok(rendered.split('\n').some((line) => line === sentence));
+  assert.equal(settings.defaults().style.text, 'Be concise. Cut anything that makes it longer without changing the meaning.');
+});
+
 test('settings defaults, templates, prompt composition, counts, and validation', async () => {
   await withContext(async (context) => {
     await fs.writeFile(path.join(context.state, 'projects.json'), JSON.stringify(['/tmp/project']));
