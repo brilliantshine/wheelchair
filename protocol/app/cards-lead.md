@@ -191,8 +191,9 @@ A picture shown inside the thread.
 
 `graph` and `form` load `graphs/<graph>.json`; `html` and `mockup` load `graphs/<graph>.html`. A mockup file is at most 2 MiB;
 `card.js` checks it exists under the named plan and meets that limit before posting.
-For a `graph` diagram, `card.js` reads `graphs/<graph>.json` and refuses it, naming the
-error code and ids, when it is missing or the viewer would refuse to draw it (`protocol/graphs.md`); fix the file and post again.
+For a `graph` diagram, `card.js` reads `graphs/<graph>.json` and refuses it when it cannot
+be read, or when the viewer would refuse to draw it (`protocol/graphs.md`), naming the viewer's
+error code and any ids; fix the file and post again.
 A mockup is framed at its device size and scaled down to fit the card, with no inner
 scrolling. Open full size shows it at true size in a scrolling page.
 Write the file first (see `lead.md`, "Diagrams"); the card only points at it. The card's
