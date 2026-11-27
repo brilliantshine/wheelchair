@@ -1,15 +1,41 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const http = require('node:http');
+const https = require('node:https');
 const { execFileSync } = require('node:child_process');
 const { NAME_RE, RESERVED, discover } = require('../../machine/lib/folder-tools');
 const { toolEnv, runScript, installExitHandlers } = require('../../machine/lib/tool-run');
 const { handshake } = require('../../machine/lib/mcp-stdio');
 
+const unreachable = "couldn't reach the machine service; the tool did not run";
+const lost = "lost the connection to the machine before the tool's result arrived; the tool may already have run, so check before running it again";
+
+function runRequest(urlText, token, body) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlText), payload = JSON.stringify(body);
+    let connected = false, flushed = false;
+    const fail = (error) => reject(new Error(!(connected && flushed) && ['ECONNREFUSED', 'ENOENT', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND'].includes(error?.code) ? unreachable : lost));
+    const req = (url.protocol === 'https:' ? https : http).request(url, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload), 'x-wheelchair-session-token': token },
+    }, res => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(Buffer.from(chunk)));
+      res.on('aborted', () => reject(new Error(lost)));
+      res.on('error', () => reject(new Error(lost)));
+      res.on('end', () => resolve({ status: res.statusCode, output: Buffer.concat(chunks).toString('utf8') }));
+    });
+    req.on('socket', socket => { if (!socket.connecting) connected = true; else socket.once('connect', () => { connected = true; }); });
+    req.on('finish', () => { flushed = true; });
+    req.on('error', error => { if (!(connected && flushed)) fail(error); else reject(new Error(lost)); });
+    req.end(payload);
+  });
+}
+
 async function roots(request) {
   const token = process.env.WHEELCHAIR_SESSION_TOKEN;
   if (!token) {
-    try { return { worktree: execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(), shared: null, keyed_unavailable: null }; }
+    try { return { worktree: execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(), shared: null, keyed_unavailable: null, keyed_run: 'local' }; }
     catch { throw new Error('not inside a git checkout'); }
   }
   const origin = process.env.WHEELCHAIR_MACHINE_ORIGIN || 'http://127.0.0.1:7374';
@@ -18,7 +44,7 @@ async function roots(request) {
   if (response.status < 200 || response.status >= 300) throw new Error(response.output || `machine request failed (${response.status})`);
   const value = JSON.parse(response.output);
   if (typeof value.worktree !== 'string' || !(value.shared_copy === null || typeof value.shared_copy === 'string')) throw new Error('invalid machine tools response');
-  return { worktree: value.worktree, shared: value.shared_copy, keyed_unavailable: value.keyed_unavailable ?? null };
+  return { worktree: value.worktree, shared: value.shared_copy, keyed_unavailable: value.keyed_unavailable ?? null, keyed_run: value.keyed_run ?? 'local' };
 }
 async function main(args, io = {}) {
   const out = io.stdout || process.stdout;
@@ -26,7 +52,7 @@ async function main(args, io = {}) {
   const override = Number(process.env.WHEELCHAIR_TOOL_CHECK_DEADLINE_MS);
   const deadline = Date.now() + (Number.isFinite(override) && override > 0 ? override : 30000);
   if (!['new', 'list', 'check', 'run'].includes(command)) throw new Error('usage: wc.js tool <new|list|check|run>');
-  const { worktree, shared, keyed_unavailable } = await roots(io.request);
+  const { worktree, shared, keyed_unavailable, keyed_run } = await roots(command === 'run' ? runRequest : io.request);
   if (command === 'new') {
     const [name, flag, kind] = tail;
     if (tail.length !== 3 || flag !== '--kind' || !['script', 'server'].includes(kind)) throw new Error('usage: wc.js tool new <name> --kind script|server');
@@ -114,6 +140,21 @@ async function main(args, io = {}) {
   if (!row) throw new Error(`unknown tool: ${name}`);
   if (row.status !== 'ok') throw new Error(`${name}: ${row.reason}`);
   if (row.kind !== 'script') throw new Error('server tools must be used through MCP or check');
+  if (row.tool.keys.length && keyed_run === 'machine') {
+    const origin = process.env.WHEELCHAIR_MACHINE_ORIGIN || 'http://127.0.0.1:7374';
+    const base = process.env.WHEELCHAIR_MACHINE_URL || `${origin}/v1/agent`;
+    const response = await runRequest(`${base}/tools/run`, process.env.WHEELCHAIR_SESSION_TOKEN, { name, input, env: process.env });
+    let result;
+    try { result = JSON.parse(response.output); } catch { throw new Error(lost); }
+    if (response.status !== 200) {
+      if (result && typeof result.error === 'string') throw new Error(result.error);
+      throw new Error(lost);
+    }
+    if (!result || typeof result.ok !== 'boolean' || typeof result.text !== 'string' || typeof result.stderr !== 'string' || !(result.code === null || Number.isInteger(result.code)) || !(result.signal === null || typeof result.signal === 'string') || typeof result.timed_out !== 'boolean' || typeof result.truncated !== 'boolean') throw new Error(lost);
+    if (!result.ok) throw new Error(`tool failed (exit code ${result.code}, signal ${result.signal}${result.timed_out ? ', timed out' : ''})${result.stderr ? `: ${result.stderr}` : ''}`);
+    out.write(result.text);
+    return;
+  }
   if (row.tool.keys.length) out.write('Ran without folder-tool keys; variables already in your environment were passed as usual. Keyed tools get their keys through MCP, from the next call in a session that offered them.\n');
   installExitHandlers();
   const result = await runScript({ dir: row.dir, tool: row.tool, input, env: toolEnv(process.env, worktree) });
