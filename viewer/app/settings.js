@@ -33,7 +33,7 @@ const SAMPLE = "It's worth noting that the idempotency guarantee here is load-be
 const DEFAULT_STYLE = Object.freeze({
   length: 'short', lists: 'when-helpful', terms: 'build-up',
   never_say: ["It's worth noting", 'load-bearing'],
-  text: "Be concise. Cut anything that makes it longer without changing the meaning.\nBuild up to technical terms and ground them, so I don't skim past something I only half get.",
+  text: "Be concise. Cut anything that makes it longer without changing the meaning.",
 });
 
 const table = field => Object.fromEntries(connectors.list().filter(m => Object.keys(m.settings[field] || {}).length).map(m => [m.provider, m.settings[field]]));
@@ -141,7 +141,7 @@ function switchSentences(switches) {
 function renderStyle(style) {
   const length = { short: 'Be concise and cut anything that does not change the meaning.', balanced: 'Use enough detail to make the result easy to follow.', thorough: 'Explain the important reasoning and detail completely.' }[style.length];
   const lists = { prose: 'Prefer prose over lists and headings.', 'when-helpful': 'Use lists and headings when they help scanning.', always: 'Use lists and headings to organize the response.' }[style.lists];
-  const terms = { 'build-up': 'Build up to technical terms and ground them before relying on them.', freely: 'Use technical terms freely.', avoid: 'Avoid technical terms where plain language works.' }[style.terms];
+  const terms = { 'build-up': "Use plain words when they work. Use a technical term only when it's truly needed, and then build up to it and ground it first. Don't add a term's name to something already said plainly.", freely: 'Use technical terms freely.', avoid: 'Avoid technical terms where plain language works.' }[style.terms];
   const never = style.never_say.length ? `Never say: ${style.never_say.map((phrase) => `“${phrase}”`).join(', ')}.` : '';
   return [length, lists, terms, never, style.text].filter(Boolean).join('\n');
 }
