@@ -34,6 +34,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 7 | The CLI reads the whole response as bytes and decodes once; any connection loss or unreadable body after the request was sent prints "the tool may already have run" and no partial result; a refused connection says the tool did not run | Old round 6 finding; refused connections can't have run anything | defaulted |
 | 8 | Each machine run gets its own cancel handle; a closed connection kills only that run's process group; service shutdown kills every live tool group through the runner's existing exit handlers | Old round 1 and 10 findings; MAP: global `killAll` is unsafe per request | defaulted |
 | 9 | Keyless tools on Kimi and Pi keep running locally, and Claude, Antigravity and Codex are unchanged | IDEA.md What good looks like | defaulted |
+| 10 | Supersedes 6: machine runs are not bound to agent start. Each run discovers the tool and reads its keys live, so a key added or a `keys` list changed mid-session applies on the next run; no launch record | `list` reads key status live, and IDEA.md says `list` and `run` must agree; this is also what the old design said for Kimi and Pi ("at once") | review-round-1 |
 
 ## Spec
 
@@ -67,11 +68,8 @@ In `prepareLaunch` (`machine/service.js`, folder tools part), for an eligible se
   "needs keys, which …" line. They go through the same missing-key check MCP sessions get:
   a tool with any key not set gets the existing `tool <name> needs key(s) …, not set on
   this machine` line (`shared tool …` for shared tools).
-- Each keyed tool that passes is recorded on the session record as
-  `machine_keyed_tools: [{ name, source, keys }]` (key **names** only, never values), and
-  persisted with the session like other launch fields. A resume or account switch
-  re-runs launch and replaces the list. A non-eligible session has no such field (or an
-  empty one).
+- Nothing about keyed tools is recorded on the session for machine runs: each run reads
+  the tool and its keys live (Decision 10).
 - Keyed tools never go into the MCP bridge entry for these sessions (as today).
 - The starting-instructions line for shell-only sessions adds the clause "Tools that need
   keys aren't available in this session (…)" **only** when `keyedToolsReason(session)`
@@ -104,11 +102,7 @@ and runs nothing:
    name: 404 `unknown tool: <name>`. Row not ok: 422 `<name>: <reason>`. Not a script:
    422 `server tools must be used through MCP or check`. No `keys`: 422 `<name> has no
    keys; run it with wc.js tool run in your own shell` (the CLI never sends these, S5).
-4. Not in `machine_keyed_tools` with the same source and the same key names (order
-   ignored): 409 with the bridge's changed-tool text, `The tool changed. Its keys are used
-   from the next agent start (a new session, a resume or an account switch).` (A tool
-   added, or whose keys were missing, after launch is the same case.)
-5. Read the store (`folderTools.toolKeyStore(row, !!session.shared_tools?.own)`, then
+4. Read the store (`folderTools.toolKeyStore(row, !!session.shared_tools?.own)`, then
    `readSharedKeys` or `readKeyStore` as the bridge does). Store read error: 500 with its
    message. Any declared key not set or not usable: 422 with the bridge's missing-key text
    `tool <name> needs key(s) <K…>, not set on this machine`.
@@ -154,8 +148,8 @@ the session record.
 - `run` on a keyless tool, and `run` everywhere `keyed_run` is `"local"`, behave exactly
   as today, including the "Ran without folder-tool keys" line for keyed tools.
 - `list` on Kimi and Pi shows keyed tools' key status from `/v1/agent/tool-keys` as on
-  Claude (it does already once `keyed_unavailable` is `null`); no change needed beyond
-  confirming it with a test.
+  Claude (it does already once `keyed_unavailable` is `null`). Both read the store live,
+  so a key `list` shows as set is used by the next `run`.
 
 ### S6. Runner cancel handle (`machine/lib/tool-run.js`)
 
@@ -167,11 +161,18 @@ unchanged. The bridge and the local CLI path pass no signal and behave as today.
 
 ### S7. Guide and docs
 
-- `protocol/tools.md` Keys: replace "sandboxed Codex, Kimi and Pi can't use them yet" with:
-  Kimi and Pi run keyed tools through `wc.js tool run`, which asks the machine to run them
-  with their keys and returns redacted output; sandboxed Codex can't use them (set Codex
-  to unrestricted in Settings). The commands paragraph's `run` sentence says the same for
-  Kimi and Pi, and that a lost connection means the tool may already have run.
+- `protocol/tools.md`, every place that says Kimi and Pi can't use keyed tools:
+  - Keys section: replace "sandboxed Codex, Kimi and Pi can't use them yet" with: Kimi and
+    Pi run keyed tools through `wc.js tool run`, which asks the machine to run them with
+    their keys and returns redacted output; sandboxed Codex can't use them (set Codex to
+    unrestricted in Settings). The sentence on keys added or changed mid-session adds that
+    on Kimi and Pi this applies from the next `wc.js tool run`.
+  - Make and test, `run` sentences: on Kimi and Pi `run` uses the machine for keyed tools;
+    a lost connection means the tool may already have run. "To try a keyed tool for real,
+    use it through MCP" applies to the other AIs.
+  - AI limits: "They cannot use keyed tools yet; their problems and `wc.js tool list` say
+    so." becomes: Kimi and Pi run keyed tools through the machine as above; sandboxed Codex
+    cannot, and its problems and `list` say so.
 - `machine/API.md`: the new route and the S3 fields.
 - `connectors/README.md`: the S1 row.
 - Routers (`AGENTS.md` files) only if a file-to-role entry becomes false.
@@ -188,16 +189,15 @@ Targeted tests to add (each names its file):
 - `machine/test/folder-tools-run.test.js`: S6 — an aborted signal kills only that run's
   group (a second concurrent run completes); an already-aborted signal runs nothing.
 - `machine/test/project-tools-service.test.js` (or a new
-  `machine/test/tool-machine-run.test.js`): S4 — each refusal 1–5 with its status and
+  `machine/test/tool-machine-run.test.js`): S4 — each refusal 1–4 with its status and
   text and nothing run; a Kimi-like session runs a keyed tool and gets its output with the
   key value replaced; the caller's `PATH` decides program lookup (a program only on the
-  caller's PATH runs); caller env reaches the tool, the session token does not; a key
+  caller's PATH runs); caller env reaches the tool, the session token does not; a key set after launch is used by the next run; a key
   overrides a same-named caller variable; closing the request mid-run kills the tool's
   group (a marker child is gone shortly after); a reviewer, assistant, project lead and
   sandboxed Codex session are refused.
 - `machine/test/folder-tools-launch.test.js`: S2 — on Kimi and Pi, no "needs keys, which"
-  line; a missing key gives the not-set line; `machine_keyed_tools` lists only fully keyed
-  tools with names, no values; the instructions line has the machine-run clause and not
+  line; a missing key gives the not-set line; the instructions line has the machine-run clause and not
   the "aren't available" clause; sandboxed Codex unchanged.
 - `viewer/test/wc-tool.test.js`: S5 — machine path success, tool failure, `{error}`
   refusal, refused connection ("did not run"), response cut mid-body and invalid JSON
@@ -212,6 +212,7 @@ Commands:
 node --test machine/test/folder-tools-run.test.js machine/test/folder-tools-launch.test.js machine/test/project-tools-service.test.js machine/test/key-redact.test.js machine/test/connectors-contract.test.js machine/test/name-guard.test.js
 node --test viewer/test/wc-tool.test.js viewer/test/app-project-tools-card.test.js
 node connectors/export.js --check
+! grep -nE "Kimi and Pi can't|cannot use keyed tools yet" protocol/tools.md
 ```
 
 Plus any new test file named above, run with `node --test <file>`.
@@ -237,6 +238,9 @@ Plus any new test file named above, run with `node --test <file>`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Launch binding makes `list` say "set" while `run` refuses as changed | upheld | Decision 10: live reads; S2 record and S4 check 4 removed |
+| intent | minor | S7 misses the AI limits paragraph and the MCP-only sentence in tools.md | upheld | S7 names all three places; negative grep in Validation |
+| intent | minor | Old findings closed (observation) | declined | Not a defect; confirms coverage |
 
 ## Implementation Tasks
 
