@@ -270,7 +270,7 @@ None.
 
 ### Round 3 — 2026-11-27
 
-**Lanes:** (filled at start)
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:** S2 (other AIs' warnings keep held-back servers), S3 (key-set comparison when either set is non-empty), S4 (outcomes apply to every message; size-limit prefix rule and memory wording; 2 s post-exit deadline), S5 (prefix id), S8 (wording), Validation, Decisions 6 (marked superseded) and 13, Accepted Risks.
 
