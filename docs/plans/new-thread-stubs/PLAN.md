@@ -184,7 +184,7 @@ Protocol check (CONTRIBUTING.md: protocol documents have no suite): read the edi
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Hub: stub create, uploads + stub-attachments route, openStub/restart text, transcript marker, API.md, hub tests (S1, S2, S4 hub, S5 API.md, S6 hub) — tricky | viewer/app/{threads,routes,chat}.js, connectors/hub-common.js, viewer/app/API.md, viewer/test/{app-new-stub,app-hub,app-chat,app-uploads-archive,app-lead-list}.test.js | standard / gpt-6.1-terra; rung 2: standard xhigh effort (attempt 1 hit its fails-twice guardrail on its restart test) | wc-b6eb8da6feac-worker → wc-b6eb8da6feac-worker-3 | node --test (6 files) + pick-tests node cmds | done |
-| T2 | New thread Save for later button and upload sequence; interrupted-save line on stub page; browser specs (S3, S4 page, S6 specs) | viewer/pages/{new.html,new.js,new.css,thread.js}, viewer/test/{app-new-thread,app-threads}.spec.js | standard / gpt-6.1-terra (claude asked for; hub sent it to gpt) | wc-b6eb8da6feac-worker-4 | test:browser both specs | in progress |
+| T2 | New thread Save for later button and upload sequence; interrupted-save line on stub page; browser specs (S3, S4 page, S6 specs) | viewer/pages/{new.html,new.js,new.css,thread.js}, viewer/test/{app-new-thread,app-threads}.spec.js | standard / gpt-6.1-terra (claude asked for; hub sent it to gpt) | wc-b6eb8da6feac-worker-4 | test:browser both specs | done |
 | T3 | Protocol wording in cards.md and lead.md (S5) | protocol/app/{cards,lead}.md | light / gpt-6-luna | wc-b6eb8da6feac-worker-2 | grep checks | done |
 
 ## Log
@@ -196,3 +196,11 @@ Protocol check (CONTRIBUTING.md: protocol documents have no suite): read the edi
 - 2026-11-27 — Choice: T1, threads.js restartLead: the saved-idea `stub_summary` prefix applies to any `stub: true` thread without `parent`, even with empty context.
 - 2026-11-27 — Choice: T1, app-new-stub.test.js restart case: sets lead_order to gpt, as the existing restart test's fixture does.
 - 2026-11-27 — T1 accepted (band: self): hub code read in full; 11 focused tests plus four mutation checks reported; sub-lead re-ran the six-file node suite, 178/178 pass.
+- 2026-11-27 — Worker didn't report its choices; I listed 6 (from the scout's list):
+- 2026-11-27 — Choice: T2, new.js Save handler: guards on the machine select still matching the loaded state and posts `machine: state.machine`, as Start does.
+- 2026-11-27 — Choice: T2, new.js Save body: `message` is always sent, as an empty string for a files-only stub.
+- 2026-11-27 — Choice: T2, new.js: the upload step became a shared `uploadFile` helper used by both Start and Save for later (Start's request, error text and path order unchanged).
+- 2026-11-27 — Choice: T2, new.html: the new hint sentence was appended to the existing hint span.
+- 2026-11-27 — Choice: T2, thread.js renderStub: the interrupted-save warning sits after the context and parent lines, before any dependency warning and the actions.
+- 2026-11-27 — Choice: T2, app-new-thread.spec.js: stub state is read through `/threads/<id>/chat`; app-threads.spec.js was left unchanged (the interrupted-save line is covered in app-new-thread.spec.js).
+- 2026-11-27 — T2 accepted (band: scout): every S6 browser bullet covered; sub-lead re-ran app-new-thread.spec.js and app-threads.spec.js, 194/194 pass. Its mutation check was coarse (Save forced off), noted.
