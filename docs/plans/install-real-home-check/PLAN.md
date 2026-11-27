@@ -1,6 +1,6 @@
 ---
 slug: install-real-home-check
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-26
 ---
 
@@ -34,6 +34,16 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ## Spec
 
 All changes are in `install/test/run.sh`. No other file changes.
+
+```mermaid
+flowchart TD
+  A[Self-check: the helper notices changed listed files and ignores others] --> B[Record the real folder's model choices file and lock file]
+  B --> C[Run every test case, each with its own fake home]
+  C --> D[After the last case, record the same two files again]
+  D --> E{Same bytes?}
+  E -- yes --> F[Pass]
+  E -- no --> G[Fail, naming each changed file]
+```
 
 ### S1. The real-folder list
 
