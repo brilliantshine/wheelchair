@@ -38,7 +38,8 @@ None.
 | 12 | Keyed servers: 32 MiB line limit; client stdin end closes the server's stdin and waits up to 5 s for it to finish, flushing everything before exit | Bounded memory; no reply cut off at shutdown | review-round-1 |
 | 13 | Replacement in place applies to every message kind; only what can't be cleaned is held back | One rule; the guide and tests follow it | review-round-2 |
 | 14 | Big replies stay in this thread: the key checker is made memory-safe here rather than split off | Collin: keep it here | user |
-| 15 | The checker gets a memory budget beside its work budget: retained match records are counted, and running out is handled exactly like running out of work (script output shows `[not checked for keys]`; a server line is held back) | Same fallback the checker already has; ordinary large replies stay under it, only pathological ones fall back | review-round-3 |
+| 15 | (Superseded by 16) The checker gets a memory budget beside its work budget: retained match records are counted, and running out is handled exactly like running out of work (script output shows `[not checked for keys]`; a server line is held back) | Same fallback the checker already has; ordinary large replies stay under it, only pathological ones fall back | review-round-3 |
+| 16 | Supersedes 15: server lines are checked with a streaming JSON reader that undoes JSON escapes first; the escape-aware matcher runs only on escape-containing runs of at most 4 KiB, longer ones count as unchecked; in-place replacement only of raw matches inside string values. `key-spell.js` and `redactCapture` are unchanged | Bounds memory by design instead of by a budget; ordinary JSON escapes never form long runs; script tools untouched | review-round-4 |
 | 7 | A held-back request from the server to the client is answered on the server's stdin with an error, not dropped silently | Closes the parent's accepted risk of a server left waiting | defaulted |
 | 8 | Server stderr is piped and redacted with the same capture redaction as script output (`redactCapture`), line by line, with cut marks for very long lines | Keys can't contain newlines (parent Decision 16), so the parent's multiline finding is moot | defaulted |
 | 9 | Detection is the parent's rule (Decision 19): any plain or escaped spelling `key-spell.js` finds; a work-budget overrun counts as a key | One rule for scripts and servers | defaulted |
@@ -61,16 +62,12 @@ None.
   `shared tool` prefix for shared rows). A store read error becomes the problems line, as for
   scripts.
 - Where server tools are not connected today (sandboxed Codex, Kimi, Pi), nothing changes:
-  their existing "server tools …" warnings stay, and no extra key line is added. The refresh
-  of other AIs' warnings in `machine/service.js` (~795–804) passes every valid server row,
-  including one left out of this session for a missing key, to adapters that list server tools
-  as unsupported (Kimi, Pi, sandboxed Codex), so its name stays in those warnings; adapters that
-  launch server tools get only the entries this session launches.
+  their existing "server tools …" warnings stay, and no extra key line is added.
 - The Tools page (`viewer/pages/project-tools.js` via `machine/lib/project-tools.js`
   `decorate`) and `wc.js tool list` show keyed servers' key status exactly as for keyed
   scripts (set / needs key X, not set on this machine). `key_store` is already set for keyed
   rows of any kind; confirm it is shown for servers.
-- `wc.js tool check` on a keyed server runs the handshake without keys. Its output stays as
+- `wc.js tool check` on a keyed server runs the handshake without keys: the declared key names are removed from the environment it passes to the server. Its output stays as
   today (`<server name> tools: a, b` on success, the failure text on failure) with
   ` (checked without its keys)` added at the end of the success line, and on failure one more
   line: `it ran without its keys; that may be why`. `wc.js tool run` keeps refusing servers.
@@ -105,41 +102,46 @@ None.
   up to and including `\n`, `\r` kept as part of the line) is handled as soon as its newline
   arrives and written out before the next line; nothing waits on a timer or on more output.
   Order of lines is kept.
-- **JSON tokenizer.** A small hand-written lossless tokenizer (not `JSON.parse`) turns a line
-  into its token sequence (punctuation, property names, string values, numbers, `true`,
-  `false`, `null`), each with its exact source bytes, and reports whether the line is one
-  well-formed JSON value. From it, for a top-level object: its members' names and each
-  member value's exact source text.
-- Outcomes for a line, checked in order:
-  1. **Unchanged.** Detection (`findSpellings`, the entry `redactCapture` uses, no cut edges)
-     finds no key and does not run out of budget: the original bytes are written.
-  2. **Replaced.** Otherwise compute `redactCapture(line)`. It is written only if all hold:
-     it contains no `[not checked for keys]` marker; detection on it finds nothing; both the
-     original and the result are well-formed JSON; their token sequences have the same length
-     and kinds; every token is byte-identical except string values; and the string values of
-     top-level `jsonrpc`, `id` and `method` are byte-identical. So only string values inside
-     the message can change; names, numbers, ids, methods and structure never do.
+- **JSON reader.** A small hand-written streaming reader (not `JSON.parse`) walks a line once,
+  token by token, without keeping a token list. It reports whether the line is one
+  well-formed JSON value; for a top-level object, which members it has and the exact source
+  bytes of the `jsonrpc`, `id` and `method` values; and, for each string token (names and
+  values), its byte range, whether it is a property name or a value, and its exactly decoded
+  text (JSON escapes undone). It holds at most one decoded string at a time.
+- **Detection** of a line, against every key value of the tool:
+  - **Raw search:** a plain byte search of the whole line for each value.
+  - **Pieces:** if the line is well-formed JSON, each string token's decoded text and each
+    other token's bytes; otherwise the whole line as one piece. In each piece, a plain search
+    for each value, and for every maximal run of escape-like bytes (`escapeLike` in
+    `key-spell.js`: key characters, `%`, `\`) that contains a `%` or `\`: if the run is at most
+    4 KiB, `findSpellings` on that run alone (no cut edges, default work budget); if longer,
+    or if the work budget runs out, the line is **unchecked**.
+  - Every byte of any spelling the parent's rule covers is escape-like, so a spelling always
+    lies inside one such run; undoing JSON escapes first means ordinary JSON escapes (`\n`,
+    `\"`, `\/`, `é`) never form long runs. Memory for detection is the line, one decoded
+    string and the matcher's work on at most 4 KiB at a time.
+  - The result is **clean** (nothing found, nothing unchecked), or not.
+- Outcomes for a line, checked in order, for every kind of line alike (replies, server
+  requests, notifications):
+  1. **Unchanged.** Detection is clean: the original bytes are written.
+  2. **Replaced.** The line is well-formed JSON, and every raw-search match lies wholly
+     inside the bytes of a string *value* token, not inside a property name, not inside the
+     top-level `jsonrpc`, `id` or `method` value, and not overlapping a backslash escape
+     sequence. Each such match (overlapping matches merged) is replaced in a single copy pass
+     with `[key]`; detection on the result is then clean. Because `[key]` has no quote or
+     backslash and only string value contents change, the structure, names, numbers, ids and
+     methods are unchanged. Write the result.
   3. **Held back.** Otherwise, by the original line's top-level members:
      - `id` and `result` or `error` (a reply): S5;
      - `method` and `id` (a request from the server): S6;
      - anything else (a notification, a batch array, not well-formed): dropped.
-  Outcomes 1 and 2 apply to every line alike (replies, server requests, notifications), so a
-  key in a string value of any message is replaced in place; only lines that fail 2 are held
-  back.
      Each held-back line also writes one stderr line through S7:
-     `tool <name>: held back a <reply|request|message> that contained one of its keys`.
-- **Memory.** `findSpellings` (`machine/lib/key-spell.js`) gains a memory budget beside its
-  work budget: every match record it keeps (the `state.records` list and the record pool, and
-  any other structure that grows with overlapping partial matches) is counted, and when more
-  than 4,000,000 are held at once it stops the same way it stops when work runs out (the
-  `exhausted` path in `machine/lib/key-redact.js`). Script output then shows
-  `[not checked for keys]` as today; a server line counts as not cleanable and is held back.
-  Apart from that budget, extra memory for one line is the fixed per-byte arrays (about six
-  times the line). The budget is an option of `redactCapture` like `workBudget`, so tests can
-  set it low.
+     `tool <name>: held back a <reply|request|message> that contained one of its keys`
+     (or `that could not be checked for keys` when unchecked).
+- `redactCapture` and `key-spell.js` are not changed; script output is unaffected.
 - **Size limit.** The launcher holds at most 32 MiB of one line's input. When a line passes 32 MiB without a newline, the rest
   up to the next `\n` is discarded unread and the line is held back using only the bytes held:
-  the tokenizer reads them in order as a prefix of a top-level object, and a member counts
+  the reader reads them in order as a prefix of a top-level object, and a member counts
   only if its value token ended inside the prefix. With a complete `method` and `id` it is a
   server request (S6); else with a complete `id` it is a reply (S5); else it is dropped. The
   stderr line says `held back a … that was over 32 MiB`.
@@ -161,7 +163,7 @@ None.
 ### S5. Held-back replies
 
 - A held-back reply gets an error reply in its place only when the original reply's `id`
-  value (its exact source text from the tokenizer, or from the prefix for the size limit) itself contains no key under detection:
+  value (its exact source text from the reader, or from the prefix for the size limit) itself contains no key under detection:
   `{"jsonrpc":"2.0","id":<that exact id text>,"error":{"code":-32603,"message":"tool <name>: its reply contained one of its keys and was held back"}}\n`
   (or `…its reply was over 32 MiB and was held back` for the size limit).
   The id bytes are copied, never re-encoded, so large numbers and odd spellings survive.
@@ -184,8 +186,8 @@ None.
 ### S7. Server stderr
 
 - For a keyed server, stderr is piped (not inherited) and written to the launcher's stderr a
-  complete line at a time through `redactCapture`. A run of more than 64 KiB with no newline is
-  handled in 64 KiB pieces using `redactCapture`'s `cutEnd` on a piece and `cutStart` on the
+  complete line at a time through `redactCapture`, in pieces of at most 4 KiB (so its memory stays small): a line longer than that is
+  handled in 4 KiB pieces using `redactCapture`'s `cutEnd` on a piece and `cutStart` on the
   next, as script output capture does. The launcher's own messages (S3–S6) never contain a
   value.
 
@@ -205,6 +207,7 @@ None.
   agent start).
 - The statements that values are added "at each call" and that Kimi and Pi "run keyed tools"
   are qualified as applying to script tools.
+- The Keys section's opening sentence ("Script tools can declare `keys`") says script and server tools.
 - The `NODE_DEBUG` sentence covers keyed server tools too. Keep "Never print or log a key in
   any form."
 
@@ -218,8 +221,7 @@ None.
 
 - S1: `node --test machine/test/folder-tools.test.js` (keyed server accepted; old refusal gone).
 - S2: `node --test machine/test/folder-tools-run.test.js viewer/test/wc-tool.test.js machine/test/project-tools.test.js` — keyed server with missing key not offered with the needs-key line; set key offered; `check` keeps the server name and tool list and adds the note; list status.
-- S3–S7: `node --test machine/test/folder-tools-launch.test.js machine/test/key-redact.test.js` with a fake keyed server covering at least: keys reach the server env and not argv/MCP entry; `NODE_DEBUG=child_process` refusal with no value on stderr; keys-changed and missing-key refusals; keyless lines byte-identical (odd spacing, `1.0`, `9007199254740993`); a key echoed in a result string replaced with `[key]`; a key echoed in `\u`-escaped and `\/` forms replaced or held back, never passed; a key in a property name held back and answered with the reply's own `id` bytes (including `9007199254740993` and a string id); a key in the reply's `id` dropped; a server request whose `method` is the key (`roots/list` as the key value) held back and answered on the server's stdin, never reaching the client; a server request carrying a key answered on the server's stdin and not inside a client line; a notification with a key in a string value passed with `[key]`, and one with a key in a property name dropped; a server request with a key in a string param passed with `[key]`; a client that waits for each reply before sending the next request completes (no stall); a 1 MiB line that is a long run of `A` with one `%41` (and one with `\u0041`) held back with the launcher's heap growth under 300 MiB, using the default budgets; an 8 MiB JSON reply carrying base64 image data and a 16 MiB JSON reply of escape-heavy text (`\n`, `\"`, `\u00e9`), with two keys set and absent from both, each passed unchanged within 5 seconds; a line over 32 MiB discarded, with held input never above 32 MiB, with an error reply when its `id` came before the cut, and dropped when it came after; client stdin closed while a reply is still being written, and the reply arrives whole; a server that exits while a child keeps its stdout open: the launcher exits within about 2 seconds with what it had delivered; a keyless entry whose tool gained a key, and a keyed entry whose tool lost all keys, both refused as changed; stderr key replaced, including across a 64 KiB cut; 1,000,000 bytes of stdout fully delivered before exit; keyless server unchanged (stderr inherited).
-- Script output with the memory budget: `node --test machine/test/key-redact.test.js machine/test/folder-tools-run.test.js` — a low budget gives `[not checked for keys]` and never the key; existing escape-coverage tests still pass at the default budget.
+- S3–S7: `node --test machine/test/folder-tools-launch.test.js machine/test/key-redact.test.js` with a fake keyed server covering at least: keys reach the server env and not argv/MCP entry; `NODE_DEBUG=child_process` refusal with no value on stderr; keys-changed and missing-key refusals; `check` with a declared key already set in the caller's environment does not pass it to the server; keyless lines byte-identical (odd spacing, `1.0`, `9007199254740993`); a key echoed in a result string replaced with `[key]`; a key echoed in `\u`-escaped and `\/` forms replaced or held back, never passed; a key in a property name held back and answered with the reply's own `id` bytes (including `9007199254740993` and a string id); a key in the reply's `id` dropped; a server request whose `method` is the key (`roots/list` as the key value) held back and answered on the server's stdin, never reaching the client; a server request carrying a key answered on the server's stdin and not inside a client line; a notification with a key in a string value passed with `[key]`, and one with a key in a property name dropped; a server request with a key in a string param passed with `[key]`; a client that waits for each reply before sending the next request completes (no stall); a 1 MiB string value that is a run of `A` with one `%41` (and one with `\\u0041`) held back as unchecked, with the launcher's heap growth under 200 MiB, for 20 declared keys of 4096 characters starting with `A`; an 8 MiB JSON reply carrying base64 image data (one written with `\/`) and a 16 MiB JSON reply of escape-heavy text (`\n`, `\"`, `\u00e9`), each passed unchanged within 5 seconds, both with two keys absent from them and with two absent keys sharing their prefixes (`e3…`, `n6…`); a key matched raw but overlapping an escape (`\u0041` followed by the rest of a key starting `1`) held back, not replaced; a 32 MiB reply of many small tokens with one echoed key replaced without heap growth beyond a few times the line; a line over 32 MiB discarded, with held input never above 32 MiB, with an error reply when its `id` came before the cut, and dropped when it came after; client stdin closed while a reply is still being written, and the reply arrives whole; a server that exits while a child keeps its stdout open: the launcher exits within about 2 seconds with what it had delivered; a keyless entry whose tool gained a key, and a keyed entry whose tool lost all keys, both refused as changed; stderr key replaced, including across a 4 KiB cut; 1,000,000 bytes of stdout fully delivered before exit; keyless server unchanged (stderr inherited).
 - Name guard: `node --test machine/test/name-guard.test.js`.
 - S8: `grep -n -i "aren't supported yet" protocol/tools.md` finds nothing; `grep -n -i "never print or log a key" protocol/tools.md` finds the rule; read the rendered guide (CONTRIBUTING.md).
 
@@ -235,6 +237,9 @@ None.
 | After client stdin ends, a server request that needs holding back gets no answer, and a client that ends mid-line can lose a queued injected line | Rare path: shutdown plus a key-bearing server request at the same time | review-round-2 |
 | A key whose value spells part of the generated error text suppresses that error reply | Rare path: real key values are random, not English words | review-round-2 |
 | An oversized server request whose `method` is past the cut is taken for a reply and gets a client-facing error | Rare path: needs a server request over the size limit with `method` last | review-round-3 |
+| When the server exits and a child of it keeps stdout or stderr open past the 2-second deadline, a key cut at that edge could pass in part | Rare path: needs a lingering child plus a key straddling the forced cut | review-round-4 |
+| Another AI's "server tools don't work" warning on the Tools page can leave out a server held back for a missing key until that AI next starts | Worst case one name missing from a warning line | review-round-4 |
+| A long escape-heavy run (over 4 KiB of key characters with a `%` or `\` after undoing JSON escapes) holds the message back, e.g. a very long percent-encoded URL | Safe failure; ordinary JSON escapes are undone first | review-round-4 |
 | A client that itself sends an id spelling a key gets no reply when the server echoes it | Rare path: the client would have to guess a key | review-round-1 |
 
 ## Check Once Built
@@ -302,6 +307,24 @@ None.
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** Decision 14 (Collin kept big replies here) and 15; S4 Memory (match-record budget in `findSpellings`, used by scripts and servers); S2 warning refresh lists; S8 wording (drop cases, script-only statements); Validation (memory and big-reply cases); Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | Record budget lets heap pass 300 MiB | upheld | Budget dropped; S4 detection bounds memory by design (Decision 16) |
+| mechanics | major | `redactCapture` replacement keeps a view per run | upheld | Servers no longer use `redactCapture`; single copy pass |
+| mechanics | major | 16 MiB escape-heavy reply can exhaust work with prefix-sharing keys | upheld | JSON escapes undone first; matcher only on short runs; test with prefix-sharing keys |
+| mechanics | blocking | Rare path: forced cut after the post-exit deadline | accepted-risk | Accepted Risks |
+| mechanics | minor | Warning refresh needs more call-site changes | accepted-risk | S2 sentence removed; Accepted Risks |
+| mechanics | minor | `check` passes a declared key already in the environment | upheld | S2: names removed from the handshake env |
+| intent | major | 4,000,000 records can't meet the 300 MiB test | upheld | Same fix as mechanics 1 |
+| intent | minor | Tokenizer keeps full token lists | upheld | Streaming reader, no token list |
+| intent | minor | Guide's opening sentence says script tools only | upheld | S8 |
+
+### Round 5 — 2026-11-27
+
+**Lanes:** (filled at start)
+
+**Changed since Round 4:** S4 rewritten (streaming JSON reader; detection on decoded strings and short escape runs; replacement rule; memory budget removed, script tools untouched), S2 (`check` env; refresh sentence removed), S7 (4 KiB stderr pieces), S8 (opening sentence), Validation, Decisions 15–16, Accepted Risks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
