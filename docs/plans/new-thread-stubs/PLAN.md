@@ -1,6 +1,6 @@
 ---
 slug: new-thread-stubs
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-27
 ---
 
@@ -41,6 +41,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 ## Spec
 
+### Flow
+
+```mermaid
+flowchart TD
+  A[Type a message and/or attach files on New thread] --> B[Press Save for later]
+  B --> C[Hub saves a stub: no agent starts]
+  C --> D{Files attached?}
+  D -- no --> G[Go to the stub's page]
+  D -- yes --> E[Upload each file, adding its path to the stub right away]
+  E --> F{All uploaded?}
+  F -- yes --> F2[Mark saving finished] --> G
+  F -- no --> H[Banner: stub saved, attach missing files after opening]
+  H --> G2[Stub's page warns some files may be missing]
+  G --> I[Press Open and start]
+  G2 --> I
+  I --> J[Lead starts, told this is your own saved idea]
+```
+
 ### S1. Hub: create a stub from the New thread screen
 - `POST /threads` (`viewer/app/routes.js`, `handleThreads`) accepts `stub: true`. `createThread` (`viewer/app/threads.js:60`) then does everything it does today (project check on the machine, save, `addProject`) **except start a lead or queue a message**.
 - With `stub: true` the body may also carry `files` (integer, number of attachments the page will upload, default 0). A trimmed non-empty `message` is required unless `files >= 1`; otherwise 400 `a stub needs a message`. With an empty message and files, the page also sends `title` (the first file's name).
@@ -52,14 +70,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - The upload route (`routes.js` `upload`, ~line 160) also accepts an unopened stub. A thread with a live lead is accepted exactly as today (including an opened stub); any other thread keeps the current 409.
 - New route `POST /threads/<id>/stub-attachments` with body `{ paths: [string, ...], done?: true }` (`paths` zero or more non-empty strings; not an array, a bad entry, or `done` other than `true` → 400). Under `hub.withThread`, for an unopened stub only (else 409 `this thread is not an unopened stub`), it appends one `[attached: <path>]` line per path to `context` (separated from existing non-empty text by a blank line; no leading blank line when `context` is empty), deletes `saving_files` only when `done: true`, saves, and returns 200 with `{ context }`. Appending (not replacing) keeps any addition another lead made meanwhile.
 - `openStub` (`viewer/app/threads.js:112`) deletes `saving_files` when it starts the lead. For a stub with no `parent`, the queued message is `[wc:context stub] (saved from the New thread screen)` followed by a newline and the context (then the commits line as today, which is empty here). A stub with a parent gets exactly today's message.
-- Restart (`restartLead`) is unchanged; it already carries `stub_summary`.
+- Restart (`restartLead`, `viewer/app/threads.js:151`): for a stub with no `parent`, `stub_summary` is the context preceded by the line `(saved from the New thread screen)`, the same text `openStub` sends after the marker; a stub with a parent keeps today's `stub_summary`.
 - Archiving an unopened stub that has uploads removes or keeps them exactly as archiving any other thread does (no file left orphaned on the machine because the stub had no sessions or worktree).
 
 ### S3. New thread screen
 - `viewer/pages/new.html`: a second button **Save for later** (`id="nt-save"`) in `.new-actions`, between Start and Import a handoff, with the existing button styling. Update the hint below the message to add one sentence: "Save for later keeps the message as a stub in the thread list; no agent starts until you open it."
 - `viewer/pages/new.js`: Save for later is disabled whenever Start is disabled, while sending, and when the trimmed message is empty and no file is attached. It updates as the message is typed and files are added or removed.
 - Pressing it posts `/threads` with `{ project, machine, stub: true, message }`, plus `files: <count>` when files are attached and, when the message is empty, `title: <first file's name>`. With no attachments, on success the browser goes to `/wheelchair/app/thread?id=<id>`.
-- With attachments: after the stub is created, upload each file in order, stopping at the first failure; right after each file uploads, post its path alone to `/threads/<id>/stub-attachments`, so a closed tab loses at most the file in flight. Once every file is uploaded and posted, post `{ paths: [], done: true }` and go to the stub's page. On any failure the page sends no `done` (the stub keeps `saving_files`, so its page shows the warning in S4). If an upload or a post fails, both buttons stay disabled (no second stub) and the error banner reads "The stub was saved, but not all files were added (<reason>). Attach them after opening it: " followed by an "Open the thread" link, like Start's banner.
+- With attachments: after the stub is created, upload each file in order, stopping at the first failure; right after each file uploads, post its path alone to `/threads/<id>/stub-attachments`, so a closed tab loses at most the file in flight. Once every file is uploaded and posted, post `{ paths: [], done: true }` and go to the stub's page. If only the final `done` post fails, every file is already in the stub: the banner reads "The stub was saved with its files, but the app did not confirm it finished: " with the "Open the thread" link. On any other failure the page sends no `done` (the stub keeps `saving_files`, so its page shows the warning in S4). If an upload or a post fails, both buttons stay disabled (no second stub) and the error banner reads "The stub was saved, but not all files were added (<reason>). Attach them after opening it: " followed by an "Open the thread" link, like Start's banner.
 - A failed create shows "Could not save the stub: <reason>" and re-enables the buttons.
 - Start keeps its current behaviour.
 
@@ -72,14 +90,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 ### S5. Protocol
 - `protocol/app/cards.md`, the `[wc:context stub]` row: "with "Started from <parent thread>" in its place" becomes "with "Started from <parent thread>", or "Started from a saved idea" for a stub saved from the New thread screen, in its place".
-- `protocol/app/lead.md`, the paragraph "If you are the lead of a stub…" (around line 926): add one sentence: "If the summary starts `(saved from the New thread screen)`, the stub has no parent thread: the text after that line, up to any "Added from" or "Also came up in" paragraph, is the user's own first message (with any `[attached: ...]` lines), and you handle it as their first message."
+- `protocol/app/lead.md`, the paragraph "If you are the lead of a stub…" (around line 926): add one sentence: "If the summary starts `(saved from the New thread screen)`, the stub has no parent thread: the text after that line, up to any "Added from" or "Also came up in" paragraph, is the user's own first message (with any `[attached: ...]` lines), and you handle it as their first message. The same holds for a restart context's `stub_summary` that starts with that line: it is the user's own first message, not background."
 - `viewer/app/API.md`: the `POST /threads` row documents `stub`, `files` and the stub `title`; the upload row (or a new one) says an unopened stub accepts uploads; a new row documents `POST /threads/:id/stub-attachments` as in S2.
 
 ### S6. Tests
-- `viewer/test/app-hub.test.js` (or a new `viewer/test/app-new-stub.test.js`): stub creation saves the fields in S1 and starts no session; empty or whitespace message gives 400; a files-only stub (empty message, `files: 1`, `title`) is saved with that title, empty context and `saving_files`; upload to an unopened stub is accepted, to an archived stub refused, and to an opened stub with no live lead refused; `stub-attachments` appends lines (with and without existing text, and after an `adds_to` addition), clears `saving_files` only with `done: true` (also with empty `paths`) and keeps it otherwise, refuses non-stubs, opened stubs and bad bodies; opening a parentless stub queues `[wc:context stub] (saved from the New thread screen)` then the message and attached lines, and clears `saving_files`; opening a child stub queues exactly today's message; the stub is listed by `session leads` with `takes_additions: true` and accepts an `adds_to` addition.
+- `viewer/test/app-hub.test.js` (or a new `viewer/test/app-new-stub.test.js`): stub creation saves the fields in S1 and starts no session; empty or whitespace message gives 400; a files-only stub (empty message, `files: 1`, `title`) is saved with that title, empty context and `saving_files`; upload to an unopened stub is accepted, to an archived stub refused, and to an opened stub with no live lead refused; `stub-attachments` appends lines (with and without existing text, and after an `adds_to` addition), clears `saving_files` only with `done: true` (also with empty `paths`) and keeps it otherwise, refuses non-stubs, opened stubs and bad bodies; opening a parentless stub queues `[wc:context stub] (saved from the New thread screen)` then the message and attached lines, and clears `saving_files`; opening a child stub queues exactly today's message; restart of an opened parentless stub carries `stub_summary` starting `(saved from the New thread screen)`, and of a child stub today's value; the stub is listed by `session leads` with `takes_additions: true` and accepts an `adds_to` addition.
 - `viewer/test/app-uploads-archive.test.js`: an unopened saved stub with an upload is archived and its machine upload files are gone, as for other threads.
 - `viewer/test/app-chat.test.js`: existing child-stub fixtures that give only `parent_title` (around lines 123 and 384) also get a `parent` id; add a case for a child with `parent` and no `parent_title` ("Started from parent thread"); the marker reads "Started from a saved idea" for a parentless stub and still names the parent for a child stub.
-- `viewer/test/app-new-thread.spec.js`: Save for later disabled with empty message; saves and lands on the stub page showing the message and Open and start, with no lead started; with an attachment, posts `stub-attachments` with each path right after its upload, then `done: true`, before navigating; a files-only save (no text) is allowed and titled from the file name; a failed second upload shows the banner, leaves the first file's path in the stub, sends no `done`, and leaves both buttons disabled; following the banner's link shows the interrupted-save line.
+- `viewer/test/app-new-thread.spec.js`: Save for later disabled with empty message; saves and lands on the stub page showing the message and Open and start, with no lead started; with an attachment, posts `stub-attachments` with each path right after its upload, then `done: true`, before navigating, and with two files the first path is saved before the second upload starts; a files-only save (no text) is allowed and titled from the file name; a failed second upload shows the banner, leaves the first file's path in the stub, sends no `done`, and leaves both buttons disabled; following the banner's link shows the interrupted-save line.
 
 ### Validation
 ```bash
@@ -100,6 +118,7 @@ Protocol check (CONTRIBUTING.md: protocol documents have no suite): read the edi
 |------|--------------|-------|
 | Opening the stub from another device during the seconds its files upload starts the lead without them | Rare path: needs a second device acting inside the upload window; the page's banner still shows the failed attach | review-round-1 |
 | Another lead's `adds_to` addition landing during the seconds of upload puts later `[attached: ...]` lines after the "Added from" paragraph | Rare path: needs another thread to add to this exact stub inside the upload window | review-round-2 |
+| A stub page polled between the last path and `done` may keep the interrupted-save warning until reloaded | Rare path: a sub-second window and a second open page | review-round-3 |
 | A lost create response, then a retry, saves a second stub | Rare path: needs the response lost after the hub saved; the duplicate is visible and can be archived | review-round-1 |
 
 ## Review Rounds
@@ -154,6 +173,11 @@ Protocol check (CONTRIBUTING.md: protocol documents have no suite): read the edi
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Restarted lead reads a saved idea's text only as background `stub_summary` | downgraded to minor: the text still reaches it; only its framing would be off | S2 restart line, S5, S6 |
+| mechanics | minor | Lost response to the final `done` makes the banner say files are missing | upheld | S3 |
+| mechanics | minor | Rare path: polled page keeps the warning after `done` | accepted-risk (rare path) | Accepted Risks |
+| mechanics | minor | Tests don't prove each path is saved before the next upload | upheld | S6 |
+| intent | — | No findings | — | — |
 
 ## Implementation Tasks
 
