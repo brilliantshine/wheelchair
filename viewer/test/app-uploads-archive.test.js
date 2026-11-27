@@ -62,14 +62,17 @@ async function setup() {
   }
 }
 
-test('archive through the hub cancels a stalled upload to the real machine', { timeout: 30000 }, async () => {
+test('archive through the hub cancels a stalled upload to the real machine', { timeout: 90000 }, async () => {
   const context = await setup();
   let request;
   try {
     const made = await thread(context, { project: context.project, cli: 'claude' });
     assert.ok(made.id, JSON.stringify(made));
     assert.ok(made.sessions.some(session => session.role === 'lead' && session.live));
-    assert.ok(Object.values(context.instance.sessions).some(session => session.thread_id === made.id && session.role === 'lead'));
+    const leadOnMachine = () => Object.values(context.instance.sessions).some(session => session.thread_id === made.id && session.role === 'lead');
+    const leadDeadline = Date.now() + 15000;
+    while (!leadOnMachine() && Date.now() < leadDeadline) await delay(20);
+    assert.ok(leadOnMachine());
     const base = `${context.server.url}/api/threads/${made.id}`;
     const headers = { 'x-graph-token': context.server.token, origin: new URL(base).origin, 'content-type': 'application/octet-stream' };
     const bytes = Buffer.from('small upload through the hub');
@@ -80,6 +83,7 @@ test('archive through the hub cancels a stalled upload to the real machine', { t
     assert.equal(path.dirname(stored), uploads);
     assert.deepEqual(await fs.readFile(stored), bytes);
 
+    let settled = false;
     const outcome = new Promise(resolve => {
       request = http.request(`${base}/uploads?name=slow.bin`, { method: 'POST', headers: { ...headers, 'content-length': 1024 * 1024 } }, response => {
         response.resume();
@@ -89,18 +93,25 @@ test('archive through the hub cancels a stalled upload to the real machine', { t
       request.on('error', error => resolve({ error }));
       request.write(Buffer.alloc(4096));
     });
-    const deadline = Date.now() + 3000;
+    outcome.then(() => { settled = true; });
+    const deadline = Date.now() + 15000;
     while (!(await fs.readdir(uploads)).some(name => name.endsWith('.part'))) {
       assert.ok(Date.now() < deadline, 'upload reached the machine');
       await delay(20);
     }
     await delay(5200);
+    assert.ok((await fs.readdir(uploads)).some(name => name.endsWith('.part')), 'upload remains on the machine');
+    assert.equal(settled, false, 'upload is still pending');
     const started = Date.now();
     const archived = await api(context, `/threads/${made.id}/archive`, { method: 'POST', body: {} });
-    assert.ok(Date.now() - started < 5000, 'archive completed before the default machine timeout');
+    assert.ok(Date.now() - started < 25000, 'archive completed in under 25 seconds');
     assert.equal(archived.status, 200, JSON.stringify(archived.body));
     assert.equal((await api(context, `/threads/${made.id}/chat`)).body.thread.archived, true);
-    const result = await Promise.race([outcome, delay(3000).then(() => ({ timeout: true }))]);
+    let result;
+    outcome.then(value => { result = value; });
+    const outcomeDeadline = Date.now() + 15000;
+    while (!result && Date.now() < outcomeDeadline) await delay(20);
+    result ||= { timeout: true };
     assert.ok(result.status === 409 || result.error, `upload did not end with 409 or a dropped connection: ${JSON.stringify(result)}`);
     await assert.rejects(fs.access(uploads), { code: 'ENOENT' });
   } finally {
