@@ -29,7 +29,7 @@ Written for a hostile reviewer: every claim checkable, no claim without evidence
 
 ## Deviations from plan
 
-From Remediation 1: the speed limits are checked against the CPU time of the `redactCapture` call (`process.cpuUsage()`), not wall time; wall time is still printed. On a machine running the whole full run in parallel, wall time measured the other suites (see Remediation 1). Fixture details the Spec left open are logged as worker choices in PLAN.md (fixture spelling generator uses `\c` and lowercase `%hh` only; (o)'s five spellings sit on their own lines at the end of the JSON).
+None against the Spec as amended. The E1 speed limits changed during verification (PLAN.md Decision 13, the lead's choice): they are CPU time of the `redactCapture` call, (o) under 3 s and (a)-(d) under 10 s, as a hang guard. Quiet-machine CPU times: (o) about 0.17 s, (a) 0.49 s, (b) 0.77 s, (c) 0.81 s, (d) 0.78 s; under the parallel full run (c) reached about 3.4 s CPU. Fixture details the Spec left open are logged as worker choices in PLAN.md (fixture spelling generator uses `\c` and lowercase `%hh` only; (o)'s five spellings sit on their own lines at the end of the JSON).
 
 ## Routers
 
@@ -95,6 +95,26 @@ Spec validation command after the fix (exit 0):
 # (b) redaction: 1497.9 ms CPU, 1242.9 ms wall
 # (c) redaction: 2152.7 ms CPU, 2178.8 ms wall
 # (d) redaction: 2298.6 ms CPU, 2418.2 ms wall
+# tests 50
+# pass 50
+# fail 0
+```
+
+### Remediation 2 — 2026-11-26
+
+Verification attempt 2 (`9ccd916d`): verifier FAIL, one gap: (c) over its 3000 ms CPU limit under parallel load (3164-3417 ms CPU), also in the full run. It survived Remediation 1; the lead chose option A (PLAN.md Decision 13). Gap list in `REMEDIATION-2.md`.
+
+- R2-T1 (light / gpt-6-luna): the `timed` limits in `machine/test/key-redact.test.js` set to 3000 ms for (o) and 10000 ms for (a)-(d).
+- Full-run failures in files this change does not touch, left to the lead's full run against main: viewer-node `6 message clears debt` (`viewer/test/app-quiet.test.js:41`, in both full runs) and `archive through the hub cancels a stalled upload to the real machine`; test-support `HUP stops both suites`.
+
+Spec validation command after the fix (exit 0):
+
+```text
+# (o) redaction: 315.1 ms CPU, 244.4 ms wall
+# (a) redaction: 1407.4 ms CPU, 1387.5 ms wall
+# (b) redaction: 1223.2 ms CPU, 740.9 ms wall
+# (c) redaction: 2762.9 ms CPU, 2855.5 ms wall
+# (d) redaction: 2004.3 ms CPU, 1998.1 ms wall
 # tests 50
 # pass 50
 # fail 0
