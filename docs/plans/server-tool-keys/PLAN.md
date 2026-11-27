@@ -60,9 +60,10 @@ None.
   scripts.
 - Where server tools are not connected today (sandboxed Codex, Kimi, Pi), nothing changes:
   their existing "server tools …" warnings stay, and no extra key line is added. The refresh
-  of other AIs' warnings in `machine/service.js` (~795–804) is passed every valid server row,
-  including one left out of this session for a missing key, so its name stays in those
-  warnings.
+  of other AIs' warnings in `machine/service.js` (~795–804) passes every valid server row,
+  including one left out of this session for a missing key, to adapters that list server tools
+  as unsupported (Kimi, Pi, sandboxed Codex), so its name stays in those warnings; adapters that
+  launch server tools get only the entries this session launches.
 - The Tools page (`viewer/pages/project-tools.js` via `machine/lib/project-tools.js`
   `decorate`) and `wc.js tool list` show keyed servers' key status exactly as for keyed
   scripts (set / needs key X, not set on this machine). `key_store` is already set for keyed
@@ -185,13 +186,16 @@ None.
   `keys`; values arrive as environment variables of the server process only, read when it
   starts; replies and error output are checked for keys (same spellings as scripts); only text
   inside a message can be replaced, and a reply that can't be cleaned that way (or is over 32 MiB)
-  is replaced by an error reply to the same request; a request from the server that can't be
+  is usually replaced by an error reply to the same request (it is dropped instead when its
+  `id` itself holds a key, or, for an oversized reply, when its `id` comes after the cut); a request from the server that can't be
   cleaned gets an error; other messages that can't be cleaned are dropped; `check` runs without keys; same availability as
   other server tools.
 - The key lifecycle paragraph ("A replaced value applies from the next call; a removed key
   makes the next call fail without running") is reworded so it says that holds for script
   tools, while a server tool gets a replaced or removed value only at its next start (the next
   agent start).
+- The statements that values are added "at each call" and that Kimi and Pi "run keyed tools"
+  are qualified as applying to script tools.
 - The `NODE_DEBUG` sentence covers keyed server tools too. Keep "Never print or log a key in
   any form."
 
@@ -220,6 +224,7 @@ None.
 | An oversized reply whose `id` comes after its first 32 MiB is dropped, so the client waits | Rare path: needs a reply over 32 MiB with its id at the end | review-round-2 |
 | After client stdin ends, a server request that needs holding back gets no answer, and a client that ends mid-line can lose a queued injected line | Rare path: shutdown plus a key-bearing server request at the same time | review-round-2 |
 | A key whose value spells part of the generated error text suppresses that error reply | Rare path: real key values are random, not English words | review-round-2 |
+| An oversized server request whose `method` is past the cut is taken for a reply and gets a client-facing error | Rare path: needs a server request over the size limit with `method` last | review-round-3 |
 | A client that itself sends an id spelling a key gets no reply when the server echoes it | Rare path: the client would have to guess a key | review-round-1 |
 
 ## Check Once Built
@@ -276,6 +281,11 @@ None.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Guide promises an error reply in every case | upheld | S8 names the two drop cases |
+| mechanics | blocking | Escape-aware matcher's memory can blow up on large lines below 32 MiB | upheld | Large-reply handling has drawn blocking findings three rounds running; split offered to Collin |
+| mechanics | blocking | Rare path: oversized server request with `method` past the cut taken for a reply | accepted-risk | Accepted Risks |
+| mechanics | minor | Warning refresh with missing-key servers can upset supported adapters' launch budget | upheld | S2: unfiltered list only for adapters that report servers unsupported |
+| mechanics | minor | Guide's "at each call" and Kimi/Pi statements imply server support | upheld | S8 qualifiers |
 
 ## Prior Work
 
