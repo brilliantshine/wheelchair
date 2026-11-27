@@ -371,7 +371,7 @@ A first start of this round's reviewers was stopped before they reported, becaus
 | T1 | S1 load harness | `test-support/under-load.sh`, `test-support/test/under-load.test.js` | standard (gpt-6.1-terra) | S1 check; harness smoke runs | done |
 | T1b | S1 test races: pid file, trap readiness, affinity match | `test-support/test/under-load.test.js` | light (gpt-6-luna) | S1 check, under load `--repeat 10` | done |
 | T2 | S2 + S10 full-run stop and one start per command `tricky` | `test-support/full-run.sh`, `test-support/test/full-run.test.js` | standard (gpt-6.1-terra) | S2/S10 checks, under load `--repeat 10` | done |
-| T3 | S3 + S5 + S7 holder port, verifier retry, switch timers | `viewer/test/lifecycle.test.js`, `viewer/test/app-hub.test.js` (that test), `machine/test/switch-http.test.js` | standard (gpt-6.1-terra) | S3/S5/S7 checks, each under load | not started |
+| T3 | S3 + S5 + S7 holder port, verifier retry, switch timers | `viewer/test/lifecycle.test.js`, `viewer/test/app-hub.test.js` (that test), `machine/test/switch-http.test.js` | standard (gpt-6.1-terra) | S3/S5/S7 checks, each under load | done |
 | T4 | S4 + S6 quiet graces, archive 30 s `tricky` | `viewer/test/app-quiet.test.js`, `viewer/test/app-uploads-archive.test.js`, archive call in `viewer/app/threads.js` | standard (gpt-6.1-terra) | S4/S6 checks, each under load | not started |
 | T5 | S8 browser specs | `viewer/test/app-agents-decks.spec.js`, `viewer/test/app-threads.spec.js` (that test) | standard (gpt-6.1-terra) | S8 checks under load | not started |
 
@@ -387,3 +387,7 @@ A first start of this round's reviewers was stopped before they reported, becaus
 - 2026-11-26 — Choice: T2, full-run.test.js stub: the `start` record is `<name> start <ns> <pid> <command>`, and the test trims trailing whitespace from the command. Worker reported "none"; I listed 2.
 - 2026-11-26 — Choice: T2, full-run.test.js S10 check: failure cases also check that each start's command is distinct, and that both sudo-helper commands (Python tests and `install-test.sh`) appear.
 - 2026-11-26 — T2 accepted (band: self, tricky): cause confirmed by reproduction (old `stop_run` left viewer-browser unstopped under the new fixture); `stop_run` polls the groups to 45 s, KILLs, and re-polls 2 s. Re-ran it myself under load, 5 of 5.
+- 2026-11-26 — Choice: T3, lifecycle.test.js holder: a holder that misses `ready` is killed with SIGKILL and the error waits for `close`; `prePrefixHolder` returns `{ child, requests, port }`.
+- 2026-11-26 — Choice: T3, app-hub.test.js verifier retry: the saved thread is read through a new `Hub` on each poll (no timers, `init()` not called).
+- 2026-11-26 — Choice: T3, switch-http.test.js: `pollTimer` and `trustTimer` are cleared inside the `service()` helper right after `listen()`; no other timer reaches `checkReady` (scout checked `machine/service.js`).
+- 2026-11-26 — T3 accepted (band: scout): S3 cause not reproduced (old code passed under load; old stderr was never captured), fixed by binding port 0; S5 cause is the save after submit (`viewer/app/sessions.js:574-599`); S7 cause is the two background timers. Re-ran all three under load myself, 3 of 3 each.
