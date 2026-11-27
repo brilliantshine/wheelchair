@@ -311,3 +311,5 @@ Plus any new test file named above, run with `node --test <file>`.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-27 Ready check: hub and machine answer; claude 2.1.332 and codex installed; Codex preflight passed (token fresh).
