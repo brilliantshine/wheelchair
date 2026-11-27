@@ -6,7 +6,7 @@ const { redactCapture } = require('../lib/key-redact');
 
 const size = 2 * 1024 * 1024;
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+/=-';
-const noise = '%5C%25\\u00%2';
+const noise = String.raw`%5C%25\\u00%2`;
 const jsonLine = JSON.stringify({ msg: 'line 1 says "hi"\n', path: 'a/b' }) + '\n';
 
 function generator(seed) {
