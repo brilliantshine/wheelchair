@@ -2,7 +2,13 @@
 slug: shell-tool-keys
 date: 2026-11-27
 implemented-by: "T1, T3, T4, T5, T6: standard / gpt-6.1-terra; T2: light / gpt-6-luna (sub-lead: claude-opus-5-5)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: verifier / claude-opus-5-5
+    checks: gpt-6.1-terra, gpt-6-luna
+  - round: 2
+    lane: verifier / claude-opus-5-5
+    checks: gpt-6.1-terra, gpt-6-luna
 ---
 
 # Completion Report — Keyed folder tools for Kimi and Pi
@@ -86,5 +92,21 @@ Verification attempt 1 (verifier claude-opus-5-5, on d81671ee): PASS, no gaps. T
 $ node --test machine/test/kimi-turns.test.js machine/test/pi.test.js machine/test/switch.test.js machine/test/tool-machine-run.test.js
 # pass 58
 # fail 0
+```
+
+### Verification attempt 2
+
+Verifier (claude-opus-5-5) on 6d0bf766: PASS, no gaps. The first full run on 6d0bf766 failed one test, plan-files.test.js "plan files use committed refs…", with `listen EADDRINUSE 127.0.0.1:7374`, while the verifier was running its own checks. That test and its code are unchanged by this build, and it passes alone. A second full run on the same commit, with nothing else running, passed:
+
+```
+commit 6d0bf766ba4312892fa67a3fc0f7a489034d397b
+suite viewer-browser exit 0 seconds 413
+suite viewer-node exit 0 seconds 107
+suite machine exit 0 seconds 146
+suite test-support exit 0 seconds 27
+suite sensitivity exit 0 seconds 3
+suite codex exit 0 seconds 11
+suite install exit 0 seconds 37
+suite sudo-helper exit 0 seconds 9
 ```
 
