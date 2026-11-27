@@ -215,7 +215,7 @@ npm --prefix viewer run test:browser -- app-settings-hold.spec.js app-settings.s
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S1 agent sentence and default style text (`renderStyle`, `DEFAULT_STYLE.text`) + unit test | `viewer/app/settings.js`, `viewer/test/app-settings.test.js` | light / gpt-6-luna | wc-4a3b11f9c1b8-worker | `node --test viewer/test/app-settings.test.js`; `node --test machine/test/name-guard.test.js` | done |
 | T2 | S1 labels, S2 sign-in guard in `refreshUsage`, S3 `holdPlace` anchors, new hold spec — tricky | `viewer/pages/settings.js`, `viewer/test/app-settings-hold.spec.js`, `viewer/test/firefox-specs.js` | standard / gpt-6.1-terra (asked claude; hub sent it to gpt) | wc-4a3b11f9c1b8-worker-2 | `node --test machine/test/name-guard.test.js`; `npm --prefix viewer run test:browser -- app-settings-hold.spec.js app-settings.spec.js app-accounts.spec.js app-harnesses.spec.js` | done |
-| T3 | Tidy the hold spec: no fixed `/tmp` screenshot, correct header comment, press test checks one Lead order save | `viewer/test/app-settings-hold.spec.js` | light / gpt-6-luna | — | `npm --prefix viewer run test:browser -- app-settings-hold.spec.js` | not started |
+| T3 | Tidy the hold spec: no fixed `/tmp` screenshot, correct header comment, press test checks one Lead order save | `viewer/test/app-settings-hold.spec.js` | light / gpt-6-luna | wc-4a3b11f9c1b8-worker-3 | `npm --prefix viewer run test:browser -- app-settings-hold.spec.js` | in progress |
 
 ## Log
 - 2026-11-26 — T1 and T2 dispatched in parallel (disjoint files).
