@@ -66,15 +66,16 @@ In `prepareLaunch` (`machine/service.js`, folder tools part), for an eligible se
 
 - Keyed script tools are **not** filtered out of the problems and get **no**
   "needs keys, which …" line. They go through the same missing-key check MCP sessions get:
-  a tool with any key not set gets the existing `tool <name> needs key(s) …, not set on
-  this machine` line (`shared tool …` for shared tools).
+  a tool with any key not set gets a problems line `tool <name> needs key(s) …, not set on
+  this machine when this session started; set it and run again` (`shared tool …` for
+  shared tools), worded as true only at start because runs read keys live.
 - Nothing about keyed tools is recorded on the session for machine runs: each run reads
   the tool and its keys live (Decision 10).
 - Keyed tools never go into the MCP bridge entry for these sessions (as today).
 - The starting-instructions line for shell-only sessions adds the clause "Tools that need
   keys aren't available in this session (…)" **only** when `keyedToolsReason(session)`
-  returns text; on Kimi and Pi it is left out. For eligible sessions with a keyed tool,
-  the line instead adds: "`wc.js tool run` runs tools that need keys on the machine with
+  returns text; on Kimi and Pi it is left out. For every eligible session that gets the
+  line (it has a valid script tool), the line instead adds: "`wc.js tool run` runs tools that need keys on the machine with
   their keys; their key values never appear in the result."
 - Sandboxed Codex launch text and lines are unchanged.
 
@@ -169,8 +170,12 @@ unchanged. The bridge and the local CLI path pass no signal and behave as today.
   - Keys section: replace "sandboxed Codex, Kimi and Pi can't use them yet" with: Kimi and
     Pi run keyed tools through `wc.js tool run`, which asks the machine to run them with
     their keys and returns redacted output; sandboxed Codex can't use them (set Codex to
-    unrestricted in Settings). The sentence on keys added or changed mid-session adds that
-    on Kimi and Pi this applies from the next `wc.js tool run`.
+    unrestricted in Settings). Both sentences about mid-session changes (a key added
+    "is usable from the next agent start"; a changed `keys` list "is refused as changed
+    until the next agent start") say these are for MCP; on Kimi and Pi an added key and a
+    changed `keys` list both apply from the next `wc.js tool run`, with no refusal. The
+    "A tool with a missing key is not offered" sentence adds that on Kimi and Pi the
+    problems line is as of session start.
   - Make and test, `run` sentences: on Kimi and Pi `run` uses the machine for keyed tools;
     a lost connection means the tool may already have run. "To try a keyed tool for real,
     use it through MCP" applies to the other AIs.
@@ -264,6 +269,8 @@ Plus any new test file named above, run with `node --test <file>`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Launch missing-key line goes stale once a key is set mid-session; machine-run clause only with a keyed tool at launch | upheld | S2: line worded as of session start; clause for every eligible session with the line; S7 |
+| intent | minor | S7 names one of two mid-session sentences | upheld | S7 names both |
 
 ## Implementation Tasks
 
