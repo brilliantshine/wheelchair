@@ -32,6 +32,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 7 | Fixtures in `lifecycle.test.js` that start the real viewer with an explicit `--port` keep the probe-then-bind pattern unless a load run reproduces a clash there | Only the test's own holder has a reported failure; the viewer's own port handling is what those tests check | defaulted |
 | 8 | S9 checks an allowlist of wheelchair's own files in account folders, not a skip list of AI-tool files | AI-tool file names change by version and event; the allowlist stays stable | review-round-1 |
 | 9 | Supersedes 1: the load harness pins to 2 CPUs with 2 helpers per CPU by default, still leaving the rest of the machine alone | One CPU shared by a multi-process test and 3 helpers is harsher than the reported load | review-round-1 |
+| 10 | Supersedes 3: after a stop signal the runner waits until its suites' own process groups are empty; browser engines in Playwright's own groups are Playwright's to close | Playwright starts browsers in separate groups and closes them on TERM | review-round-1 |
+| 11 | The hub's archive call to the machine gets a 30 s timeout instead of 5 s | A real archive on a busy machine can take over 5 s and fail for the user; the test then still tells cancelling from waiting | review-round-1 |
 
 ## Spec
 
@@ -53,18 +55,20 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 `bash test-support/under-load.sh [--cpus N] [--hogs H] [--repeat K] -- <command...>`
 
-- Picks the N highest-numbered CPUs (default 2), pins itself and everything it starts to
+- Picks the N highest-numbered CPUs it is allowed to run on (from `taskset -pc $$`, not the
+  installed count; default N 2), pins itself and everything it starts to
   them with `taskset -c`, and starts H busy-loop helpers there (default 2 per CPU). Only
   those CPUs are loaded, so other threads on the machine are unaffected. The default
   roughly matches the reported load (about 3 to 4 busy processes per core). Usage errors
-  include N larger than the machine's CPU count.
+  include N larger than the number of allowed CPUs.
 - Runs the command K times in a row (default 5), each with stdin from `/dev/null`, its
   output passed through, then prints `under-load: pass <p> of <K>` and exits 0 only if all
   K passed, else 1. Usage errors exit 2.
 - Kills every helper on normal exit and on TERM, HUP and INT; a signal also stops the
   running command and exits non-zero.
 - Without `taskset` it prints `under-load: taskset not found` and exits 2.
-- Tested by `test-support/test/under-load.test.js`: the count line and exit code for a
+- Tested by `test-support/test/under-load.test.js`, which skips (`t.skip`) on a host without
+  `taskset`: the count line and exit code for a
   passing and a failing command, the command running pinned to the chosen CPUs, and no helper
   alive after a normal exit and after TERM.
 - Not run by the full run beyond its own test.
@@ -78,11 +82,18 @@ dies, before its child has handled TERM, so the runner can exit while browser te
 run; the test then finds no `viewer-browser stopped`. The fixture stub also writes `start`
 before installing its trap, so a signal can land before the trap exists.
 
-- `stop_run`, after sending TERM to each recorded group, polls every 0.1 s until no process
-  is left in that group (`kill -0 -- -<pgid>` fails), for up to 10 s; it then sends KILL to
-  any group still present, and exits 1 without writing `summary.txt`, as today.
-- The fixture stub installs its trap before it writes `start`.
-- Both `stopped` assertions and the no-summary assertion stay.
+- `stop_run`, after sending TERM to each recorded process group, polls every 0.1 s until no
+  process is left in that group (`kill -0 -- -<pgid>` fails), for up to 10 s; it then sends
+  KILL to any group still present, polls again up to 2 s, and exits 1 without writing
+  `summary.txt`, as today.
+- Scope (Decision 10): the runner waits for its own suites' process groups. Browser engines
+  that Playwright starts in groups of their own are Playwright's to close; its runner
+  closes them on TERM before it exits, so an empty browser-job group means Playwright has
+  finished stopping.
+- The fixture stub installs its trap before it writes `start`, and writes its own PID in
+  the `start` record. After the runner exits, the test asserts both `stopped` records, the
+  no-summary file, and that neither stub PID is still alive (`process.kill(pid, 0)` throws
+  `ESRCH`).
 
 Check: `node --test test-support/test/full-run.test.js`, and it passes under load with
 `--repeat 10`.
@@ -94,7 +105,10 @@ process can take it in the gap, and the holder exits 1 on EADDRINUSE.
 
 - The holder listens on port 0 and prints `ready <port>`; `prePrefixHolder` reads the port
   from that line and returns it, and the tests use that port.
-- If the holder exits before `ready`, the error includes its exit code and stderr.
+- The wait for `ready` has a 15 s deadline. stderr is collected from the start. If the
+  holder ends before `ready` (waiting for `close`, so stderr is drained) or the deadline
+  passes, the holder is killed if still running and the error includes its exit code or
+  signal and its stderr.
 - Other fixtures stay as they are (Decision 7).
 
 Check: `node --test viewer/test/lifecycle.test.js`, and it passes under load.
@@ -104,35 +118,50 @@ Check: `node --test viewer/test/lifecycle.test.js`, and it passes under load.
 Cause: the file uses a 50 ms grace between a turn ending and the nudge. In test 6 the
 worker's message must land inside it; under load it lands later and the nudge fires.
 
-- Each test in the file whose check is "no nudge" or "no submit" after a step runs with
-  `WHEELCHAIR_QUIET_GRACE_MS` of at least 2000, and waits past it with at least 500 ms
-  margin before checking. The current list: 6, 6c, 6d, and the first part of 7; the
-  worker checks the rest of the file by the same rule.
-- Tests that wait for a nudge keep their short grace and wait with `until`.
+- A test that checks for silence after a step that must land inside the grace (6, 6c, 6d,
+  and all of 7, which checks silence in both halves) runs with `WHEELCHAIR_QUIET_GRACE_MS`
+  of at least 2000, and each silence check waits past the grace with at least 500 ms
+  margin. Its waits for a nudge in the same test use `until`, whose 8 s deadline already
+  covers the longer grace; raise that deadline for the test if needed.
+- Test 5 keeps its check inside the grace (that no nudge has been sent before the grace
+  ends) and its later check after it; its grace grows so that its 100 ms step fits under
+  load (at least 2000), and its delays scale with it.
+- Tests that only wait for a nudge keep their short grace.
+- The worker checks the rest of the file by these rules and names any other test changed.
 
 Check: `node --test viewer/test/app-quiet.test.js`, and it passes under load.
 
 ### S5. Verifier report retry (`viewer/test/app-hub.test.js:1327`)
 
-The 1 s deadline for the retried submit becomes 10 s. Assertions unchanged.
+Cause: besides the 1 s deadline, the hub saves the cleared queue after the machine records
+the submit (`viewer/app/sessions.js:574-599`), so the test can read stale saved state.
+
+- The test waits, to one 10 s deadline, until the fake machine has a submit and the saved
+  thread shows the lead's queue empty and no `delivery_error`; then it makes the existing
+  assertions, including exactly one submit with that exact text.
 
 Check: `node --test --test-name-pattern "verifier report survives" viewer/test/app-hub.test.js`,
 and it passes under load.
 
 ### S6. Archive cancels a stalled upload (`viewer/test/app-uploads-archive.test.js:65`)
 
-The test checks that archive ends the stalled upload instead of waiting for the machine's
-default timeout, with under 5 s of margin between them.
+Two budgets are involved. The hub's archive call to the machine uses the default 5 s
+timeout of `hub.call` (`viewer/app/threads.js:234`, `viewer/app/machine-client.js:73`);
+the stalled upload never finishes on its own, because the client never sends the rest.
+If archive waited for the upload, the archive call would time out and the test would see a
+non-200. Under load, a real archive can also take over 5 s, which fails the test and would
+fail a user's archive on a busy machine.
 
-- Reproduce under load and note which wait or budget fails.
-- Widen the gap inside the test first: measure the stall and archive steps against the
-  default machine timeout the code already uses, instead of the fixed `delay(5200)` and
-  `< 5000` budget (`viewer/test/app-uploads-archive.test.js:96-99`), so a slow machine
-  passes and an archive that waits for that timeout still fails. Only if that cannot keep
-  a clear gap, make the timeout longer for this test through a setting the code already
-  reads, or, failing that, a new one, named in the report.
-- Waits that only cover setup (the `.part` file appearing, the upload outcome) poll to at
-  least a 15 s deadline; the test's own timeout grows to fit.
+- Product (Decision 11): the hub's archive call passes a 30 s timeout instead of the 5 s
+  default. Nothing else in `hub.call` changes.
+- Test: before starting archive, it asserts the upload is still pending (the `.part` file
+  exists and the outcome promise has not settled). The archive must return 200; the elapsed
+  check becomes "under 25 s", which an archive that waited on the never-ending upload
+  cannot meet. The 5.2 s stall stays unless reproduction shows it is the failing step; if
+  it changes, the report says why.
+- Waits that only cover setup (the `.part` file appearing) and the upload outcome after
+  archive poll to at least a 15 s deadline; the test's own timeout grows to fit (at least
+  90 s).
 
 Check: `node --test --test-name-pattern "stalled upload" viewer/test/app-uploads-archive.test.js`,
 and it passes under load.
@@ -149,17 +178,25 @@ Check: `node --test machine/test/switch-http.test.js`, and it passes under load.
 presses; offer press", Firefox) and `viewer/test/app-agents-decks.spec.js:247`
 ("popover invariant across a refresh", "page scrolled", Chromium).
 
-- Reproduce each under load with a Playwright trace (`--trace on`), find the cause, and fix
-  it under the general rules. Name the cause in the task report.
+- Deck spec, known gap: after setup it waits for an `/api/agents` response and two frames,
+  but the page renders only after both `/api/agents` and `/api/threads` complete
+  (`viewer/pages/agents.js:247`), and a render replaces the popover. So geometry can be read
+  before the refresh it means to test. Fix: before the refresh, take a handle to the
+  current `.deck-pop`; after it, wait until that handle is detached and a new `.deck-pop`
+  is present, then two frames, then check geometry and scroll. This applies to every
+  scenario in that `describe`.
+- Approval spec, and the deck spec if it still fails: reproduce under load with a
+  Playwright trace (`--trace on`), find the cause, and fix it under the general rules.
+  Name the cause in the task report.
 - A larger time budget (`test.slow()` or a longer wait timeout) is allowed only where the
   trace shows plain slowness; a missed event or wrong order is fixed, not waited out.
-- If either does not fail in 20 tries under load, apply the general rules found in the
-  spec (waiters registered before actions, deadlines long enough for a slow page), and say
-  in the report that it did not reproduce.
+- If the approval spec does not fail in 20 tries under load, apply the general rules
+  (waiters registered before actions, deadlines long enough for a slow page) and say in the
+  report that it did not reproduce.
 
 Checks, each passing under load (`--repeat 5`):
-`npm --prefix viewer exec -- playwright test test/app-threads.spec.js -g "offer press" --project firefox --workers 1`
-`npm --prefix viewer exec -- playwright test test/app-agents-decks.spec.js -g "page scrolled" --project chromium --workers 1`
+`npm --prefix viewer run test:browser -- test/app-threads.spec.js -g "offer press" --project firefox --workers 1`
+`npm --prefix viewer run test:browser -- test/app-agents-decks.spec.js -g "popover invariant across a refresh" --project chromium --workers 1`
 
 ### S9. Install suite's real-folder check (`install/test/run.sh:27-49,234,705`)
 
@@ -177,19 +214,32 @@ those change with each tool version and event (Decision 6).
   at `connectors/common.js:13` and Codex may then change, and Claude's `settings.json`)
   are checked only for being created or deleted during the suite, not for content. The
   comment names them.
+- Which paths are skipped depends on the path, not on who writes it: transcripts the machine
+  service copies into an account's `projects/` or `sessions/` during an account switch
+  (`machine/service.js:922-935`) are skipped like the CLIs' own, and so is any other
+  tool's account folder content (including Kimi's `sessions/`).
+- The second snapshot is taken after the suite's last fixture case, just before the
+  `RESULT` line, so the Darwin and later cases are covered too. The other five real-file
+  checks move with it.
 - On a mismatch the failure lists the changed paths (relative to `~/.wheelchair`), not only
   two hashes.
-- A self-check in the suite, on a temporary copy of the tree: changing a checked file
-  changes the result; changing an unchecked account file does not; creating or deleting a
-  shared file does.
-- The other five real-file checks at `install/test/run.sh:700-704` stay as they are.
+- The snapshot function moves to `install/test/tree-state.sh`, sourced by `run.sh`. Its
+  self-check, `install/test/tree-state-test.sh`, builds a synthetic tree in a temporary
+  directory (never copying real account files) and checks: changing a checked file changes
+  the result; changing an unchecked account file does not; creating or deleting a shared
+  file does; the mismatch lists the changed path. `run.sh` runs it, so the full run covers
+  it.
 
-Check: `bash install/test/run.sh` passes on this machine while wheelchair sessions are
-running, three times in a row.
+Checks: `bash install/test/tree-state-test.sh`; and `bash install/test/run.sh` passes on
+this machine while wheelchair sessions are running, three times in a row.
 
 ### S10. Full-run pass rule
 
 Unchanged: no re-runs. Any suite exit other than 0 fails the run (Decision 5).
+`test-support/test/full-run.test.js`'s failure cases also assert that each suite stub
+wrote exactly one `start` record, so a re-run would fail the test.
+
+Check: `node --test test-support/test/full-run.test.js`
 
 ### Non-goals
 
@@ -216,5 +266,26 @@ Unchanged: no re-runs. Any suite exit other than 0 fails the run (Decision 5).
 | intent | major | S9's skip list of AI-tool files is unstable: tools add versioned and event-written files the 10-minute watch misses | upheld | S9 now lists what wheelchair writes in account folders (allowlist); shared files checked for create/delete only |
 | intent | minor | S1 on one CPU with 3 helpers is harsher than the reported load, inviting needless budget growth | upheld | S1 defaults to 2 CPUs, 2 helpers per CPU |
 | intent | minor | S6 jumps to a new product setting before trying an in-test fix | upheld | S6 widens the gap inside the test first |
+| mechanics | blocking | S8 commands run Playwright from the repo root, missing the viewer config | upheld | Commands use `npm --prefix viewer run test:browser --` |
+| mechanics | blocking | S5: hub saves the cleared queue after the submit, so a longer wait alone still reads stale state | upheld | S5 waits for submit and saved state together |
+| mechanics | blocking | S6 conflates the upload's lifetime with the hub's 5 s archive call timeout | upheld | S6 names both; archive call gets 30 s (Decision 11); upload asserted pending |
+| mechanics | blocking | S2 group probes cannot prove browser engines stopped; no process-exit check | downgraded to major | Scope set to the suites' own groups (Decision 10); fixture checks stub PIDs gone |
+| mechanics | blocking | S9 second snapshot runs before the Darwin and later cases | upheld | Snapshot moved after the last case |
+| mechanics | blocking | S8 deck test can check geometry before the refresh redraws the popover | upheld | Wait for the old popover detached and a new one present |
+| mechanics | minor | S1 uses installed CPU count, not allowed affinity; no taskset handling in its test | upheld | Allowed CPUs; test skips without taskset |
+| mechanics | minor | S3 readiness deadline and failure cleanup unspecified | upheld | 15 s deadline, kill on failure, stderr via close |
+| mechanics | minor | S4 conflicting for mixed cases (5, 7) | upheld | Rules for 5 and 7 spelled out |
+| mechanics | minor | S9 skip by writer misses machine-copied transcripts and Kimi | upheld | Skip by path, not writer |
+| mechanics | minor | S9 self-check has no targeted command | upheld | `install/test/tree-state-test.sh` |
+| mechanics | minor | S10 no check that nothing is re-run | upheld | One `start` per stub asserted |
+
+### Round 2 — 2026-11-26
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since Round 1:** S1 (2 allowed CPUs, 2 helpers each, taskset skip); S2 (scope to the suites' own groups, KILL then re-poll, stub PID checks; Decision 10); S3 (15 s ready deadline, cleanup, stderr); S4 (rules for tests 5 and 7); S5 (wait for saved state too); S6 (two budgets, archive call timeout 30 s, Decision 11; upload asserted pending); S8 (npm commands; deck test waits for the popover to be replaced); S9 (allowlist of wheelchair files in account folders, Decision 8; skip by path; snapshot after the last case; `install/test/tree-state.sh` and its self-check); S10 (one start per stub).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
