@@ -36,6 +36,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 9 | A saved stub keeps attached files: they upload when it is saved and their `[attached: path]` lines join its saved context | Ideas parked from a phone often come with a screenshot | user |
 | 10 | Supersedes 3: a stub may be saved with attached files and no text; it is then titled from the first file's name | A screenshot-only idea must be savable (Decision 9) | review-round-1 |
 | 11 | A stub saving files is marked `saving_files` until the page finishes; an interrupted save stays visible on the stub's page | Closing the tab mid-upload must not leave silently missing files | review-round-1 |
+| 13 | Each uploaded file's path is added to the stub right after it uploads; only a final `done` clears `saving_files` | A closed tab or failed upload must not drop files that did upload, and must leave the warning | review-round-2 |
 | 12 | Opening a parentless stub tells its lead it came from the New thread screen (a first line in the `[wc:context stub]` message) | The lead must know the text is Collin's own first message | review-round-1 |
 
 ## Spec
@@ -49,7 +50,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ### S2. Hub: files for an unopened stub
 - An **unopened stub** is a thread with `stub: true`, no sessions, not archived, not frozen (`handoff.refuseFrozen`).
 - The upload route (`routes.js` `upload`, ~line 160) also accepts an unopened stub. A thread with a live lead is accepted exactly as today (including an opened stub); any other thread keeps the current 409.
-- New route `POST /threads/<id>/stub-attachments` with body `{ paths: [string, ...] }` (zero or more non-empty strings; not an array or a bad entry → 400). Under `hub.withThread`, for an unopened stub only (else 409 `this thread is not an unopened stub`), it appends one `[attached: <path>]` line per path to `context` (separated from existing non-empty text by a blank line; no leading blank line when `context` is empty), deletes `saving_files`, saves, and returns 200 with `{ context }`. An empty `paths` only clears `saving_files`. Appending (not replacing) keeps any addition another lead made meanwhile.
+- New route `POST /threads/<id>/stub-attachments` with body `{ paths: [string, ...], done?: true }` (`paths` zero or more non-empty strings; not an array, a bad entry, or `done` other than `true` → 400). Under `hub.withThread`, for an unopened stub only (else 409 `this thread is not an unopened stub`), it appends one `[attached: <path>]` line per path to `context` (separated from existing non-empty text by a blank line; no leading blank line when `context` is empty), deletes `saving_files` only when `done: true`, saves, and returns 200 with `{ context }`. Appending (not replacing) keeps any addition another lead made meanwhile.
 - `openStub` (`viewer/app/threads.js:112`) deletes `saving_files` when it starts the lead. For a stub with no `parent`, the queued message is `[wc:context stub] (saved from the New thread screen)` followed by a newline and the context (then the commits line as today, which is empty here). A stub with a parent gets exactly today's message.
 - Restart (`restartLead`) is unchanged; it already carries `stub_summary`.
 - Archiving an unopened stub that has uploads removes or keeps them exactly as archiving any other thread does (no file left orphaned on the machine because the stub had no sessions or worktree).
@@ -58,7 +59,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - `viewer/pages/new.html`: a second button **Save for later** (`id="nt-save"`) in `.new-actions`, between Start and Import a handoff, with the existing button styling. Update the hint below the message to add one sentence: "Save for later keeps the message as a stub in the thread list; no agent starts until you open it."
 - `viewer/pages/new.js`: Save for later is disabled whenever Start is disabled, while sending, and when the trimmed message is empty and no file is attached. It updates as the message is typed and files are added or removed.
 - Pressing it posts `/threads` with `{ project, machine, stub: true, message }`, plus `files: <count>` when files are attached and, when the message is empty, `title: <first file's name>`. With no attachments, on success the browser goes to `/wheelchair/app/thread?id=<id>`.
-- With attachments: after the stub is created, upload each file in order with the existing upload loop, stopping at the first failure, then post the paths that did upload (possibly none) to `/threads/<id>/stub-attachments`, then go to the stub's page if every file uploaded. If an upload or that post fails, both buttons stay disabled (no second stub) and the error banner reads "The stub was saved, but not all files were added (<reason>). Attach them after opening it: " followed by an "Open the thread" link, like Start's banner.
+- With attachments: after the stub is created, upload each file in order, stopping at the first failure; right after each file uploads, post its path alone to `/threads/<id>/stub-attachments`, so a closed tab loses at most the file in flight. Once every file is uploaded and posted, post `{ paths: [], done: true }` and go to the stub's page. On any failure the page sends no `done` (the stub keeps `saving_files`, so its page shows the warning in S4). If an upload or a post fails, both buttons stay disabled (no second stub) and the error banner reads "The stub was saved, but not all files were added (<reason>). Attach them after opening it: " followed by an "Open the thread" link, like Start's banner.
 - A failed create shows "Could not save the stub: <reason>" and re-enables the buttons.
 - Start keeps its current behaviour.
 
@@ -75,10 +76,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - `viewer/app/API.md`: the `POST /threads` row documents `stub`, `files` and the stub `title`; the upload row (or a new one) says an unopened stub accepts uploads; a new row documents `POST /threads/:id/stub-attachments` as in S2.
 
 ### S6. Tests
-- `viewer/test/app-hub.test.js` (or a new `viewer/test/app-new-stub.test.js`): stub creation saves the fields in S1 and starts no session; empty or whitespace message gives 400; a files-only stub (empty message, `files: 1`, `title`) is saved with that title, empty context and `saving_files`; upload to an unopened stub is accepted, to an archived stub refused, and to an opened stub with no live lead refused; `stub-attachments` appends lines (with and without existing text, and after an `adds_to` addition), clears `saving_files` (also with empty `paths`), refuses non-stubs, opened stubs and bad bodies; opening a parentless stub queues `[wc:context stub] (saved from the New thread screen)` then the message and attached lines, and clears `saving_files`; opening a child stub queues exactly today's message; the stub is listed by `session leads` with `takes_additions: true` and accepts an `adds_to` addition.
+- `viewer/test/app-hub.test.js` (or a new `viewer/test/app-new-stub.test.js`): stub creation saves the fields in S1 and starts no session; empty or whitespace message gives 400; a files-only stub (empty message, `files: 1`, `title`) is saved with that title, empty context and `saving_files`; upload to an unopened stub is accepted, to an archived stub refused, and to an opened stub with no live lead refused; `stub-attachments` appends lines (with and without existing text, and after an `adds_to` addition), clears `saving_files` only with `done: true` (also with empty `paths`) and keeps it otherwise, refuses non-stubs, opened stubs and bad bodies; opening a parentless stub queues `[wc:context stub] (saved from the New thread screen)` then the message and attached lines, and clears `saving_files`; opening a child stub queues exactly today's message; the stub is listed by `session leads` with `takes_additions: true` and accepts an `adds_to` addition.
 - `viewer/test/app-uploads-archive.test.js`: an unopened saved stub with an upload is archived and its machine upload files are gone, as for other threads.
-- `viewer/test/app-chat.test.js`: the marker reads "Started from a saved idea" for a parentless stub and still names the parent for a child stub.
-- `viewer/test/app-new-thread.spec.js`: Save for later disabled with empty message; saves and lands on the stub page showing the message and Open and start, with no lead started; with an attachment, uploads then posts `stub-attachments` before navigating; a files-only save (no text) is allowed and titled from the file name; a failed upload shows the banner, posts `stub-attachments` with the paths that uploaded, and leaves both buttons disabled; the stub page shows the interrupted-save line for a stub with `saving_files`.
+- `viewer/test/app-chat.test.js`: existing child-stub fixtures that give only `parent_title` (around lines 123 and 384) also get a `parent` id; add a case for a child with `parent` and no `parent_title` ("Started from parent thread"); the marker reads "Started from a saved idea" for a parentless stub and still names the parent for a child stub.
+- `viewer/test/app-new-thread.spec.js`: Save for later disabled with empty message; saves and lands on the stub page showing the message and Open and start, with no lead started; with an attachment, posts `stub-attachments` with each path right after its upload, then `done: true`, before navigating; a files-only save (no text) is allowed and titled from the file name; a failed second upload shows the banner, leaves the first file's path in the stub, sends no `done`, and leaves both buttons disabled; following the banner's link shows the interrupted-save line.
 
 ### Validation
 ```bash
@@ -98,6 +99,7 @@ Protocol check (CONTRIBUTING.md: protocol documents have no suite): read the edi
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | Opening the stub from another device during the seconds its files upload starts the lead without them | Rare path: needs a second device acting inside the upload window; the page's banner still shows the failed attach | review-round-1 |
+| Another lead's `adds_to` addition landing during the seconds of upload puts later `[attached: ...]` lines after the "Added from" paragraph | Rare path: needs another thread to add to this exact stub inside the upload window | review-round-2 |
 | A lost create response, then a retry, saves a second stub | Rare path: needs the response lost after the hub saved; the duplicate is visible and can be archived | review-round-1 |
 
 ## Review Rounds
@@ -132,6 +134,23 @@ Protocol check (CONTRIBUTING.md: protocol documents have no suite): read the edi
 - `saving_files` flag and interrupted-save line (Decision 11; S1–S4).
 - Parentless stub opening message `(saved from the New thread screen)` and the lead.md sentence (Decision 12; S2, S5).
 - Upload eligibility wording (S2), API.md (S5), tests (S6), protocol check (Validation), Accepted Risks, Non-goals.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Rare path: `adds_to` during upload puts attachments after the addition | accepted-risk (rare path) | Accepted Risks |
+| mechanics | blocking | Attachments appended after an `adds_to` paragraph fall outside the user's message | accepted-risk (rare path): needs an addition inside the upload window | Accepted Risks |
+| mechanics | major | Tab closed after an upload but before the final post loses that file | upheld | Decision 13; S2, S3 |
+| mechanics | major | A handled failure clears `saving_files`, hiding the warning | downgraded to minor: the banner already told Collin; fixed anyway | Decision 13; S2, S3, S6 |
+| mechanics | minor | Chat fixtures lack `parent` for the new marker rule | upheld | S6 |
+
+### Round 3 — 2026-11-27
+
+**Lanes:** claude (intent); gpt (mechanics); cross-family: yes.
+
+**Changed since Round 2:**
+- `stub-attachments` takes `done`; only `done: true` clears `saving_files` (Decision 13; S2).
+- The page posts each path right after its upload, then `done` (S3).
+- Tests for these and the chat fixtures (S6); new Accepted Risk.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
