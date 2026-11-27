@@ -365,3 +365,14 @@ A first start of this round's reviewers was stopped before they reported, becaus
 | mechanics | minor | Rare path: an overlapping older poll response redraws after the round-41 wait | accepted-risk | Accepted Risks |
 
 ## Implementation Tasks
+
+| Task | Objective | Ownership boundary | Lane | Validation | Status |
+|------|-----------|--------------------|------|------------|--------|
+| T1 | S1 load harness | `test-support/under-load.sh`, `test-support/test/under-load.test.js` | standard | S1 check; harness smoke runs | not started |
+| T2 | S2 + S10 full-run stop and one start per command `tricky` | `test-support/full-run.sh`, `test-support/test/full-run.test.js` | standard | S2/S10 checks, under load `--repeat 10` | not started (after T1) |
+| T3 | S3 + S5 + S7 holder port, verifier retry, switch timers | `viewer/test/lifecycle.test.js`, `viewer/test/app-hub.test.js` (that test), `machine/test/switch-http.test.js` | standard | S3/S5/S7 checks, each under load | not started (after T1) |
+| T4 | S4 + S6 quiet graces, archive 30 s `tricky` | `viewer/test/app-quiet.test.js`, `viewer/test/app-uploads-archive.test.js`, archive call in `viewer/app/threads.js` | standard | S4/S6 checks, each under load | not started (after T1) |
+| T5 | S8 browser specs | `viewer/test/app-agents-decks.spec.js`, `viewer/test/app-threads.spec.js` (that test) | standard | S8 checks under load | not started (after T1) |
+
+## Log
+
