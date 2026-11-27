@@ -1,6 +1,6 @@
 ---
 slug: shell-tool-keys
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-27
 ---
 
@@ -38,6 +38,23 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 ## Spec
 
+How a keyed tool runs on Kimi and Pi (S4, S5); the agent only ever sees redacted output:
+
+```mermaid
+flowchart TD
+  A["Agent: wc.js tool run name"] --> B{"keyed_run is machine<br/>and tool has keys?"}
+  B -->|no| L["Run locally, as today"]
+  B -->|yes| C["POST /v1/agent/tools/run<br/>name, input, caller env"]
+  C --> D{"Session live, eligible;<br/>tool found; keys set?"}
+  D -->|no| R["Refusal text, nothing runs"]
+  D -->|yes| E["Machine runs tool with keys<br/>(own process group)"]
+  E --> F["Redacted result to CLI"]
+  E -.->|"connection closes, session stops,<br/>or service shuts down"| K["Kill the tool's process group"]
+  F --> G{"Whole body arrived<br/>and valid?"}
+  G -->|yes| H["Print result"]
+  G -->|no| M["'the tool may already have run'"]
+```
+
 Terms: a **keyed tool** is a folder script tool whose `tool.json` declares `keys`
 (`protocol/tools.md`, Keys). A **machine run** is the machine service running a keyed tool
 for a session, with its keys, and returning the redacted result. The MCP bridge path
@@ -66,7 +83,9 @@ In `prepareLaunch` (`machine/service.js`, folder tools part), for an eligible se
 
 - Keyed script tools are **not** filtered out of the problems and get **no**
   "needs keys, which …" line. They go through the same missing-key check MCP sessions get:
-  a tool with any key not set gets a problems line `tool <name> needs key(s) …, not set on
+  a tool with any key not set gets a per-session problems line in the existing `keyed`
+  bucket (`keyedLines`, which reaches the Project tools card for any worktree while the
+  session is live, `viewer/app/sessions.js:145`), not in `folder`: `tool <name> needs key(s) …, not set on
   this machine when this session started; set it and run again` (`shared tool …` for
   shared tools), worded as true only at start because runs read keys live.
 - Nothing about keyed tools is recorded on the session for machine runs: each run reads
@@ -95,7 +114,10 @@ Checks, in order, before anything runs; each refusal is `{ error }` with the sta
 and runs nothing:
 
 1. Session ended (it has `ended_at`, or its status is `ended`, `stopped` or `failed`, the
-   same test the shared-copy pin uses in `prepareLaunch`): 403 `this session has ended`.
+   same test the shared-copy pin uses in `prepareLaunch`), or its tmux session is not in
+   `liveTmux()` (as the account switch checks; `null` from `liveTmux()` also refuses):
+   403 `this session has ended`. A project lead never reaches this route: the existing
+   `/v1/agent/*` guard refuses it first with 403 `a project lead can't do that`.
    Session not eligible (S1): 403 `this session can't run keyed tools through the machine`.
 2. Body invalid (`name` not a string, `input` not a plain object, `env` not an object of
    strings, or `env.PATH` missing): 400 naming the field.
@@ -121,8 +143,11 @@ the session record.
 
 - **Disconnect:** if the client connection closes before the response is written, abort
   the run's signal so its process group is killed (S6), and write nothing.
-- **Session stopped mid-run:** stopping a session kills its tmux session, which ends the
-  CLI; its connection closes and the disconnect rule above kills the tool.
+- **Session stopped mid-run:** each run's `AbortController` is kept in a per-session set
+  on the service from the moment the route accepts the request until it responds.
+  `stop(name)` (and the other paths that end a session record) aborts every controller in
+  that session's set. The route checks the signal once more immediately before calling
+  `runScript`, and if aborted responds 403 `this session has ended` without spawning.
 - **Service shutdown:** before the first machine run, the service calls the runner's
   `installExitHandlers()` (`machine/lib/tool-run.js`), so a stop or restart (SIGTERM,
   SIGINT, SIGHUP, or normal exit) kills every live tool group, as the bridge does today.
@@ -139,7 +164,8 @@ the session record.
     code …, signal …[, timed out])[: stderr]`).
   - Any other status with a readable `{ error }` body: fail with that error.
   - The connection was refused or the machine could not be reached before the request was
-    sent: fail with `couldn't reach the machine service; the tool did not run`.
+    sent, including when `roots()`'s own `/tools` request fails that way: `run` fails with
+    `couldn't reach the machine service; the tool did not run`.
   - The connection broke after the request was sent, the response ended early, or the
     body is not valid JSON of the expected shape: fail with `lost the connection to the
     machine before the tool's result arrived; the tool may already have run, so check
@@ -201,7 +227,7 @@ Targeted tests to add (each names its file):
   `machine/test/tool-machine-run.test.js`): S4 — each refusal 1–4 with its status and
   text and nothing run; a Kimi-like session runs a keyed tool and gets its output with the
   key value replaced; the caller's `PATH` decides program lookup (a program only on the
-  caller's PATH runs); caller env reaches the tool, the session token does not; a key set after launch is used by the next run; an ended session's token is refused; a key
+  caller's PATH runs); caller env reaches the tool, the session token does not; a key set after launch is used by the next run; an ended session's token is refused, and so is a `ready` record whose tmux session is gone; stopping a session while its client stays connected kills the run, and a stop during discovery prevents the spawn; a project lead gets `a project lead can't do that`; a missing-key line for a worker on its own worktree reaches that session's keyed bucket; a key
   overrides a same-named caller variable; closing the request mid-run kills the tool's
   group (a marker child is gone shortly after); a reviewer, assistant, project lead and
   sandboxed Codex session are refused.
@@ -210,7 +236,7 @@ Targeted tests to add (each names its file):
   the "aren't available" clause; sandboxed Codex unchanged.
 - `viewer/test/wc-tool.test.js`: S5 — machine path success, tool failure, `{error}`
   refusal, refused connection ("did not run"), response cut mid-body and invalid JSON
-  ("may already have run", no partial output), a multi-byte character split across two
+  ("may already have run", no partial output), service down from the start ("did not run"), a multi-byte character split across two
   chunks decodes intact; `keyed_run: "local"` or missing keeps the local path and its line.
 - `machine/test/connectors-contract.test.js`: Kimi and Pi define `keyedToolsByMachine`
   and no `keyedToolsReason`; the contract accepts the new optional member.
@@ -235,6 +261,7 @@ Plus any new test file named above, run with `node --test <file>`.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | The machine service dies without running its exit handlers (a crash or SIGKILL) while a machine run is in progress; the tool keeps running until it ends by itself, because the unit uses `KillMode=process` and the live set is in memory | Needs a service crash and a tool mid-run at once (`realism.md`, rare path); stop and restart send SIGTERM, which is handled | review-round-1 |
+| Kimi and Pi agents choose the environment (including `PATH` and loader variables) of the process that receives keys, so a deliberate agent could have other code receive them | Kimi and Pi run unsandboxed as the same user that owns the key store files (`machine/lib/project-keys.js:55`, mode 0600), so such an agent can read keys directly; protection is against accidental exposure, as for MCP (row below) | review-round-2 |
 | An agent can edit a keyed tool's script in its worktree to print a key in a form redaction doesn't catch | Same as MCP today (parent plan, Decisions 20 and 23); the guide forbids it | planning |
 
 ## Check Once Built
@@ -271,6 +298,12 @@ Plus any new test file named above, run with `node --test <file>`.
 |------|----------|---------|--------------|------------|
 | intent | minor | Launch missing-key line goes stale once a key is set mid-session; machine-run clause only with a keyed tool at launch | upheld | S2: line worded as of session start; clause for every eligible session with the line; S7 |
 | intent | minor | S7 names one of two mid-session sentences | upheld | S7 names both |
+| mechanics | blocking | Caller env/PATH lets other code receive keys | declined | Only by deliberate agent action, and an unsandboxed Kimi/Pi agent already shares the key store owner (`project-keys.js:55`); recorded in Accepted Risks |
+| mechanics | major | Stop doesn't cancel runs whose client survives tmux, or runs still in discovery | downgraded (minor) | Needs a CLI outliving its tmux session or a stop in a sub-second window; fixed anyway: per-session abort set and pre-spawn check |
+| mechanics | major | `ready` record with dead tmux passes the ended check | downgraded (minor) | Nothing holds the token once the agent exits on its own; fixed anyway: `liveTmux()` check |
+| mechanics | minor | `roots()` connection failure shows raw error | upheld | S5 |
+| mechanics | minor | Project lead refused by existing guard first | upheld | S4 check 1 notes it |
+| mechanics | minor | Missing-key line in `folder` misses separate worktrees | upheld | S2: `keyed` bucket |
 
 ## Implementation Tasks
 
