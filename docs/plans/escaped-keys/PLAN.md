@@ -34,6 +34,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | Spellings and cut-off pieces are found on the capture as captured, then combined | Trimming first hid the rest of a key that overlapped a cut-off piece | review-round-2 |
 | 11 | Both edges cut and the capture one escape-like run: dropped whole | A spelling can be longer than the stderr window | review-round-2 |
 | 12 | The fallback's unchecked runs and plain keys are found on the capture as captured and rendered once with the cut edges; each cut edge shows one `[output cut]` | Finding them after trimming or replacing left part of a key visible | review-round-3 |
+| 13 | E1 speed limits are CPU time of the `redactCapture` call: (o) under 3 s, (a)-(d) under 10 s; the fixed budget and every output check (no fallback for (o), (c), (d) and the 64 KiB stderr fixture) unchanged | The limits guard against hangs; shared-machine load made 3 s flaky (about 0.8 s idle, over 3 s CPU under load); quiet-machine times are recorded in COMPLETION.md | defaulted |
 
 ## Spec
 
@@ -95,24 +96,24 @@ every piece of one at a cut edge, lies inside one such run, so nothing unchecked
 through, and the rest of the output is kept. A capture is never passed on
 unchecked.
 
-Pinned fixtures, each through `redactCapture` with a timer on the test machine (random
-keys come from a fixed seed, using only usable key characters):
+Pinned fixtures, each through `redactCapture` measuring the CPU time of the `redactCapture` call (`process.cpuUsage()`, user + system; Decision 13). The limits are a hang guard with room for a loaded machine; random
+keys come from a fixed seed, using only usable key characters:
 - (o) ordinary JSON: 2 MiB of repeated `JSON.stringify` lines such as
   `{"msg":"line 1 says \"hi\"\n","path":"a\/b"}`, lines joined by newlines, 5 random 32-character keys, each placed
-  once as a two-layer spelling on a line of its own (right after a newline, followed by one). Under 1 second, no fallback, all 5 replaced, everything else
+  once as a two-layer spelling on a line of its own (right after a newline, followed by one). Under 3 seconds, no fallback, all 5 replaced, everything else
   unchanged.
 - (a) noise: 2 MiB of repeats of `%5C%25\\u00%2`, 5 random 4096-character keys. Under
-  3 seconds; the result is unchanged or the fallback.
+  10 seconds; the result is unchanged or the fallback.
 - (b) late failures: 2 MiB of repeats of `%41`, 5 keys of 4095 `A`s followed by `1`, `2`,
-  `3`, `4`, `5`. Under 3 seconds; the result is unchanged or the fallback.
+  `3`, `4`, `5`. Under 10 seconds; the result is unchanged or the fallback.
 - (c) many keys: 2 MiB of the noise in (a) with 20 random 64-character keys, every 1000 bytes
-  holding one three-layer spelling of one of them. Under 3 seconds, no fallback, all
+  holding one three-layer spelling of one of them. Under 10 seconds, no fallback, all
   spellings replaced.
 - (d) cut edges: (o)'s JSON text with (c)'s 20 keys, one three-layer spelling of one of
   them on a line of its own after the first newline past every 1000 bytes; the capture starts with the last 40 bytes of a three-layer spelling
   of key 1 followed by a space, and ends with a space followed by the first 40 bytes of one
   of key 2, each spelling chosen so every character is escaped (so each 40-byte piece holds
-  a `%` or `\`); both `cutStart` and `cutEnd` set. Under 3 seconds, no fallback; the result is
+  a `%` or `\`); both `cutStart` and `cutEnd` set. Under 10 seconds, no fallback; the result is
   exactly `[output cut] ` + the JSON text with every spelling replaced by `[key]` +
   ` [output cut]`.
 
@@ -198,7 +199,7 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
     `\u005Cu005Cu0041` 4096 times (a three-layer spelling of the key, exactly 64 KiB), then
     ` tail`, and exiting, gives stderr exactly `[output cut] tail` (the 64 KiB window starts
     5 bytes into the spelling);
-  - the speed cases in E1, run through `redactCapture` with a timer;
+  - the speed cases in E1, run through `redactCapture` with CPU time measured;
   - one end-to-end `runScript` case with key `AB+CD/EF=GH`, failing with today's redactor: a
     script prints to stdout `encodeURIComponent('https://x.test/?t=' + key)` (the key shows as
     `AB%2BCD%2FEF%3DGH`) and to stderr `JSON.stringify('t=AB\\u002BCD/EF=GH')` (the key shows
@@ -306,3 +307,4 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 - 2026-11-26 — Choice: R1-T1, key-redact.test.js: dropped the moved file's duplicate `assert`, `test` and `redactCapture` imports; timing log line now `<name> redaction: <cpu> ms CPU, <wall> ms wall`; CPU time is process-wide (`process.cpuUsage()` user + system).
 - 2026-11-26 — R1-T1 accepted (band: bigger-scout): moved block identical apart from `timed`; 50/50 pass on my re-run, (c) 814 ms CPU.
 - 2026-11-26 — Verification attempt 2 on 9ccd916d: verifier (claude-opus-5-5) FAIL, one gap: fixture (c) over its 3000 ms CPU limit under parallel load (3164-3417 ms CPU at load 28-56; about 800 ms idle). Full run on the same commit: machine fails the same way ((c) 3189 ms CPU); viewer-node (app-quiet `6 message clears debt` again, plus `archive through the hub cancels a stalled upload`) and test-support (`HUP stops both suites`) failed under load in files this change does not touch; install passed. The gap survived Remediation 1; asked the lead how the time limits should be checked.
+- 2026-11-26 — Lead chose option A for the speed gap: Decision 13, E1 limits changed (CPU time; (o) under 3 s, (a)-(d) under 10 s). Remediation 2 sets the test limits to match.
