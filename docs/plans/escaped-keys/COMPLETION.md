@@ -18,7 +18,7 @@ Written for a hostile reviewer: every claim checkable, no claim without evidence
 | E1 a key's spellings, every start, overlaps, never decode first | this run | `machine/lib/key-spell.js:205` (`forward`, per-key index bitsets), `:148` (`finishRecords`, backward marking) | `machine/test/key-redact.test.js:59` (`progress=100%41CD%2BEFGH`, overlap, `dir\ABCDEFGHIJKL`) |
 | E1 no `%`/`\` byte → today's plain path | this run (old code kept as `plainCapture`) | `machine/lib/key-redact.js:8`, `:54-55` | existing tests in `machine/test/key-redact.test.js`; `machine/test/key-redact.test.js:65` |
 | E1 shared work budget and fallback (`[not checked for keys]`, plain keys, K4 trim, both-edges rule, runs on capture as captured) | this run | `machine/lib/key-redact.js:6` (64M units), `:28` (`markUnchecked`), `:66-80` | `machine/test/key-redact.test.js:100` (all five Validation cases, `workBudget: 1`) |
-| E1 pinned speed fixtures (o), (a)-(d) | this run | `machine/test/key-redact-speed.test.js` | evidence below |
+| E1 pinned speed fixtures (o), (a)-(d) | this run | `machine/test/key-redact.test.js` (moved there in Remediation 1; was `key-redact-speed.test.js`) | evidence below |
 | E2 cut end: longest proper beginning of a spelling | this run | `machine/lib/key-spell.js:378` (`prefixes`), `:411` (`cutEndPosition`) | `machine/test/key-redact.test.js:75` |
 | E2 cut start: longest proper ending of a spelling | this run | `machine/lib/key-spell.js:349` (`tails`), `:205` (`forward` with tail seeds) | same test; `machine/test/key-redact.test.js:88` |
 | E2 larger of K4 trim and stretch; one `[output cut]` per edge; both edges cut and all escape-like → dropped whole | this run | `machine/lib/key-redact.js:58-64`, `:73-75`, `:82-93` | `machine/test/key-redact.test.js:75` (`[output cut][output cut]`) |
@@ -29,7 +29,7 @@ Written for a hostile reviewer: every claim checkable, no claim without evidence
 
 ## Deviations from plan
 
-None. Fixture details the Spec left open are logged as worker choices in PLAN.md (fixture spelling generator uses `\c` and lowercase `%hh` only; (o)'s five spellings sit on their own lines at the end of the JSON).
+From Remediation 1: the speed limits are checked against the CPU time of the `redactCapture` call (`process.cpuUsage()`), not wall time; wall time is still printed. On a machine running the whole full run in parallel, wall time measured the other suites (see Remediation 1). Fixture details the Spec left open are logged as worker choices in PLAN.md (fixture spelling generator uses `\c` and lowercase `%hh` only; (o)'s five spellings sit on their own lines at the end of the JSON).
 
 ## Routers
 
@@ -78,3 +78,24 @@ E4: `grep -n -i "never print or log a key" protocol/tools.md` → line 70; `grep
 - Accepted risk unchanged: the plain-key scan on one repeated character with long overlapping keys (PLAN.md Accepted Risks).
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-26
+
+Verification attempt 1 (`9f2ed5da`): verifier PASS; the full run on that commit failed `machine` ((c) 4752 ms and (d) 4702 ms wall against 3000 ms; output correct), `install` and `viewer-node`. Gap list and judgment in `REMEDIATION-1.md`.
+
+- R1-T1 (light / gpt-6-luna): the five speed fixtures moved into `machine/test/key-redact.test.js` (so the Spec's command runs them) and are checked by CPU time; `key-redact-speed.test.js` deleted.
+- `install` (`real wheelchair directory is byte-identical after suite`): the same test fails with the same error at the comparison commit `672764ae` (a `git archive` copy). Already on main.
+- `viewer-node` (`viewer/test/app-quiet.test.js:41`, `6 message clears debt`): this change touches no viewer file; the file passes 27/27 alone. To be rechecked by the next full run.
+
+Spec validation command after the fix (exit 0):
+
+```text
+# (o) redaction: 344.4 ms CPU, 340.4 ms wall
+# (a) redaction: 1360.9 ms CPU, 1435.2 ms wall
+# (b) redaction: 1497.9 ms CPU, 1242.9 ms wall
+# (c) redaction: 2152.7 ms CPU, 2178.8 ms wall
+# (d) redaction: 2298.6 ms CPU, 2418.2 ms wall
+# tests 50
+# pass 50
+# fail 0
+```
