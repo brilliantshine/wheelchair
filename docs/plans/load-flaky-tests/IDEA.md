@@ -11,8 +11,7 @@ created: 2026-11-26
 
 A whole-project test run (`bash test-support/full-run.sh`) that gives the same answer
 whether the machine is idle or busy with other threads. Each test that now fails only
-under load gets its cause found and fixed, and the install test stops failing because
-live sessions write to the real wheelchair folder.
+under load gets its cause found and fixed.
 
 ## Why — the problem
 
@@ -40,8 +39,6 @@ something" signal to leads, sub-leads and verifiers.
 - On a busy machine, full runs of an unchanged commit pass, as they do on an idle one.
 - Each named test still catches the bug it was written for: a test made to pass by
   dropping or loosening its check does not count.
-- The install suite passes while wheelchair sessions are running, and still catches the
-  suite writing into the real wheelchair folder.
 - Where a failure is real (a product race, not a test race), it is fixed in the product
   or reported, not hidden.
 
@@ -50,6 +47,9 @@ something" signal to leads, sub-leads and verifiers.
 - Adding blanket retries that hide failures.
 - Speeding up the full run or changing which suites it runs, beyond what reliability needs.
 - Fixing flaky tests not named here, unless found to share the same cause.
+- The install suite's check that the real wheelchair folder is unchanged
+  (`install/test/run.sh:705`), which fails while live sessions write there. Split into its
+  own thread, "Install test: check the real wheelchair folder while sessions run".
 
 ## Constraints
 

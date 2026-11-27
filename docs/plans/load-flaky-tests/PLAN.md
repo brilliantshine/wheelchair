@@ -34,6 +34,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 9 | Supersedes 1: the load harness pins to 2 CPUs with 2 helpers per CPU by default, still leaving the rest of the machine alone | One CPU shared by a multi-process test and 3 helpers is harsher than the reported load | review-round-1 |
 | 10 | Supersedes 3: after a stop signal the runner waits until its suites' own process groups are empty; browser engines in Playwright's own groups are Playwright's to close | Playwright starts browsers in separate groups and closes them on TERM | review-round-1 |
 | 11 | The hub's archive call to the machine gets a 30 s timeout instead of 5 s | A real archive on a busy machine can take over 5 s and fail for the user; the test then still tells cancelling from waiting | review-round-1 |
+| 12 | Split off S9: the install suite's real-folder check moves to its own thread; IDEA.md's What and What good looks like drop it and Not doing points to the new thread. Decisions 6 and 8 and S9's two Accepted Risks go with it | Collin picked "Split it off" after S9 drew blocking or major findings in rounds 1-3 while the rest settled | idea-change |
 
 ## Spec
 
@@ -213,46 +214,10 @@ Checks, each passing under load (`--repeat 5`):
 `npm --prefix viewer run test:browser -- test/app-threads.spec.js -g "offer press" --project firefox --workers 1`
 `npm --prefix viewer run test:browser -- test/app-agents-decks.spec.js -g "popover invariant across a refresh" --project chromium --workers 1`
 
-### S9. Install suite's real-folder check (`install/test/run.sh:27-49,234,705`)
+### S9. (Removed)
 
-The check names what wheelchair writes; it never lists what the AI tools write, since
-those change with each tool version and event (Decision 6).
-
-- Outside `accounts/`, the real `~/.wheelchair` stays checked in full, except files the
-  running hub or machine service rewrite in normal use, which get the create-or-delete
-  check described for shared files below. Known: `agy-models.json` (rewritten by
-  `codex/model.sh` when the Settings page loads with a cache over an hour old,
-  `codex/model.sh:272,290-300`). The worker searches for others (for example under
-  `models/`, and `.lock`) and names each with its writer in the comment.
-- Inside each `accounts/<name>/`, only the files wheelchair's code writes there are
-  checked, byte for byte: `CLAUDE.md`, `AGENTS.md` and `wheelchair-account.json`.
-  `skills/` is not checked: wheelchair writes nothing there; Claude and Codex own it. The worker confirms the list by searching the
-  code that writes into account folders (for example `connectors/common.js`,
-  `machine/lib/harness-install.js`, `viewer/app/`) and names every writer in a comment
-  beside the list. Everything else inside an account folder is not checked.
-- Files both sides write (for example Codex's `config.toml`, which wheelchair creates once
-  at `connectors/common.js:13` and Codex may then change, and Claude's `settings.json`)
-  are checked only for being created or deleted during the suite, not for content. The
-  comment names them.
-- Which paths are skipped depends on the path, not on who writes it: transcripts the machine
-  service copies into an account's `projects/` or `sessions/` during an account switch
-  (`machine/service.js:922-935`) are skipped like the CLIs' own, and so is any other
-  tool's account folder content (including Kimi's `sessions/`).
-- The second snapshot is taken after the suite's last fixture case, just before the
-  `RESULT` line, so the Darwin and later cases are covered too. The other five real-file
-  checks move with it.
-- On a mismatch the failure lists the changed paths (relative to `~/.wheelchair`), not only
-  two hashes.
-- The snapshot function moves to `install/test/tree-state.sh`, sourced by `run.sh`. Its
-  self-check, `install/test/tree-state-test.sh`, builds a synthetic tree in a temporary
-  directory (never copying real account files) and checks: changing a checked file changes
-  the result; changing an unchecked account file does not; creating or deleting a shared
-  file does; the mismatch lists the changed path. `run.sh` runs it, so the full run covers
-  it.
-
-Check: `bash install/test/tree-state-test.sh`. The whole install suite is the full run's
-(AGENTS.md, Test picker and full run); on this machine wheelchair sessions are always
-running during it, so a passing full run is the live check.
+The install suite's real-folder check moved to its own thread (Decision 12). Do not
+change `install/test/run.sh` in this plan.
 
 ### S10. Full-run pass rule
 
@@ -274,8 +239,6 @@ Check: `node --test test-support/test/full-run.test.js`
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| A new account folder seeded during the install suite (the user adds an account mid-run) shows as a mismatch | Rare path: needs an account added inside the few minutes the suite runs; existing accounts re-seed with identical bytes | review-round-2 |
-| A session start rewrites `wheelchair-account.json` in place (truncate, then write); a snapshot inside that sub-second window reads it empty and reports a mismatch | Rare path: a sub-second race between two actors (`realism.md`) | review-round-2 |
 
 ## Review Rounds
 
@@ -337,7 +300,16 @@ A first start of this round's reviewers was stopped before they reported, becaus
 | mechanics | blocking | S1's 10 s KILL can cut short a nested full-run fixture's 45 s cleanup when a load check is cancelled | downgraded to minor | Only on cancelling a check; leftovers are fixture sleeps that end on their own. S1 now waits 60 s before KILL |
 | mechanics | minor | S2's browser stub exits fast enough that the old leader-only wait could still pass | upheld | Stub's trap waits 1 s before `stopped` |
 | mechanics | minor | S8: the bottom-scroll test adds round 41 inline and needs the same marker wait | upheld | Named in S8 |
-| mechanics | blocking | S9: create-or-delete check still trips on live first creation of `agy-models.json` and on a Settings CLI install's result and PID files | upheld | Pending the split question |
-| mechanics | blocking | S9: the moved snapshot helper is also used for fixture isolation and idempotence checks; the allowlist must apply only to the real-home snapshots | upheld | Pending the split question |
+| mechanics | blocking | S9: create-or-delete check still trips on live first creation of `agy-models.json` and on a Settings CLI install's result and PID files | upheld | S9 split off (Decision 12) |
+| mechanics | blocking | S9: the moved snapshot helper is also used for fixture isolation and idempotence checks; the allowlist must apply only to the real-home snapshots | upheld | S9 split off (Decision 12) |
+
+### Round 4 — 2026-11-26
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since Round 3:** S1 (CPUs picked at random and printed; small cost for its own test; 60 s before KILL); S2 (stub trap waits 1 s before `stopped`); S8 (the bottom-scroll test also waits for round 41); S9 removed and split off (Decision 12), with IDEA.md updated; S9's Accepted Risks removed with it.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
