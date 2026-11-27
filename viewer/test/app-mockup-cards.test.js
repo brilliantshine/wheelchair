@@ -43,7 +43,7 @@ test('CLI refuses a graph diagram the viewer would not draw, before asking for a
   const file = path.join(dir, 'card.json');
   await fs.writeFile(file, JSON.stringify({ kind: 'diagram', plan: 'p', graph: 'flow', title: 'Flow' }));
   const run = () => spawnSync(process.execPath, [path.resolve(__dirname, '../app/card.js'), 'diagram', file], { cwd: dir, env: { ...process.env, WHEELCHAIR_SESSION_TOKEN: '' }, encoding: 'utf8' });
-  let result = run(); assert.notEqual(result.status, 0); assert.match(result.stderr, /graph file does not exist/);
+  let result = run(); assert.notEqual(result.status, 0); assert.match(result.stderr, /graph file could not be read/);
   const graphs = path.join(dir, 'docs/plans/p/graphs'); await fs.mkdir(graphs, { recursive: true });
   const graph = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures/canonical.json'), 'utf8'));
   await fs.writeFile(path.join(graphs, 'flow.json'), JSON.stringify(graph));

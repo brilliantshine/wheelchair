@@ -316,7 +316,7 @@ function checkGraphFile(card) {
   try { top = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { top = process.cwd(); }
   const filePath = path.join(top, 'docs', 'plans', card.plan, 'graphs', `${card.graph}.json`);
   let bytes;
-  try { bytes = fs.readFileSync(filePath); } catch { throw new Error(`graph file does not exist: ${filePath}`); }
+  try { bytes = fs.readFileSync(filePath); } catch { throw new Error(`graph file could not be read: ${filePath}`); }
   const { ClientError, parseJson, validateGraph } = require('../server.js');
   try {
     validateGraph(parseJson(bytes));
