@@ -184,7 +184,7 @@ Protocol check (CONTRIBUTING.md: protocol documents have no suite): read the edi
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Hub: stub create, uploads + stub-attachments route, openStub/restart text, transcript marker, API.md, hub tests (S1, S2, S4 hub, S5 API.md, S6 hub) — tricky | viewer/app/{threads,routes,chat}.js, connectors/hub-common.js, viewer/app/API.md, viewer/test/{app-new-stub,app-hub,app-chat,app-uploads-archive,app-lead-list}.test.js | standard / gpt-6.1-terra; rung 2: standard xhigh effort (attempt 1 hit its fails-twice guardrail on its restart test) | wc-b6eb8da6feac-worker → wc-b6eb8da6feac-worker-3 | node --test (6 files) + pick-tests node cmds | done |
-| T2 | New thread Save for later button and upload sequence; interrupted-save line on stub page; browser specs (S3, S4 page, S6 specs) | viewer/pages/{new.html,new.js,new.css,thread.js}, viewer/test/{app-new-thread,app-threads}.spec.js | standard / claude-sonnet-5-5 | — | test:browser both specs | in progress |
+| T2 | New thread Save for later button and upload sequence; interrupted-save line on stub page; browser specs (S3, S4 page, S6 specs) | viewer/pages/{new.html,new.js,new.css,thread.js}, viewer/test/{app-new-thread,app-threads}.spec.js | standard / gpt-6.1-terra (claude asked for; hub sent it to gpt) | wc-b6eb8da6feac-worker-4 | test:browser both specs | in progress |
 | T3 | Protocol wording in cards.md and lead.md (S5) | protocol/app/{cards,lead}.md | light / gpt-6-luna | wc-b6eb8da6feac-worker-2 | grep checks | done |
 
 ## Log
