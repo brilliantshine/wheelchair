@@ -158,3 +158,19 @@ for (const status of ['waiting', 'starting']) test(`a lead still ${status} takes
     assert.equal(await fs.readFile(stored2, 'utf8'), 'early');
   } finally { await context.close(); }
 });
+
+test('archiving an unopened saved stub removes its machine uploads', { timeout: 30000 }, async () => {
+  const context = await setup();
+  try {
+    const made = (await api(context, '/threads', { method: 'POST', body: { project: context.project, stub: true, message: 'Saved', files: 1 } })).body;
+    assert.deepEqual(made.sessions, []);
+    const base = `${context.server.url}/api/threads/${made.id}`;
+    const headers = { 'x-graph-token': context.server.token, origin: new URL(base).origin, 'content-type': 'application/octet-stream' };
+    const uploaded = await fetch(`${base}/uploads?name=idea.txt`, { method: 'POST', headers, body: 'idea' });
+    assert.equal(uploaded.status, 201);
+    const stored = (await uploaded.json()).path;
+    assert.equal(await fs.readFile(stored, 'utf8'), 'idea');
+    assert.equal((await api(context, `/threads/${made.id}/archive`, { method: 'POST', body: {} })).status, 200);
+    await assert.rejects(fs.access(stored), { code: 'ENOENT' });
+  } finally { await context.close(); }
+});

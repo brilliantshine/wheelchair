@@ -249,3 +249,119 @@ test('a Save refresh that lands after a machine switch does not take the screen 
   await expect(page.locator('#nt-go')).toBeEnabled();
   await expect(page.locator('#saved-list li')).toHaveCount(0);
 });
+
+const file = (name) => ({ name, mimeType: 'text/plain', buffer: Buffer.from(name) });
+const stubRequests = (page) => {
+  const requests = [];
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && (/\/uploads\?/.test(r.url()) || /\/stub-attachments$/.test(r.url())))
+      requests.push({ url: r.url(), body: r.postDataJSON && (/stub-attachments$/.test(r.url()) ? r.postDataJSON() : null) });
+  });
+  return requests;
+};
+
+test('save availability follows text and attachments', async ({ page }) => {
+  await open(page);
+  await expect(page.locator('#nt-go')).toBeEnabled();
+  await expect(page.locator('#nt-save')).toBeDisabled();
+  await page.locator('#nt-message').fill(' idea ');
+  await expect(page.locator('#nt-save')).toBeEnabled();
+  await page.locator('#nt-message').fill('   ');
+  await expect(page.locator('#nt-save')).toBeDisabled();
+  await page.locator('#attachment-input').setInputFiles(file('idea.txt'));
+  await expect(page.locator('#nt-save')).toBeEnabled();
+  await page.getByRole('button', { name: 'Remove idea.txt' }).click();
+  await expect(page.locator('#nt-save')).toBeDisabled();
+});
+
+test('saves a message without starting a lead', async ({ page }) => {
+  await open(page);
+  await page.locator('#nt-message').fill('  A saved idea  ');
+  const created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/threads'));
+  await page.locator('#nt-save').click();
+  const response = await created;
+  expect(response.request().postDataJSON()).toEqual({ project: '/home/fake/code/alpha', machine: 'hub', stub: true, message: 'A saved idea' });
+  await expect(page).toHaveURL(/\/app\/thread\?id=[0-9a-f]+/);
+  const id = new URL(page.url()).searchParams.get('id');
+  await expect(page.locator('#stub-open')).toContainText('A saved idea');
+  await expect(page.getByRole('button', { name: 'Open and start' })).toBeVisible();
+  await expect(page.locator('#stub-open')).not.toContainText(/From |Builds on |waiting|merged/);
+  const thread = await page.evaluate(async (id) => (await (await fetch('/wheelchair/api/threads/' + id + '/chat')).json()), id);
+  expect((thread.thread || thread).sessions).toEqual([]);
+  await page.getByRole('button', { name: 'Open and start' }).click();
+  await expect(page.locator('#stub-open')).toBeHidden();
+});
+
+test('files-only save records each path before the next upload and finishes', async ({ page }) => {
+  await open(page);
+  const requests = stubRequests(page);
+  await page.locator('#attachment-input').setInputFiles([file('first.txt'), file('second.txt')]);
+  const created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/threads'));
+  await page.locator('#nt-save').click();
+  const response = await created;
+  expect(response.request().postDataJSON()).toEqual({ project: '/home/fake/code/alpha', machine: 'hub', stub: true, message: '', files: 2, title: 'first.txt' });
+  await expect(page).toHaveURL(/\/app\/thread\?id=[0-9a-f]+/);
+  const id = new URL(page.url()).searchParams.get('id');
+  expect(requests.map((r) => r.url.includes('/uploads?') ? new URL(r.url).searchParams.get('name') : r.body)).toEqual([
+    'first.txt', { paths: [expect.stringMatching(/first\.txt$/)] }, 'second.txt', { paths: [expect.stringMatching(/second\.txt$/)] }, { paths: [], done: true },
+  ]);
+  await expect(page.locator('#stub-open')).toContainText('first.txt');
+  const thread = await page.evaluate(async (id) => (await (await fetch('/wheelchair/api/threads/' + id + '/chat')).json()), id);
+  expect((thread.thread || thread).title).toBe('first.txt');
+});
+
+test('one attachment is recorded and confirmed before navigation', async ({ page }) => {
+  await open(page);
+  const requests = stubRequests(page);
+  await page.locator('#nt-message').fill('one file');
+  await page.locator('#attachment-input').setInputFiles(file('only.txt'));
+  await page.locator('#nt-save').click();
+  await expect(page).toHaveURL(/\/app\/thread\?id=[0-9a-f]+/);
+  expect(requests.map((r) => r.url.includes('/uploads?') ? 'upload' : r.body)).toEqual([
+    'upload', { paths: [expect.stringMatching(/only\.txt$/)] }, { paths: [], done: true },
+  ]);
+  await expect(page.locator('#stub-open')).toContainText('only.txt');
+});
+
+test('failed second upload leaves the first path and warns on the stub', async ({ page }) => {
+  await open(page);
+  const requests = stubRequests(page);
+  await page.locator('#attachment-input').setInputFiles([file('first.txt'), file('second.txt')]);
+  await page.route('**/uploads?name=second.txt', (route) => route.fulfill({ status: 409, json: { detail: 'nope' } }));
+  await page.locator('#nt-save').click();
+  await expect(page.locator('#form-error')).toContainText('The stub was saved, but not all files were added (could not upload second.txt: nope). Attach them after opening it:');
+  await expect(page.locator('#nt-go')).toBeDisabled();
+  await expect(page.locator('#nt-save')).toBeDisabled();
+  expect(requests.filter((r) => r.body)).toEqual([{ url: expect.any(String), body: { paths: [expect.stringMatching(/first\.txt$/)] } }]);
+  await page.locator('#form-error a').click();
+  await expect(page.locator('#stub-open')).toContainText('[attached:');
+  await expect(page.locator('#stub-open')).toContainText('first.txt');
+  await expect(page.locator('#stub-open')).toContainText('This was still saving its attached files when the save stopped; some may be missing. You can attach them after opening it.');
+  await expect(page.getByRole('button', { name: 'Open and start' })).toBeVisible();
+});
+
+test('a failed final confirmation reports that files were saved', async ({ page }) => {
+  await open(page);
+  await page.locator('#attachment-input').setInputFiles(file('first.txt'));
+  const requests = stubRequests(page);
+  await page.route('**/stub-attachments', (route) => {
+    if (route.request().postDataJSON().done) return route.fulfill({ status: 500, json: { error: 'nope' } });
+    return route.continue();
+  });
+  await page.locator('#nt-save').click();
+  await expect(page.locator('#form-error')).toContainText('The stub was saved with its files, but the app did not confirm it finished:');
+  await expect(page.locator('#form-error a')).toHaveText('Open the thread');
+  expect(requests.filter((r) => r.body).map((r) => r.body)).toEqual([{ paths: [expect.stringMatching(/first\.txt$/)] }, { paths: [], done: true }]);
+  await expect(page.locator('#nt-go')).toBeDisabled();
+  await expect(page.locator('#nt-save')).toBeDisabled();
+});
+
+test('failed stub creation restores both buttons', async ({ page }) => {
+  await open(page);
+  await page.locator('#nt-message').fill('idea');
+  await page.route('**/api/threads', (route) => route.fulfill({ status: 500, json: { error: 'nope' } }));
+  await page.locator('#nt-save').click();
+  await expect(page.locator('#form-error')).toHaveText('Could not save the stub: nope');
+  await expect(page.locator('#nt-go')).toBeEnabled();
+  await expect(page.locator('#nt-save')).toBeEnabled();
+});

@@ -164,7 +164,7 @@ async function upload(hub, request, response, url, id) {
     const current = await hub.thread(id);
     require('./handoff.js').refuseFrozen(hub, current);
     const lead = current.sessions.find((session) => session.role === 'lead' && session.live);
-    if (current.archived || !lead) throw appError(409, 'no live lead or thread is archived');
+    if (current.archived || (!lead && !require('./threads.js').isUnopenedStub(hub, current))) throw appError(409, 'no live lead or thread is archived');
     hub.uploadsInFlight.set(id, (hub.uploadsInFlight.get(id) || 0) + 1);
     return current;
   });
@@ -773,6 +773,20 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (request.method === 'POST' && bits[2] === 'cards' && bits[3] && bits[4] === 'dismiss') {
     return send(response, 200, await hub.dismiss(id, bits[3]));
+  }
+  if (request.method === 'POST' && bits.length === 3 && bits[2] === 'stub-attachments') {
+    if (!Array.isArray(body.paths) || body.paths.some(path => typeof path !== 'string' || !path.trim()) || (Object.hasOwn(body, 'done') && body.done !== true)) throw appError(400, 'invalid stub attachments');
+    const result = await hub.withThread(id, async () => {
+      const thread = await hub.thread(id);
+      require('./handoff.js').refuseFrozen(hub, thread);
+      if (!require('./threads.js').isUnopenedStub(hub, thread)) throw appError(409, 'this thread is not an unopened stub');
+      const lines = body.paths.map(path => `[attached: ${path}]`).join('\n');
+      if (lines) thread.context = [thread.context, lines].filter(Boolean).join('\n\n');
+      if (body.done === true) delete thread.saving_files;
+      await hub.save(thread);
+      return { context: thread.context };
+    });
+    return send(response, 200, result);
   }
   if (request.method === 'POST' && bits[2] === 'open') {
     const result = await hub.openStub(id, body);

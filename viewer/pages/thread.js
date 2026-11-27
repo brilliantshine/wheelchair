@@ -647,6 +647,7 @@
       }
       stubEl.appendChild(p);
     }
+    if (t.saving_files) stubEl.appendChild(el('p', 'warn', 'This was still saving its attached files when the save stopped; some may be missing. You can attach them after opening it.'));
     const actions = el('div', 'actions');
     // Leaving a dependent stub alone is waiting: the hub watches the parent's pull request and
     // marks the stub ready when it merges, so the only choice to offer is starting early.

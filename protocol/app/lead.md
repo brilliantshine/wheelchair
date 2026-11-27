@@ -925,7 +925,12 @@ If a duplicate note or addition is refused for any reason, post a new stub namin
 
 If you are the lead of a stub, your first message is `[wc:context stub]` with that
 summary. Treat it as your starting context; your reply to it is shown to the user, so start
-by saying what you understood and what you will do first. Then take it from step 1.
+by saying what you understood and what you will do first. Then take it from step 1. If the
+summary starts `(saved from the New thread screen)`, the stub has no parent thread: the text
+after that line, up to any "Added from" or "Also came up in" paragraph, is the user's own
+first message (with any `[attached: ...]` lines), and you handle it as their first message.
+The same holds for a restart context's `stub_summary` that starts with that line: it is
+the user's own first message, not background.
 
 ## Mockups
 

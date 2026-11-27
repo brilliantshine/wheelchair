@@ -10,6 +10,8 @@ const { truncateTitle } = require('./card.js');
 const { publicSession, startSession, newSessionName, deliver } = require('./sessions.js');
 const { check: readyCheck, same: sameReady } = require('./ready.js');
 
+const SAVED_IDEA = '(saved from the New thread screen)';
+
 const ARCHIVED_DOCUMENTS = new Set(['MAP.md', 'IDEA.md', 'PLAN.md']);
 
 const execFileAsync = promisify(execFile);
@@ -61,19 +63,26 @@ async function createThread(hub, input) {
   if (!input || typeof input.project !== 'string' || !input.project) {
     throw appError(400, 'project is required');
   }
+  const isStub = input.stub === true;
+  const files = input.files === undefined ? 0 : input.files;
+  const message = typeof input.message === 'string' ? input.message.trim() : '';
+  if (isStub && (!Number.isInteger(files) || files < 0)) throw appError(400, 'invalid files');
+  if (isStub && !message && files < 1) throw appError(400, 'a stub needs a message');
   const machine = input.machine || 'hub';
   const checked = await checkProject(hub, machine, input.project);
   if (!checked.ok) throw appError(400, `${checked.path || input.project} ${checked.reason || 'is not usable'} on ${machine}`);
   const thread = emptyThread({ ...input, project: checked.path });
   // `title` names a thread whose first message comes later (the New thread screen sends it
   // after uploading attachments, which need the thread's id first).
-  const named = input._assistant_title !== undefined ? input._assistant_title : typeof input.message === 'string' ? input.message : input.title;
+  if (isStub) Object.assign(thread, { stub: true, context: message, parent: null, depends_on_parent: false, commits: [], ...(files >= 1 ? { saving_files: true } : {}) });
+  const named = isStub ? (message || input.title) : input._assistant_title !== undefined ? input._assistant_title : typeof input.message === 'string' ? input.message : input.title;
   if (typeof named === 'string') {
     const title = truncateTitle(named.split(/\r?\n/, 1)[0], 60);
     if (title) thread.title = title;
   }
   await hub.save(thread);
   await hub.state.addProject(thread.project);
+  if (isStub) return thread;
   let lead;
   try { lead = await hub.withThread(thread.id, async () => {
     const current = await hub.thread(thread.id);
@@ -109,6 +118,10 @@ async function createStub(hub, parent, card) {
   return child;
 }
 
+function isUnopenedStub(hub, thread) {
+  return thread.stub === true && !thread.sessions.length && !thread.archived && !require('./handoff.js').frozen(hub, thread);
+}
+
 async function openStub(hub, id, input = {}) {
   const thread = await hub.thread(id);
   require('./handoff.js').refuseFrozen(hub, thread);
@@ -118,9 +131,10 @@ async function openStub(hub, id, input = {}) {
     await hub.save(thread);
     return { waiting: true, thread };
   }
+  delete thread.saving_files;
   const lead = await startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '', tier: 'top' });
   const commits = thread.commits?.length ? `\ncommits to cherry-pick: ${thread.commits.join(', ')}` : '';
-  const context = `[wc:context stub] ${thread.context}${commits}`;
+  const context = `[wc:context stub] ${thread.parent ? '' : SAVED_IDEA + '\n'}${thread.context}${commits}`;
   await hub.enqueue(thread, lead.name, context, 'context', true);
   return thread;
 }
@@ -148,7 +162,7 @@ async function restartLead(hub, id, by) {
     cards: thread.cards.filter((card) => !card.replaced),
     pinned: thread.pinned,
     card_kinds: Object.fromEntries(thread.cards.map((card) => [card.id, card.kind])),
-    ...(thread.context ? { stub_summary: thread.context } : {}),
+    ...((thread.stub && !thread.parent) ? { stub_summary: `${SAVED_IDEA}\n${thread.context}` } : thread.context ? { stub_summary: thread.context } : {}),
     recent_messages: (thread.sent || [])
       .filter((message) => message.source === 'user' || message.source === 'card')
       .slice(-20),
@@ -576,6 +590,7 @@ module.exports = {
   createThread,
   dismiss,
   openStub,
+  isUnopenedStub,
   pollWaiting,
   pollMerged,
   press,
