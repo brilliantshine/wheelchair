@@ -1149,7 +1149,7 @@ class MachineService {
     try { await fsp.rm(path.join(this.stateDir, 'settings', `${name}.mcp.json`), { force: true }); }
     catch (error) { this.log(error); }
   }
-  abortToolRuns(name) { for (const controller of this.toolRuns.get(name) || []) controller.abort(); }
+  abortToolRuns(name) { for (const controller of this.toolRuns?.get(name) || []) controller.abort(); }
   async stopFatal(session) {
     this.abortToolRuns(session.name);
     await this.removeMcpConfig(session.name);
