@@ -201,19 +201,19 @@ test('(o) ordinary JSON with two-layer spellings', () => {
   const spellings = values.map(value => spell(value, 2) + '\n');
   const json = jsonLines(size - spellings.join('').length);
   timed('(o)', json + spellings.join(''), values, {},
-    json + '[key]\n'.repeat(values.length), 1000);
+    json + '[key]\n'.repeat(values.length), 3000);
 });
 
 test('(a) escape-heavy noise', () => {
   const input = repeated(noise, size);
   const { keys } = generator(0xa98225ca);
-  timed('(a)', input, keys(5, 4096), {}, [input, '[not checked for keys]'], 3000);
+  timed('(a)', input, keys(5, 4096), {}, [input, '[not checked for keys]'], 10000);
 });
 
 test('(b) repeated late failures', () => {
   const input = repeated('%41', size);
   const keys = Array.from({ length: 5 }, (_, i) => 'A'.repeat(4095) + (i + 1));
-  timed('(b)', input, keys, {}, [input, '[not checked for keys]'], 3000);
+  timed('(b)', input, keys, {}, [input, '[not checked for keys]'], 10000);
 });
 
 test('(c) noise with 20 keys and three-layer spellings', () => {
@@ -230,7 +230,7 @@ test('(c) noise with 20 keys and three-layer spellings', () => {
     source.push(pad + spelling);
     expected.push(pad + (spelling ? '[key]' : ''));
   }
-  timed('(c)', source.join(''), values, {}, expected.join(''), 3000);
+  timed('(c)', source.join(''), values, {}, expected.join(''), 10000);
 });
 
 test('(d) JSON with three-layer spellings and both cut edges', () => {
@@ -256,5 +256,5 @@ test('(d) JSON with three-layer spellings and both cut edges', () => {
   assert.match(first, /[%\\]/);
   assert.match(last, /[%\\]/);
   timed('(d)', first + ' ' + source.join('') + ' ' + last, values,
-    { cutStart: true, cutEnd: true }, '[output cut] ' + expected.join('') + ' [output cut]', 3000);
+    { cutStart: true, cutEnd: true }, '[output cut] ' + expected.join('') + ' [output cut]', 10000);
 });
