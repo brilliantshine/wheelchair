@@ -59,14 +59,14 @@ esac
   machine.versionGate = async () => ({ version: '1.0.0' });
   const promptPath = name => path.join(stateDir, 'prompts', `${name}.md`);
   let count = 0;
-  async function start({ cli = 'codex', role = 'worker', mode = 'unrestricted', choice, accountDir = null } = {}) {
+  async function start({ cli = 'codex', role = 'worker', mode = 'unrestricted', choice, accountDir = null, sessionWorktree = worktree } = {}) {
     const name = `wc-test-${++count}`;
     const input = { cli, role, project, project_dir: root, thread_id: threadId, token: name, ...(choice ? { shared_tools: choice } : {}) };
     const prompt = promptPath(name);
     await fs.mkdir(path.dirname(prompt), { recursive: true });
     await fs.writeFile(prompt, 'role prompt');
     return machine.startIn(input, name, connectors.machine(cli), { id: accountDir ? 'old-account' : 'default' }, accountDir,
-      { codex_mode: mode, permission_mode: 'auto' }, false, { worktree }, prompt, 'role prompt');
+      { codex_mode: mode, permission_mode: 'auto' }, false, { worktree: sessionWorktree }, prompt, 'role prompt');
   }
   const config = async session => {
     const file = session.command[session.command.indexOf('--mcp-config') + 1];
@@ -605,4 +605,20 @@ test('starting prompt excludes keyed clause for keyless or hidden shared scripts
     const plain=await f.start(options); assert.doesNotMatch(await fs.readFile(f.promptPath(plain.name),'utf8'),/Tools that need keys/);
     const hidden=await f.start({...options,choice:remote.choice}); assert.doesNotMatch(await fs.readFile(f.promptPath(hidden.name),'utf8'),/Tools that need keys/); assert.deepEqual(hidden.project_tools.keyed[hidden.name],[]);
   }
+});
+
+
+test('worker on its own worktree reports its missing project and shared keys', async t => {
+  const f = await fixture(t); git(f.worktree, 'init');
+  git(f.worktree, 'config', 'user.email', 'test@example.com'); git(f.worktree, 'config', 'user.name', 'Test');
+  git(f.worktree, 'commit', '--allow-empty', '-m', 'base');
+  const workerWorktree = path.join(f.root, 'worker-worktree'); git(f.worktree, 'worktree', 'add', '--detach', workerWorktree);
+  await keyedTool(workerWorktree, 'own');
+  const remote = await sharedRepo(f); await keyedTool(remote.source, 'shared');
+  git(remote.source, 'add', '.wheelchair'); git(remote.source, 'commit', '-m', 'keyed shared'); git(remote.source, 'push', 'origin', 'main');
+  const session = await f.start({ cli: 'kimi', choice: remote.choice, sessionWorktree: workerWorktree });
+  assert.deepEqual(session.project_tools.keyed[session.name].map(line => line.text), [
+    'tool own needs key TOKEN, not set on this machine when this session started; set it and run again',
+    'shared tool shared needs key TOKEN, not set on this machine when this session started; set it and run again',
+  ]);
 });
