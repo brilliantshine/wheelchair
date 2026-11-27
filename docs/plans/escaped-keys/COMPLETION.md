@@ -2,7 +2,16 @@
 slug: escaped-keys
 date: 2026-11-26
 implemented-by: "heavy / gpt-6.2-sol (T1 attempt 4); earlier attempts standard / gpt-6.1-terra at medium, high, xhigh, not merged"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5 (PASS)
+    checks: heavy / gpt-6.2-sol
+  - round: 2
+    lane: claude / claude-opus-5-5 (FAIL: speed limit)
+    checks: heavy / gpt-6.2-sol; light / gpt-6-luna
+  - round: 3
+    lane: claude / claude-opus-5-5 (PASS)
+    checks: heavy / gpt-6.2-sol; light / gpt-6-luna
 ---
 
 # Completion Report — Hide keys printed in escaped form
@@ -119,3 +128,28 @@ Spec validation command after the fix (exit 0):
 # pass 50
 # fail 0
 ```
+
+### Verification attempt 3 — 2026-11-26
+
+Verifier (claude / claude-opus-5-5) VERDICT: PASS on `c93c384d4494880802c481418295d62f0838bf17`; Spec command 50/50 at load about 30 on 16 cores; no rare paths accepted.
+
+Full run on the same commit (`summary.txt`):
+
+```text
+commit c93c384d4494880802c481418295d62f0838bf17
+suite viewer-browser exit 1 seconds 776
+suite viewer-node exit 1 seconds 245
+suite machine exit 1 seconds 181
+suite test-support exit 0 seconds 25
+suite sensitivity exit 0 seconds 3
+suite codex exit 0 seconds 9
+suite install exit 1 seconds 37
+suite sudo-helper exit 0 seconds 9
+```
+
+The speed fixtures passed in it ((c) 3238.7 ms CPU, (d) 2874.3 ms against 10000 ms). The failures are all in files this change does not touch (the branch changes only `machine/lib/key-redact.js`, `machine/lib/key-spell.js`, `machine/test/key-redact.test.js`, `machine/AGENTS.md`, `protocol/tools.md` and docs):
+- `install`: `real wheelchair directory is byte-identical after suite`, the same failure at the comparison commit `672764ae` (already on main).
+- `machine`: `real launch preparation copies and resumes both providers without new worktrees or first messages` (`machine/test/switch-http.test.js:136`); passes 5/5 alone.
+- `viewer-node`: `6 message clears debt` (`viewer/test/app-quiet.test.js:41`, in all three full runs; 27/27 alone), `archive through the hub cancels a stalled upload to the real machine`, `a verifier report survives a failed submit and the queue timer retries it`.
+- `viewer-browser`: `test/app-agents-decks.spec.js:247` phone, popover invariant across a refresh, page scrolled.
+Not confirmed on main except `install`; the lead checks them in its full run against main, as it asked.
