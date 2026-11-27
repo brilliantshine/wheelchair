@@ -40,6 +40,7 @@ None.
 | 14 | Big replies stay in this thread: the key checker is made memory-safe here rather than split off | Collin: keep it here | user |
 | 15 | (Superseded by 16) The checker gets a memory budget beside its work budget: retained match records are counted, and running out is handled exactly like running out of work (script output shows `[not checked for keys]`; a server line is held back) | Same fallback the checker already has; ordinary large replies stay under it, only pathological ones fall back | review-round-3 |
 | 16 | Supersedes 15: server lines are checked with a streaming JSON reader that undoes JSON escapes first; the escape-aware matcher runs only on escape-containing runs of at most 4 KiB, longer ones count as unchecked; in-place replacement only of raw matches inside string values. `key-spell.js` and `redactCapture` are unchanged | Bounds memory by design instead of by a budget; ordinary JSON escapes never form long runs; script tools untouched | review-round-4 |
+| 17 | After round 6, keep the output-checking work here and run another round | Collin: keep it here (second split offer) | user |
 | 7 | A held-back request from the server to the client is answered on the server's stdin with an error, not dropped silently | Closes the parent's accepted risk of a server left waiting | defaulted |
 | 8 | Server stderr is piped and redacted with the same capture redaction as script output (`redactCapture`), line by line, with cut marks for very long lines | Keys can't contain newlines (parent Decision 16), so the parent's multiline finding is moot | defaulted |
 | 9 | Detection is the parent's rule (Decision 19): any plain or escaped spelling `key-spell.js` finds; a work-budget overrun counts as a key | One rule for scripts and servers | defaulted |
@@ -375,6 +376,15 @@ None.
 | intent | minor | Nested JSON text replies could run out of budget | upheld | Setup reuse, length-based charge, nested-JSON test |
 | intent | minor | `%20` URL test outcome open | upheld | Key lengths and outcome named |
 | intent | minor | Guide doesn't say what makes a message uncheckable | upheld | S8 sentence |
+
+### Round 7 — 2026-11-27
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 6:** S4 (work charge by run length with reused caches; post-exit deadline counts only reading time), S5 (id and generated line must be clean, not just key-free), S8 (what makes a message uncheckable), Validation (nested JSON, URL case outcome, buffer measurement, paused-client exit), Accepted Risks, Decision 17.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
