@@ -7,6 +7,15 @@ const { spawnSync } = require('node:child_process');
 const connectors = require('../../connectors');
 const contract = require('../../connectors/contract');
 const manifests = connectors.list();
+test('Kimi and Pi run keyed tools through the machine', () => {
+  for (const cli of ['kimi', 'pi']) {
+    const half = connectors.machine(cli);
+    assert.equal(typeof half.keyedToolsByMachine, 'function');
+    assert.equal(half.keyedToolsByMachine(), true);
+    assert.equal('keyedToolsReason' in half, false);
+  }
+  assert.ok(contract.OPTIONAL.machine.includes('keyedToolsByMachine'));
+});
 test('registry, manifests and connector halves satisfy the contract', () => {
   const folders = fs.readdirSync(path.join(__dirname, '../../connectors'), { withFileTypes: true }).filter(e => e.isDirectory() && fs.existsSync(path.join(__dirname, '../../connectors', e.name, 'manifest.js'))).map(e => e.name).sort();
   assert.deepEqual(folders, manifests.map(m => m.cli).sort());

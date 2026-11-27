@@ -17,7 +17,7 @@ function resolveCli() { const result = spawnSync('sh', ['-c', 'command -v pi'], 
 const lastAside = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 module.exports = {
   shellToolsOnly() { return true; },
-  keyedToolsReason() { return "this AI can't use yet"; },
+  keyedToolsByMachine() { return true; },
   checkVersion: (service, executable) => module.exports.checkPiVersion.call(service, executable),
   versionStatus(service, login) { const executable = resolveCli(); if (!executable) return { installed: false, logged_in: false }; let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; } service.checkVersion('pi', executable); return module.exports.piVersionStatus(service.piVersions.get(JSON.stringify([executable, mtime]))?.version || null, login); },
   async beforeTurnEvent(service, session, event) {
