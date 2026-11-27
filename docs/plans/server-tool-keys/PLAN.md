@@ -299,7 +299,7 @@ None.
 
 ### Round 4 — 2026-11-27
 
-**Lanes:** (filled at start)
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** Decision 14 (Collin kept big replies here) and 15; S4 Memory (match-record budget in `findSpellings`, used by scripts and servers); S2 warning refresh lists; S8 wording (drop cases, script-only statements); Validation (memory and big-reply cases); Accepted Risks.
 
