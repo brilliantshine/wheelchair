@@ -55,8 +55,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 `bash test-support/under-load.sh [--cpus N] [--hogs H] [--repeat K] -- <command...>`
 
-- Picks the N highest-numbered CPUs it is allowed to run on (from `taskset -pc $$`, not the
-  installed count; default N 2), pins itself and everything it starts to
+- Picks N CPUs at random from those it is allowed to run on (from `taskset -pc $$`, not the
+  installed count; default N 2) and prints them as `under-load: cpus <list>`, so two runs at once usually
+  land on different CPUs; it pins itself and everything it starts to
   them with `taskset -c`, and starts H busy-loop helpers there (default 2 per CPU). Only
   those CPUs are loaded, so other threads on the machine are unaffected. The default
   roughly matches the reported load (about 3 to 4 busy processes per core). Usage errors
@@ -74,6 +75,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   passing and a failing command, the command running pinned to the chosen CPUs, and no helper
   alive after a normal exit and after TERM; the TERM case runs a command that starts a
   child of its own, and checks that child is gone too.
+- That test keeps its own cost small, since it runs in every full run: one helper, one CPU,
+  `--repeat` of at most 2, and commands that finish in under a second.
 - Not run by the full run beyond its own test.
 
 Check: `node --test test-support/test/under-load.test.js`
@@ -325,5 +328,7 @@ A first start of this round's reviewers was stopped before they reported, becaus
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | S1 always picks the same CPUs, so two threads' load checks stack on them | upheld | CPUs picked at random and printed |
+| intent | minor | S1's own test could burn two CPUs on every full run | upheld | Test limited to one helper, one CPU, at most 2 repeats |
 
 ## Implementation Tasks
