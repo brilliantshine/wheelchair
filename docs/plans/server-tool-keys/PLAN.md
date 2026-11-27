@@ -489,6 +489,10 @@ flowchart TD
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | S1, S2, S3 entry args, S8: accept keyed servers in validation, discovery, `serverEntry`, `tool check` without keys, guide | `machine/lib/folder-tools.js`, `machine/service.js`, `machine/lib/project-tools.js`, `viewer/app/tool-cli.js`, `protocol/tools.md`; tests `folder-tools`, `folder-tools-run`, `wc-tool`, `project-tools`, discovery cases in `folder-tools-launch` | standard / gpt-6.1-terra | | S1, S2 commands; `folder-tools-launch`; name guard; S8 greps | in progress |
+| T2 | tricky: S4 reader, detection and per-line outcomes, S5, S6 reply text, as a pure module | `machine/lib/server-lines.js`, `machine/test/server-lines.test.js` (new) | standard / gpt-6.1-terra | | `node --test machine/test/server-lines.test.js`; name guard; key-spell/key-redact unchanged | in progress |
+| T3 | tricky: S3 launcher (args, refusals, key read, spawn env), S4 streaming/backpressure/size limit/shutdown, S6 injection, S7 stderr, keyed path only; after T1 and T2 | `machine/lib/tool-launch.js`, `machine/lib/server-relay.js` (new), launcher tests in `machine/test/folder-tools-launch.test.js` | standard | | S3–S7 command | not started |
+| T4 | End-to-end S4–S6 detection cases of Validation through the launcher; after T3 | `machine/test/folder-tools-launch.test.js` | standard | | S3–S7 command | not started |
 
 ## Log
 
