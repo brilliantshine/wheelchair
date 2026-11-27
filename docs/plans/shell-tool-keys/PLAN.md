@@ -311,7 +311,8 @@ Plus any new test file named above, run with `node --test <file>`.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S6: `runScript` optional abort signal | machine/lib/tool-run.js, machine/test/folder-tools-run.test.js | standard / gpt-6.1-terra | wc-c5d33de8d545-worker | folder-tools-run, -launch, key-redact tests | done |
 | T2 | S1 connector part: `keyedToolsByMachine` in contract, Kimi, Pi, README; export | connectors/contract.js, README.md, kimi/machine.js, pi/machine.js, registry.json, machine/test/connectors-contract.test.js | light / gpt-6-luna | wc-c5d33de8d545-worker-2 | connectors-contract, name-guard, export --check | done |
-| T3 | tricky: S1 eligibility helper, S2 launch, S3, S4 run route, API.md | machine/service.js, machine/API.md, machine/test/project-tools-service.test.js, machine/test/folder-tools-launch.test.js, machine/test/tool-machine-run.test.js | standard / gpt-6.1-terra | wc-c5d33de8d545-worker-5 | Spec Validation machine command | running |
+| T3 | tricky: S1 eligibility helper, S2 launch, S3, S4 run route, API.md | machine/service.js, machine/API.md, machine/test/project-tools-service.test.js, machine/test/folder-tools-launch.test.js, machine/test/tool-machine-run.test.js | standard / gpt-6.1-terra | wc-c5d33de8d545-worker-5 | Spec Validation machine command | done (code); tests continue in T6 |
+| T6 | Finish S2/S4 tests from Validation; fix service route only where a test proves it wrong | machine/test/tool-machine-run.test.js, machine/test/folder-tools-launch.test.js, machine/service.js (run route, machineKeyedTools, abortToolRuns only) | standard / gpt-6.1-terra | | Spec Validation machine command; tool-machine-run ×3 | not started |
 | T4 | S5: CLI machine runs | viewer/app/tool-cli.js, viewer/app/wc.js, viewer/test/wc-tool.test.js | standard / gpt-6.1-terra | wc-c5d33de8d545-worker-3 | wc-tool, app-project-tools-card tests | done |
 | T5 | S7 guide text in protocol/tools.md | protocol/tools.md | standard / gpt-6.1-terra | wc-c5d33de8d545-worker-4 | negative grep; rendered read | done |
 
@@ -339,3 +340,8 @@ Plus any new test file named above, run with `node --test <file>`.
 - 2026-11-27 — Choice: T4, viewer/app/tool-cli.js: `run`'s `roots()` call uses the new request, so every `run` (keyless too) says "did not run" when the machine is unreachable, as S5 asks for roots() (scout-listed).
 - 2026-11-27 — Choice: T4, viewer/test/wc-tool.test.js: refused-connection stub closes its server with `Connection: close` (scout-listed).
 - 2026-11-27 — T4 accepted (band: scout): CLI machine path per S5; 29/29 tests pass on rerun. Scout noted weak spots left for verification: the emoji split test does not assert two chunks arrived, and only one mutation was shown.
+- 2026-11-27 — Choice: T3, machine/service.js: client disconnect detected with the response `close` event; tool-run exit handlers installed lazily just before the first machine run.
+- 2026-11-27 — Choice: T3, machine/service.js: the launch missing-key check for eligible sessions skips the bridge entry for keyed tools (`scriptRows` excludes them) after the store check (scout not used; self read).
+- 2026-11-27 — Choice: T3, machine/service.js: `abortToolRuns` is called from `stop`, `stopFatal` and the archive loop.
+- 2026-11-27 — Choice: T3, machine/test/tool-machine-run.test.js: basic route checks combined into one test.
+- 2026-11-27 — T3 accepted as code only (band: self): service code matches S1–S4 on reading; validation 93/93 passes on the merged tip. The worker reported many required tests missing, so they go to a new task T6.
