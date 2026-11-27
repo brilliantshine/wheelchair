@@ -2,7 +2,10 @@
 slug: settings-solid
 date: 2026-11-26
 implemented-by: "T1 light (gpt-6-luna), T2 standard (gpt-6.1-terra; asked for claude, the hub sent it to gpt), T3 light (gpt-6-luna)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: verifier / claude-opus-5-5 (comparison commit 672764ae)
+    checks: gpt (gpt-6-luna, gpt-6.1-terra)
 ---
 
 # Completion Report — Make the Settings page solid
@@ -54,6 +57,33 @@ $ npm --prefix viewer run test:browser -- app-settings-hold.spec.js app-settings
 ```
 
 Each worker's break check (in `reports/T1.md` and `reports/T2.md`): T1's test failed with the old sentence. With the S2 or S3 change reverted, the matching hold-spec tests failed, and they passed again once the change was restored.
+
+### Verification attempt 1
+
+Verifier (claude-opus-5-5, comparison and picker base `672764ae` = origin/main): **PASS**, no gaps, on `cd66f313`. Its break check (S2/S3 reverted in a scratch clone) failed the Send code test and all three Lead order tests. An earlier verifier briefed with the stale local `main` (`c8fb7e5e`) also reported PASS. I replaced it only because of that base.
+
+### Full run on cd66f313 (the run used for the gate: no other thread's full run was going)
+
+```text
+commit cd66f313afeef6f401b7c8e1a0e548e232699e0d
+suite viewer-browser exit 0 seconds 382
+suite viewer-node exit 0 seconds 95
+suite machine exit 0 seconds 130
+suite test-support exit 0 seconds 24
+suite sensitivity exit 0 seconds 4
+suite codex exit 0 seconds 11
+suite install exit 1 seconds 39
+suite sudo-helper exit 0 seconds 9
+```
+
+The `install` failure is already on main:
+
+```text
+comparison commit 672764aeaa4a1170c7cd6d15af0cfb9673ced4e2 (origin/main)
+install: FAIL real wheelchair directory is byte-identical after suite (RESULT 212 passed, 1 failed), same test and error as on cd66f313
+```
+
+Earlier full runs on the same commit failed while another thread's full runs were going at the same time. Each run failed different tests, none in files this change touches: `browser.spec.js:2157`, `app-agents-decks.spec.js:247` (firefox), `app-views.spec.js:111`, `app-threads.spec.js:573` (firefox), `switch-http.test.js:112/136`, `folder-tools-run.test.js:26` (twice), `full-run.test.js` TERM/HUP, and viewer-node "6 message clears debt". Each passed when run alone on `cd66f313`. `machine/test/run.sh` run alone passed on both `cd66f313` and `672764ae` (869 pass, 0 fail). `folder-tools-run.test.js:26` (stdout cut short of 1,000,000 bytes under load) looks like an intermittent drain bug in main's tool launcher (PR #200). It is not part of this change.
 
 ## Known gaps / residual risks
 
