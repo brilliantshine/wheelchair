@@ -451,7 +451,9 @@ class MachineService {
     try { for (const name of await fsp.readdir(toolsDir)) if (name.endsWith('.tmp')) await fsp.unlink(path.join(toolsDir, name)).catch(error => this.log(error)); } catch (error) { if (error.code !== 'ENOENT') this.log(error); }
     this.config = await readJson(this.configPath, {});
     this.config.host = this.options.host || this.config.host || maybeTailscaleIp();
-    this.config.port = Number(this.options.port || this.config.port || 7374);
+    // Port 0 (any free port, used by tests) is a real choice, not a fallback to 7374.
+    const given = value => value !== undefined && value !== null && value !== '';
+    this.config.port = Number([this.options.port, this.config.port].find(given) ?? 7374);
     if (this.options.hubUrl) this.config.hub_url = this.options.hubUrl;
     if (this.options.secretFile) this.config.secret_file = this.options.secretFile;
     await atomicWrite(this.configPath, `${json(this.config)}\n`);
@@ -2478,6 +2480,8 @@ class MachineService {
     await this.init();
     this.server = http.createServer((request, response) => this.handle(request, response));
     await new Promise((resolve, reject) => { this.server.once('error', reject); this.server.listen(this.config.port, this.config.host, resolve); });
+    // With port 0, sessions must be pointed at the port actually bound (not written to machine.json).
+    this.config.port = this.server.address().port;
     // Spec "Machine service on the hub": spools are retried until the hub acknowledges them.
     this.spoolTimer = setInterval(() => { for (const kind of ['events', 'cards']) this.drainSpool(kind).catch(error => this.log(error)); }, this.spoolInterval);
     this.spoolTimer.unref();
