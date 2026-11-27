@@ -204,3 +204,4 @@ Protocol check (CONTRIBUTING.md: protocol documents have no suite): read the edi
 - 2026-11-27 — Choice: T2, thread.js renderStub: the interrupted-save warning sits after the context and parent lines, before any dependency warning and the actions.
 - 2026-11-27 — Choice: T2, app-new-thread.spec.js: stub state is read through `/threads/<id>/chat`; app-threads.spec.js was left unchanged (the interrupted-save line is covered in app-new-thread.spec.js).
 - 2026-11-27 — T2 accepted (band: scout): every S6 browser bullet covered; sub-lead re-ran app-new-thread.spec.js and app-threads.spec.js, 194/194 pass. Its mutation check was coarse (Save forced off), noted.
+- 2026-11-27 — Verification attempt 1 (claude verifier): PASS on be8bcebb, no gaps, 0 rare paths. Full run on be8bcebb: every suite exit 0.
