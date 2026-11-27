@@ -1,17 +1,17 @@
 # wheelchair
 
-Agents are good at writing code and bad at being held to a plan. This harness holds them to one.
-You talk to a lead agent in a thread, in a browser or on a phone. It maps how the code works,
-agrees what good looks like, and plans one question at a time. Fresh reviewers, from a
-**different model family** when one is signed in, then try to tear the plan apart. Workers build it, and a blind verifier tries to prove the result
-wrong.
+wheelchair runs coding agents on your machine and lets you steer them from a browser or phone.
 
-The documents are the state, not a context window. Each feature gets a directory holding the map,
-the idea, the decision log, the spec, every review round, and what got built. You can stop
-mid-plan and resume a week later.
+Each piece of work is a thread with a lead agent, and ends in one pull request:
 
-The reporting is held to the same standard as the work. Leads write in the style you set, and
-draw a picture when the answer has a shape, as readily as you set in Settings.
+- **Small fixes**: the lead makes the change, has another agent check it, and opens the
+  pull request.
+- **Features** go through a plan. The lead maps the code, asks you one question at a time,
+  and writes a spec. Fresh reviewers (from both model families when Settings asks for both)
+  check the plan, workers build it, and a separate verifier checks the result.
+
+The plan lives in `docs/plans/<slug>/` in the repo, not in an agent's memory, so you can stop
+and pick it up later. The lead's full rules are in `protocol/app/lead.md`.
 
 ## Using the app
 
