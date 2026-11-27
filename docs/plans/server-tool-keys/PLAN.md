@@ -355,7 +355,7 @@ None.
 
 ### Round 6 — 2026-11-27
 
-**Lanes:** (filled at start)
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 5:** S4 (outcome 2 conditions; one work budget per line with setup cost, short runs skipped, shared key tables via a new `key-spell.js` export; backpressure), S7 (carry-over at piece edges), S8 (escaped echoes held back), Validation, Accepted Risks.
 
