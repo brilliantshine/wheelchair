@@ -82,7 +82,8 @@ the message names the file.
 `run_case` starts the installer with `WHEELCHAIR_MODELS` and `WHEELCHAIR_MODELS_CACHE`
 removed (`env -u`), in both the normal and the `detect_path` command forms.
 
-The suite tests this: for one ordinary case and one `detect_path` case, export both
+The suite tests this: for one ordinary case and one `detect_path` case whose installer
+exits 0 (so it reaches model initialization at `install.sh:168`), export both
 variables in the suite's shell pointing at paths under `$fixture` (for example
 `$fixture/leak/models` and `$fixture/leak/models-cache`) just for that `run_case`, then
 assert neither path exists afterwards and the case's own `${home[<case>]}/.wheelchair/models`
