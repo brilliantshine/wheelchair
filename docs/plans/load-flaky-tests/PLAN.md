@@ -67,7 +67,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   with stdin from `/dev/null`, its
   output passed through, then prints `under-load: pass <p> of <K>` and exits 0 only if all
   K passed, else 1. Usage errors exit 2.
-- Kills every helper on normal exit and on TERM, HUP and INT; a signal also sends TERM to
+- Kills every helper on normal exit and on TERM, HUP and INT (INT works only when the
+  harness runs in the foreground; a background caller cancels it with TERM, and its test
+  uses TERM); a signal also sends TERM to
   the running command's whole process group, waits up to 60 s for it to empty (longer than
   S2's 45 s runner cleanup, so a nested full-run fixture can finish stopping), then KILLs
   it, and exits non-zero. Processes the command moved into groups of their own are the
@@ -335,5 +337,16 @@ A first start of this round's reviewers was stopped before they reported, becaus
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | major | S7 stops only `pollTimer`; `trustTimer` (500 ms) also calls `checkReady` on a just-switched session | upheld | Fixture stops every timer that reaches `checkReady` |
+| mechanics | blocking | S7 leaves the 500 ms trust timer running (same as the intent finding) | upheld | Same fix |
+| mechanics | minor | S1's INT cleanup cannot work when launched in the background | upheld | INT for foreground only; TERM is the supported cancel |
+
+### Round 6 — 2026-11-26
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 5:** S7 (fixture stops every timer that reaches `checkReady`, including `trustTimer`); S1 (INT only in the foreground; TERM is the supported cancel).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
