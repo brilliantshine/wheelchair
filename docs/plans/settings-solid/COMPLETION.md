@@ -28,7 +28,7 @@ Written for a hostile reviewer: every claim checkable, no claim without evidence
 
 ## Deviations from plan
 
-- The expired case of S2 is not tested on its own. Expiry goes through the same `fail()` (`viewer/pages/settings.js:1540` calls `fail()`), which clears `waiting`, and `:147` tests the failed path.
+- The expired case of S2 is not tested on its own. Expiry goes through the same `fail()` (`viewer/pages/settings.js:1542` calls `fail()`), which clears `waiting`, and `:147` tests the failed path.
 - No other deviations.
 
 ## Routers
