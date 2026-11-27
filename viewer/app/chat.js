@@ -46,7 +46,7 @@ async function sessionChatItems(hub, thread, session) {
   const key = `${thread.machine}/${session.name}`;
   const route = `/v1/sessions/${encodeURIComponent(session.name)}/transcript`;
   const store = hub.transcripts ??= new Map();
-  const parsedKey = session.cli + JSON.stringify([thread.parent_title]);
+  const parsedKey = session.cli + JSON.stringify([thread.parent, thread.parent_title]);
   const now = () => hub.now ? hub.now() : Date.now();
   try {
     const entry = store.get(key);
