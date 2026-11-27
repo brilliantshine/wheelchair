@@ -1232,7 +1232,7 @@
 
   const LENGTHS = [['short', 'Short'], ['balanced', 'Balanced'], ['thorough', 'Thorough']];
   const LISTS = [['prose', 'Mostly prose'], ['when-helpful', 'When it helps scanning'], ['always', 'Always']];
-  const TERMS = [['build-up', "Build up to them, unless we've used them before"], ['freely', 'Use freely'], ['avoid', 'Avoid entirely']];
+  const TERMS = [['build-up', 'Plain words first, build up if needed'], ['freely', 'Use freely'], ['avoid', 'Avoid entirely']];
   const SAMPLE = "It's worth noting that the idempotency guarantee here is load-bearing: because the hook fires on every turn, any non-idempotent side effect in the notify path would compound across retries, so I've restructured the handler accordingly.";
   let pending = null; // the never-say input, for a phrase typed but not yet added
   let withPane = null;
@@ -1335,7 +1335,7 @@
         h('div', { class: 'box rows' },
           row('Length', '', radios('Length', LENGTHS, 'length')),
           row('Lists and headings', '', radios('Lists and headings', LISTS, 'lists')),
-          row('Technical terms', 'Whether the lead can assume you know a term', h('div', { class: 'ctl wide' }, terms)))),
+          row('Technical terms', 'How the lead handles technical terms', h('div', { class: 'ctl wide' }, terms)))),
       h('section', { 'aria-labelledby': 'ban' },
         h('h2', { id: 'ban', text: 'Never say' }),
         h('div', { class: 'box ban' }, chips,
@@ -1434,7 +1434,7 @@
     if (next) usage = next;
     usageError = failure;
     paint('usage');
-    if (!accountsBusy()) paint('accounts');
+    if (!accountsBusy() && !(signCard && signCard.waiting && signCard.el.isConnected && blockHost('accounts')?.contains(signCard.el))) paint('accounts');
   }
 
   // After a sign-in or an account change. The hub keeps each machine's answer for 15 seconds;
@@ -1511,12 +1511,13 @@
     const root = h('section', { class: 'box signin-card', 'aria-label': 'Sign in', 'data-account': account.id },
       h('div', { class: 'head-line' }, h('h2', { text: `Sign in ${account.name} on ${machine}` }), closeBtn),
       status, actions, codeBox, pasteWrap, h('div', { class: 'actions' }, termLink));
-    const card = { account: account.id, provider: account.provider, machine, atCards: Boolean(atCards), el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
+    const card = { account: account.id, provider: account.provider, machine, atCards: Boolean(atCards), el: root, waiting: true, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
     signCard = card;
     const hostEl = atCards ? providerGroup(account.provider)?.querySelector('.prov-signin') : document.getElementById('signin-host');
     if (hostEl) hostEl.replaceChildren(root);
 
     const fail = () => {
+      card.waiting = false;
       status.className = 'inline-err';
       status.textContent = "Couldn't read the sign-in screen";
       actions.replaceChildren(h('a', { class: 'btn-link', href: terminal, target: '_blank', rel: 'noopener', text: 'Open terminal' }));
@@ -1528,6 +1529,7 @@
     const paint = (st) => {
       if (signCard !== card) return;
       if (st.state === 'done' && st.logged_in) {
+        card.waiting = false;
         root.classList.add('done');
         status.className = 'note'; status.textContent = 'Signed in.';
         actions.replaceChildren(); codeBox.replaceChildren(); pasteWrap.hidden = true;
@@ -1567,7 +1569,7 @@
       const base = `/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}`;
       try {
         await api(`/accounts/${encodeURIComponent(account.id)}/signin`, { method: 'POST', body: { machine } });
-      } catch (e) { status.className = 'inline-err'; status.textContent = e.message; return; }
+      } catch (e) { card.waiting = false; status.className = 'inline-err'; status.textContent = e.message; return; }
       const tick = async () => {
         try { paint(await api(base)); } catch (e) { if (signCard === card && expired()) fail(); }
       };
@@ -2481,16 +2483,26 @@
   };
   const blockHost = (name) => panel.querySelector(`.block[data-block="${name}"]`);
 
-  // A button that moves mid-press loses the click. Hold an on-screen sign-in card even
-  // when the block above it is partly visible. Otherwise hold the next block only when
-  // the repaint is wholly above the screen.
+  let pressed = null; let lastMouse = null;
+  panel.addEventListener('pointerdown', (e) => { pressed = e.target; });
+  window.addEventListener('pointerup', () => { pressed = null; });
+  window.addEventListener('pointercancel', () => { pressed = null; });
+  panel.addEventListener('pointermove', (e) => { lastMouse = e.pointerType === 'mouse' ? { x: e.clientX, y: e.clientY } : null; });
+  panel.addEventListener('pointerleave', () => { lastMouse = null; });
+
+  // Hold the pressed, focused, hovered or sign-in element in that order when it is
+  // visible below the repainted host; otherwise use the next-block fallback.
   function holdPlace(host) {
     const top = document.getElementById('app-nav')?.getBoundingClientRect().bottom || 0;
-    const card = signCard?.el;
-    if (card?.isConnected && !host.contains(card) && (host.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING)) {
-      const before = card.getBoundingClientRect();
+    const inside = (el) => el instanceof Element && panel.contains(el) ? el : null;
+    const candidates = [inside(pressed), inside(document.activeElement),
+      inside(lastMouse ? document.elementFromPoint(lastMouse.x, lastMouse.y) : null), signCard?.el];
+    for (const anchor of candidates) {
+      if (!(anchor instanceof Element) || !anchor.isConnected || host.contains(anchor) ||
+          !(host.compareDocumentPosition(anchor) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+      const before = anchor.getBoundingClientRect();
       if (before.bottom > top && before.top < window.innerHeight) {
-        return () => window.scrollBy(0, card.getBoundingClientRect().top - before.top);
+        return () => window.scrollBy(0, anchor.getBoundingClientRect().top - before.top);
       }
     }
     const next = host.nextElementSibling;
