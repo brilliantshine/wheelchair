@@ -93,7 +93,9 @@ of string values (the caller's environment).
 Checks, in order, before anything runs; each refusal is `{ error }` with the status shown
 and runs nothing:
 
-1. Session not eligible (S1): 403 `this session can't run keyed tools through the machine`.
+1. Session ended (it has `ended_at`, or its status is `ended`, `stopped` or `failed`, the
+   same test the shared-copy pin uses in `prepareLaunch`): 403 `this session has ended`.
+   Session not eligible (S1): 403 `this session can't run keyed tools through the machine`.
 2. Body invalid (`name` not a string, `input` not a plain object, `env` not an object of
    strings, or `env.PATH` missing): 400 naming the field.
 3. Discover with `folderTools.discover({ worktree: session.worktree, shared:
@@ -118,6 +120,8 @@ the session record.
 
 - **Disconnect:** if the client connection closes before the response is written, abort
   the run's signal so its process group is killed (S6), and write nothing.
+- **Session stopped mid-run:** stopping a session kills its tmux session, which ends the
+  CLI; its connection closes and the disconnect rule above kills the tool.
 - **Service shutdown:** before the first machine run, the service calls the runner's
   `installExitHandlers()` (`machine/lib/tool-run.js`), so a stop or restart (SIGTERM,
   SIGINT, SIGHUP, or normal exit) kills every live tool group, as the bridge does today.
@@ -192,7 +196,7 @@ Targeted tests to add (each names its file):
   `machine/test/tool-machine-run.test.js`): S4 — each refusal 1–4 with its status and
   text and nothing run; a Kimi-like session runs a keyed tool and gets its output with the
   key value replaced; the caller's `PATH` decides program lookup (a program only on the
-  caller's PATH runs); caller env reaches the tool, the session token does not; a key set after launch is used by the next run; a key
+  caller's PATH runs); caller env reaches the tool, the session token does not; a key set after launch is used by the next run; an ended session's token is refused; a key
   overrides a same-named caller variable; closing the request mid-run kills the tool's
   group (a marker child is gone shortly after); a reviewer, assistant, project lead and
   sandboxed Codex session are refused.
@@ -215,12 +219,17 @@ node connectors/export.js --check
 ! grep -nE "Kimi and Pi can't|cannot use keyed tools yet" protocol/tools.md
 ```
 
+Protocol documents have no suite (`CONTRIBUTING.md`, Validation): read the rendered
+`protocol/tools.md` sections S7 names and check they agree with S2's starting-instructions
+text.
+
 Plus any new test file named above, run with `node --test <file>`.
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| The machine service dies without running its exit handlers (a crash or SIGKILL) while a machine run is in progress; the tool keeps running until it ends by itself, because the unit uses `KillMode=process` and the live set is in memory | Needs a service crash and a tool mid-run at once (`realism.md`, rare path); stop and restart send SIGTERM, which is handled | review-round-1 |
 | An agent can edit a keyed tool's script in its worktree to print a key in a form redaction doesn't catch | Same as MCP today (parent plan, Decisions 20 and 23); the guide forbids it | planning |
 
 ## Check Once Built
@@ -241,6 +250,11 @@ Plus any new test file named above, run with `node --test <file>`.
 | intent | major | Launch binding makes `list` say "set" while `run` refuses as changed | upheld | Decision 10: live reads; S2 record and S4 check 4 removed |
 | intent | minor | S7 misses the AI limits paragraph and the MCP-only sentence in tools.md | upheld | S7 names all three places; negative grep in Validation |
 | intent | minor | Old findings closed (observation) | declined | Not a defect; confirms coverage |
+| mechanics | blocking | Ended sessions' tokens still authorize runs | downgraded (minor) | No live agent holds the token after stop (tmux killed); same for every agent route today. Fixed anyway: S4 check 1 refuses ended sessions |
+| mechanics | blocking | `list` shows set while launch binding refuses | upheld (major) | Same as intent finding; Decision 10 |
+| mechanics | major | Launch snapshot uses service PATH, caller PATH may differ → 409 | upheld | Moot with Decision 10: no snapshot; run discovers with caller PATH |
+| mechanics | major | Service crash bypassing handlers leaves tools running | accepted-risk | Rare path: crash and mid-run tool together; Accepted Risks |
+| mechanics | minor | AI limits paragraph; rendered guide review | upheld | S7 (as intent finding); Validation names the rendered review |
 
 ## Implementation Tasks
 
