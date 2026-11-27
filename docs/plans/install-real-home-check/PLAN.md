@@ -141,6 +141,10 @@ grep -n 'real wheelchair directory is byte-identical' install/test/run.sh   # pr
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | S1-S5: narrow real-folder check to `models`/`.lock`, move after-check to end, self-check, strip model env overrides | `install/test/run.sh` | standard, gpt gpt-6.1-terra | wc-baaac1dda694-worker | `bash install/test/run.sh`; grep for old assert prints nothing | in progress |
+| T1 | S1-S5: narrow real-folder check to `models`/`.lock`, move after-check to end, self-check, strip model env overrides | `install/test/run.sh` | standard, gpt gpt-6.1-terra | wc-baaac1dda694-worker | `bash install/test/run.sh`; grep for old assert prints nothing | done |
 
 ## Log
+- 2026-11-26 — Choice: T1, run.sh S5 asserts: added a shared predicate `model_overrides_ignored` (run.sh:82) so the two override asserts add no ShellCheck SC2016 notes.
+- 2026-11-26 — Choice: T1, `real_wheelchair_mismatch` (run.sh:65-72): matches each listed path's line with unanchored `grep -F "<path> "`; correct for `models`/`.lock`, a future path that is a suffix of another would need anchoring.
+- 2026-11-26 — Choice: T1, final check (run.sh:841-848): written as an if/pass/fail block so the fail message names the changed files; paths in the message joined with ", ".
+- 2026-11-26 — T1 accepted (band: scout): suite re-run by the sub-lead on e2f807d6 with the real HOME, 217 passed, 0 failed; old assert grep prints nothing; the worker's three negative checks failed as intended; scout found no Spec deviation.
