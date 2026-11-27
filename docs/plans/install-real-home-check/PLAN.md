@@ -38,9 +38,10 @@ All changes are in `install/test/run.sh`. No other file changes.
 ### S1. The real-folder list
 
 Near the other helpers, define the list of real-folder paths the installer can write,
-relative to `$HOME/.wheelchair`: `models` and `.lock`. A comment above it says: this is
-everything `install.sh` and the programs it runs can write under `~/.wheelchair`
-(`codex/model.sh` `init`: `models` only if absent, `.lock` on every locked write); add a
+relative to `$HOME/.wheelchair`: `models` and `.lock`. A comment above it says: these are
+the lasting files `install.sh` and the programs it runs can write under `~/.wheelchair`
+(`codex/model.sh` `init`: `models` only if absent, written through a short-lived
+`.models.*` file renamed into place; `.lock` on every locked write); add a
 path here when the installer gains a new write there; the running app's own files
 (accounts, `agy-models.json`, `installs/`) are deliberately left out because they change
 during a run.
@@ -71,7 +72,8 @@ existing `file_state`. A listed path that is a directory or symlink is recorded 
 Before the real before-copy, the suite checks the helper on a scratch directory under
 `$fixture`: record it, then (a) change `models`, (b) create `.lock` where it was absent,
 (c) add an unlisted file `agy-models.json` and an `accounts/x/wheelchair-account.json`.
-Assert that (a) and (b) are reported as changed, naming the path, and that (c) alone
+Make (a) and (b) together and compare once: assert the result reports both and the message
+names both `models` and `.lock`. Then, on a fresh scratch directory, assert that (c) alone
 leaves the state equal. Use the same mismatch-message code as S3, so the self-check proves
 the message names the file.
 
@@ -79,6 +81,12 @@ the message names the file.
 
 `run_case` starts the installer with `WHEELCHAIR_MODELS` and `WHEELCHAIR_MODELS_CACHE`
 removed (`env -u`), in both the normal and the `detect_path` command forms.
+
+The suite tests this: for one ordinary case and one `detect_path` case, export both
+variables in the suite's shell pointing at paths under `$fixture` (for example
+`$fixture/leak/models` and `$fixture/leak/models-cache`) just for that `run_case`, then
+assert neither path exists afterwards and the case's own `${home[<case>]}/.wheelchair/models`
+does. Unset them again before the next case.
 
 ### Non-goals
 
@@ -99,6 +107,7 @@ grep -n 'real wheelchair directory is byte-identical' install/test/run.sh   # pr
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | Changing a model pin in Settings while the install suite runs fails the real-folder check | One false failure in a test run, fixed by rerunning; bytes cannot tell it from a leak (Decision 7) | planning |
+| `file_state` treats a listed path that is a directory or an unreadable file as `present:` with an empty hash, and follows symlinks, so such a change could compare equal | Needs a listed file to be replaced by a directory, made unreadable, or swapped for a symlink with the same bytes; none of these happen in ordinary running | review-round-1 |
 | A first-ever `.lock` created by the live app during the suite fails the check | Needs the machine's very first model write to land inside one suite run | planning |
 
 ## Review Rounds
@@ -111,6 +120,11 @@ grep -n 'real wheelchair directory is byte-identical' install/test/run.sh   # pr
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | minor | S1 calls the two paths exhaustive, but `init` also makes a short-lived `.models.*` file | upheld | S1 says "lasting files" and names the temp file |
+| mechanics | minor | Rare path: `file_state` gives `present:` for a failed read or directory and follows symlinks | accepted-risk | Rare path; Accepted Risks |
+| mechanics | minor | S4 single-path changes cannot show the message names every changed path | upheld | S4 changes both in one comparison and asserts both names |
+| mechanics | minor | Nothing tests that S5 removes the overrides | upheld | S5 adds a test with scratch override values, both command forms |
 
 ## Implementation Tasks
 
