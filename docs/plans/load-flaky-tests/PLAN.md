@@ -305,7 +305,7 @@ A first start of this round's reviewers was stopped before they reported, becaus
 
 ### Round 4 — 2026-11-26
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** S1 (CPUs picked at random and printed; small cost for its own test; 60 s before KILL); S2 (stub trap waits 1 s before `stopped`); S8 (the bottom-scroll test also waits for round 41); S9 removed and split off (Decision 12), with IDEA.md updated; S9's Accepted Risks removed with it.
 
