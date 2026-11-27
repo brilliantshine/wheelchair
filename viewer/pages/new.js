@@ -7,6 +7,7 @@
   const machineEl = $('nt-machine');
   const projectEl = $('nt-project');
   const goEl = $('nt-go');
+  const saveEl = $('nt-save');
   let state = null;       // the last /new-thread answer
   let loadSeq = 0;
   let started = false;    // a thread exists: Start stays off and its error stays up
@@ -64,6 +65,7 @@
     projectEl.disabled = empty;
     goEl.disabled = empty || started || sending;
     $('nt-import').disabled = empty || started || sending;
+    syncSave();
     $('nt-empty').hidden = !empty;
     const path = empty ? '' : projectEl.value;
     show($('nt-path'), path);
@@ -140,7 +142,7 @@
     $('saved-list').textContent = '';
     $('saved-empty').hidden = true;
     if (state) syncProject(0);
-    else { projectEl.disabled = true; goEl.disabled = true; }
+    else { projectEl.disabled = true; goEl.disabled = true; syncSave(); }
     load('');
   });
   projectEl.addEventListener('change', () => syncProject(projectEl.options.length));
@@ -166,6 +168,7 @@
   let attachments = [];
   const chips = $('attachments');
   function renderAttachments() {
+    syncSave();
     chips.textContent = '';
     attachments.forEach((file, i) => {
       const chip = el('span', 'attachment-chip');
@@ -199,6 +202,10 @@
   }
   const fileInput = $('attachment-input');
   const messageEl = $('nt-message');
+  function syncSave() {
+    saveEl.disabled = goEl.disabled || sending || started || (!messageEl.value.trim() && !attachments.length);
+  }
+  messageEl.addEventListener('input', syncSave);
   $('nt-attach').addEventListener('click', () => { if (!sending) fileInput.click(); });
   fileInput.addEventListener('change', () => { addFiles(fileInput.files, false); fileInput.value = ''; });
   messageEl.addEventListener('paste', (ev) => { if (ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
@@ -207,15 +214,16 @@
 
   // Uploads need the thread's id, so with attachments the thread starts first (named from the
   // message), the files go up, and the message carrying their paths follows.
-  async function sendFirst(id, message, files) {
+  async function uploadFile(id, file) {
     const T = API + '/threads/' + encodeURIComponent(id);
+    const res = await fetch(T + '/uploads?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error('could not upload ' + file.name + ': ' + (out.detail || out.error || 'http ' + res.status));
+    return out.path;
+  }
+  async function sendFirst(id, message, files) {
     const paths = [];
-    for (const file of files) {
-      const res = await fetch(T + '/uploads?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error('could not upload ' + file.name + ': ' + (out.detail || out.error || 'http ' + res.status));
-      paths.push(out.path);
-    }
+    for (const file of files) paths.push(await uploadFile(id, file));
     const text = [message, paths.map((path) => '[attached: ' + path + ']').join('\n')].filter(Boolean).join('\n\n');
     await call('/threads/' + encodeURIComponent(id) + '/messages', json('POST', { text }));
   }
@@ -255,6 +263,44 @@
         banner.appendChild(link); banner.hidden = false;
         return;
       }
+    }
+    location.href = where;
+  });
+
+  saveEl.addEventListener('click', async () => {
+    if (saveEl.disabled || !state || state.machine !== machineEl.value) return;
+    const message = messageEl.value.trim();
+    const files = attachments.slice();
+    const body = { project: projectEl.value, machine: state.machine, stub: true, message };
+    if (files.length) { body.files = files.length; if (!message) body.title = files[0].name; }
+    goEl.disabled = true; setSending(true);
+    let data;
+    try { data = await call('/threads', json('POST', body)); }
+    catch (e) {
+      show($('form-error'), 'Could not save the stub: ' + e.message);
+      setSending(false); syncProject(projectEl.options.length);
+      return;
+    }
+    started = true;
+    const where = '/wheelchair/app/thread?id=' + encodeURIComponent(data.id);
+    const route = '/threads/' + encodeURIComponent(data.id) + '/stub-attachments';
+    const banner = (text) => {
+      const box = $('form-error'); box.textContent = text;
+      const link = el('a', '', 'Open the thread'); link.href = where;
+      box.appendChild(link); box.hidden = false;
+    };
+    if (files.length) {
+      try {
+        for (const file of files) {
+          const path = await uploadFile(data.id, file);
+          await call(route, json('POST', { paths: [path] }));
+        }
+      } catch (e) {
+        banner('The stub was saved, but not all files were added (' + e.message + '). Attach them after opening it: ');
+        return;
+      }
+      try { await call(route, json('POST', { paths: [], done: true })); }
+      catch (e) { banner('The stub was saved with its files, but the app did not confirm it finished: '); return; }
     }
     location.href = where;
   });
