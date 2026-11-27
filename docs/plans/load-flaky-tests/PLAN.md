@@ -198,4 +198,13 @@ Unchanged: no re-runs. Any suite exit other than 0 fails the run (Decision 5).
 
 ## Review Rounds
 
+### Round 1 — 2026-11-26
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
