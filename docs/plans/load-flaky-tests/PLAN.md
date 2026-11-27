@@ -1,6 +1,6 @@
 ---
 slug: load-flaky-tests
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-26
 ---
 
@@ -10,10 +10,7 @@ created: 2026-11-26
 
 ## Open Questions
 
-### Q2: How should the install suite's check of the real wheelchair folder work?
-- **Context:** `install/test/run.sh:234,705` hashes all of `~/.wheelchair` before and after the suite. Live AI sessions keep writing there (conversations, history, caches under `accounts/<name>/`), so on a machine running wheelchair it always fails. It exists to catch the suite or the code it runs writing into the real folder instead of its fake home.
-- **Options:** (a) Byte-check only the files wheelchair's own code writes there (everything outside the AI tools' own folders and files under `accounts/<name>/`), and ignore what the AI tools write while running. (b) Give every fixture a unique marker and fail if any file under the real folder that changed during the suite contains or is named by it. (c) Both.
-- **Recommendation:** (a): it keeps a byte-for-byte check on every file wheelchair could leak, and needs no marker plumbing.
+None.
 
 ## Watch List
 
@@ -31,79 +28,168 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | The full-run stop test is fixed in the runner too: after a stop signal the runner waits for every process in both suites to end before exiting | The runner leaves browser test processes running after it exits; the test is right to expect them stopped | defaulted |
 | 4 | No mockups: nothing here is visible in an app | Test-only and runner change | defaulted |
 | 5 | The full run never re-runs a failed test; any failure fails the run | Collin picked "No re-run": a retry could let a real timing bug through | user |
+| 6 | The install suite byte-checks only what wheelchair itself writes in the real `~/.wheelchair`, and skips what the AI tools write there while sessions run | Collin picked "Wheelchair's own files": passes while sessions run and still catches a wheelchair leak | user |
+| 7 | Fixtures in `lifecycle.test.js` that start the real viewer with an explicit `--port` keep the probe-then-bind pattern unless a load run reproduces a clash there | Only the test's own holder has a reported failure; the viewer's own port handling is what those tests check | defaulted |
 
 ## Spec
 
-Draft; grows as decisions land.
-
 ### General rules for every fix
 
-- No assertion is removed, and no expected value is loosened. A timing budget may grow; a
-  check that "nothing happened" must wait past the timer it guards with margin, and that
-  timer is set long enough that the steps before it fit under load.
-- Waits poll against a time deadline, never a fixed number of iterations.
+- No assertion is removed, and no expected value is loosened. A timing budget may grow. A
+  check that "nothing happened" waits past the timer it guards, with margin, and that timer
+  is set long enough that the steps before it fit under load.
+- Waits poll to a time deadline, never a fixed number of iterations.
 - A waiter for a request or response is registered before the action that causes it.
-- When a fix's cause is a product race rather than a test race, the product is fixed.
+- When a cause turns out to be a product race (wheelchair code, not test code), the product
+  is fixed and the fix is named in the task report.
+- New files that need picker coverage get a `test-support/test-map.json` entry, per that
+  file's existing pattern.
+- "Passes under load" below means
+  `bash test-support/under-load.sh --hogs 3 --repeat <K> -- <command>` exits 0.
 
-### S1. A load harness
+### S1. A load harness: `test-support/under-load.sh`
 
-New `test-support/under-load.sh [--hogs N] [--repeat K] -- <command...>`: pins itself to
-one CPU (`taskset`), starts N busy-loop helpers on that same CPU (default 3), runs the
-command K times (default 5), prints `pass <p> of <k>`, and exits 0 only if all passed.
-It kills the helpers on exit and on TERM/HUP/INT. A test under `test-support/test/`
-checks the count line, the exit code and that no helper outlives it.
+`bash test-support/under-load.sh [--hogs N] [--repeat K] [--cpu C] -- <command...>`
 
-### S2. Full-run stop (`test-support/full-run.sh`, `test-support/test/full-run.test.js:50`)
+- Picks CPU C (default: the highest-numbered CPU, `$(nproc --all) - 1`), pins itself and
+  everything it starts to it with `taskset -c C`, and starts N busy-loop helpers there
+  (default 3). Only that one CPU is loaded, so other threads on the machine are unaffected.
+- Runs the command K times in a row (default 5), each with stdin from `/dev/null`, its
+  output passed through, then prints `under-load: pass <p> of <K>` and exits 0 only if all
+  K passed, else 1. Usage errors exit 2.
+- Kills every helper on normal exit and on TERM, HUP and INT; a signal also stops the
+  running command and exits non-zero.
+- Without `taskset` it prints `under-load: taskset not found` and exits 2.
+- Tested by `test-support/test/under-load.test.js`: the count line and exit code for a
+  passing and a failing command, the command running pinned to one CPU, and no helper
+  alive after a normal exit and after TERM.
+- Not run by the full run beyond its own test.
 
-Cause: the browser job's leader is a subshell; `wait` returns when it dies, before its
-child has handled TERM, so the runner exits first. The fixture stub also writes `start`
-before installing its trap. Fix: after TERM, the runner polls each stopped process group
-until it is empty (up to 10 s, then KILL the group) before exiting 1; the stub installs its
-trap before writing `start`. The test keeps both `stopped` assertions.
+Check: `node --test test-support/test/under-load.test.js`
+
+### S2. Stopping a full run (`test-support/full-run.sh:34-45`, `test-support/test/full-run.test.js:50`)
+
+Cause: the browser job's leader is a subshell. On TERM, `wait` returns when the subshell
+dies, before its child has handled TERM, so the runner can exit while browser tests still
+run; the test then finds no `viewer-browser stopped`. The fixture stub also writes `start`
+before installing its trap, so a signal can land before the trap exists.
+
+- `stop_run`, after sending TERM to each recorded group, polls every 0.1 s until no process
+  is left in that group (`kill -0 -- -<pgid>` fails), for up to 10 s; it then sends KILL to
+  any group still present, and exits 1 without writing `summary.txt`, as today.
+- The fixture stub installs its trap before it writes `start`.
+- Both `stopped` assertions and the no-summary assertion stay.
+
+Check: `node --test test-support/test/full-run.test.js`, and it passes under load with
+`--repeat 10`.
 
 ### S3. Pre-prefix holder (`viewer/test/lifecycle.test.js:57-77,255`)
 
-Cause (likely): the port is probed free, released, then bound by the holder; another
-process can take it in the gap and the holder exits 1 on EADDRINUSE. Fix: the holder
-listens on port 0 and prints its bound port, which the test then uses; an early exit's
-error includes the holder's stderr. Same for any other fixture in that file using the
-probe-then-child-binds pattern.
+Cause (likely): the test probes a free port, releases it, then the holder binds it; another
+process can take it in the gap, and the holder exits 1 on EADDRINUSE.
 
-### S4. Quiet test 6 (`viewer/test/app-quiet.test.js:41`) and its siblings
+- The holder listens on port 0 and prints `ready <port>`; `prePrefixHolder` reads the port
+  from that line and returns it, and the tests use that port.
+- If the holder exits before `ready`, the error includes its exit code and stderr.
+- Other fixtures stay as they are (Decision 7).
 
-Cause: a 50 ms grace between the turn ending and the worker's message; under load the
-message lands after the grace and the nudge fires. Fix: tests whose check is "no nudge"
-run with a grace long enough for their steps (at least 2 s) and wait past it with margin
-before checking.
+Check: `node --test viewer/test/lifecycle.test.js`, and it passes under load.
+
+### S4. Quiet-agent tests (`viewer/test/app-quiet.test.js`)
+
+Cause: the file uses a 50 ms grace between a turn ending and the nudge. In test 6 the
+worker's message must land inside it; under load it lands later and the nudge fires.
+
+- Each test in the file whose check is "no nudge" or "no submit" after a step runs with
+  `WHEELCHAIR_QUIET_GRACE_MS` of at least 2000, and waits past it with at least 500 ms
+  margin before checking. The current list: 6, 6c, 6d, and the first part of 7; the
+  worker checks the rest of the file by the same rule.
+- Tests that wait for a nudge keep their short grace and wait with `until`.
+
+Check: `node --test viewer/test/app-quiet.test.js`, and it passes under load.
 
 ### S5. Verifier report retry (`viewer/test/app-hub.test.js:1327`)
 
-Fix: the 1 s polling deadline becomes 10 s; assertions unchanged.
+The 1 s deadline for the retried submit becomes 10 s. Assertions unchanged.
+
+Check: `node --test --test-name-pattern "verifier report survives" viewer/test/app-hub.test.js`,
+and it passes under load.
 
 ### S6. Archive cancels a stalled upload (`viewer/test/app-uploads-archive.test.js:65`)
 
-The test's "archive finished before the default machine timeout" check has under 5 s of
-margin. Reproduce with S1, find which budget fails, and widen the gap: the machine timeout
-the test distinguishes from is set long in this test, and the archive budget sits well
-below it, so a slow machine still passes and a waiting archive still fails.
+The test checks that archive ends the stalled upload instead of waiting for the machine's
+default timeout, with under 5 s of margin between them.
 
-### S7. Switch HTTP (`machine/test/switch-http.test.js:107,136`)
+- Reproduce under load and note which wait or budget fails.
+- Widen the gap: set the machine-side timeout this test distinguishes from to at least
+  60 s for this test (through the setting the code already reads, or a new test-only
+  setting if there is none), and set the archive budget to at most half of it. A slow
+  machine passes; an archive that waits for that timeout still fails.
+- Waits that only cover setup (the `.part` file appearing, the upload outcome) poll to at
+  least a 15 s deadline; the test's own timeout grows to fit.
 
-Fix: `waitFor` polls to a 20 s time deadline instead of 300 iterations.
+Check: `node --test --test-name-pattern "stalled upload" viewer/test/app-uploads-archive.test.js`,
+and it passes under load.
 
-### S8. Browser specs (`viewer/test/app-threads.spec.js:573`, `viewer/test/app-agents-decks.spec.js:247`)
+### S7. Account switch (`machine/test/switch-http.test.js:107,136`)
 
-Reproduce each with S1 and a Playwright trace, find the cause, and fix it under the
-general rules. Raising a test's time budget (`test.slow()`) is allowed only when the trace
-shows plain slowness.
+`waitFor` polls every 10 ms to a 20 s time deadline instead of 300 iterations.
 
-### S9. Install suite's real-folder check
+Check: `node --test machine/test/switch-http.test.js`, and it passes under load.
 
-Pending Q2.
+### S8. Browser specs
+
+`viewer/test/app-threads.spec.js:573` ("approval: Start building enabled when Ready and
+presses; offer press", Firefox) and `viewer/test/app-agents-decks.spec.js:247`
+("popover invariant across a refresh", "page scrolled", Chromium).
+
+- Reproduce each under load with a Playwright trace (`--trace on`), find the cause, and fix
+  it under the general rules. Name the cause in the task report.
+- A larger time budget (`test.slow()` or a longer wait timeout) is allowed only where the
+  trace shows plain slowness; a missed event or wrong order is fixed, not waited out.
+- If either does not fail in 20 tries under load, apply the general rules found in the
+  spec (waiters registered before actions, deadlines long enough for a slow page), and say
+  in the report that it did not reproduce.
+
+Checks, each passing under load (`--repeat 5`):
+`npm --prefix viewer exec -- playwright test test/app-threads.spec.js -g "offer press" --project firefox --workers 1`
+`npm --prefix viewer exec -- playwright test test/app-agents-decks.spec.js -g "page scrolled" --project chromium --workers 1`
+
+### S9. Install suite's real-folder check (`install/test/run.sh:27-49,234,705`)
+
+- `tree_state` (or a new helper beside it) covers the real `~/.wheelchair` except the files
+  and folders the AI tools write themselves while sessions run, inside each
+  `accounts/<name>/` (Decision 6). The skip list is explicit and named in a comment, each
+  entry with the tool that writes it, built from what the Claude and Codex CLIs keep in
+  their config folder (for example `projects/`, `sessions/`, `history.jsonl`,
+  `file-history/`, `shell-snapshots/`, `paste-cache/`, `session-env/`, `telemetry/`,
+  `backups/`, `cache/`, `plugins/`, `.claude.json`, `.credentials.json`, Codex's
+  `sessions/`, `log/`, `auth.json`). Wheelchair's own files there (for example `CLAUDE.md`,
+  `AGENTS.md`, `wheelchair-account.json`, settings and hooks it writes) stay checked.
+- To build the list: snapshot the real folder, let it sit for 10 minutes while sessions
+  run, and list which paths changed; each changed path is either on the skip list as an AI
+  tool's file, or, if wheelchair's own running services wrote it, it is named in the task
+  report and skipped only if it is a cache those services rewrite on their own (never a
+  file the installer or its fixtures write).
+- On a mismatch the failure lists the changed paths (relative to `~/.wheelchair`), not only
+  two hashes.
+- The existing `accounts/*/tmp` skip stays.
+- A self-check in the suite: writing a file into a checked path of a temporary copy of the
+  tree changes the result, and writing one into a skipped path does not.
+
+Check: `bash install/test/run.sh` passes on this machine while wheelchair sessions are
+running, three times in a row.
 
 ### S10. Full-run pass rule
 
 Unchanged: no re-runs. Any suite exit other than 0 fails the run (Decision 5).
+
+### Non-goals
+
+- No retries, no change to which suites the full run runs or how many browser workers it
+  uses.
+- No changes to tests not named here, unless a worker finds they share a cause with a named
+  one and fixes them the same way; such extras are named in the report.
 
 ## Accepted Risks
 
