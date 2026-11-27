@@ -183,10 +183,13 @@ and it passes under load.
 ### S7. Account switch (`machine/test/switch-http.test.js:107,136`)
 
 - `waitFor` polls every 10 ms to a 20 s time deadline instead of 300 iterations.
-- Cause found in review: the service's background readiness poll (every 2 s,
-  `machine/service.js:471`) can mark the switch done and clear `active_switch`
-  (`machine/service.js:1239`) before a slow test sees it, so the wait never succeeds. The
-  test fixture stops that timer (`clearInterval(instance.pollTimer)`) right after
+- Cause found in review: two background timers call `checkReady`, which marks the switch
+  done and clears `active_switch` (`machine/service.js:1238`): the readiness poll
+  (`pollTimer`, every 2 s, `machine/service.js:471`) and the trust poll (`trustTimer`,
+  every 500 ms, `machine/service.js:479`, which checks `starting` sessions relaunched in
+  the last 30 s, the state a switch leaves). Either can finish the switch before a slow
+  test sees it, so the wait never succeeds. The test fixture stops every background timer
+  that can reach `checkReady` (at least `pollTimer` and `trustTimer`) right after
   `listen()`; the tests already call `checkReady` themselves where they mean readiness to
   happen. Product code unchanged.
 
@@ -331,5 +334,6 @@ A first start of this round's reviewers was stopped before they reported, becaus
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | S7 stops only `pollTimer`; `trustTimer` (500 ms) also calls `checkReady` on a just-switched session | upheld | Fixture stops every timer that reaches `checkReady` |
 
 ## Implementation Tasks
