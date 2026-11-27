@@ -61,16 +61,19 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   those CPUs are loaded, so other threads on the machine are unaffected. The default
   roughly matches the reported load (about 3 to 4 busy processes per core). Usage errors
   include N larger than the number of allowed CPUs.
-- Runs the command K times in a row (default 5), each with stdin from `/dev/null`, its
+- Runs the command K times in a row (default 5), each in its own process group (`setsid`)
+  with stdin from `/dev/null`, its
   output passed through, then prints `under-load: pass <p> of <K>` and exits 0 only if all
   K passed, else 1. Usage errors exit 2.
-- Kills every helper on normal exit and on TERM, HUP and INT; a signal also stops the
-  running command and exits non-zero.
+- Kills every helper on normal exit and on TERM, HUP and INT; a signal also sends TERM to
+  the running command's whole process group, waits up to 10 s for it to empty, then KILLs
+  it, and exits non-zero.
 - Without `taskset` it prints `under-load: taskset not found` and exits 2.
 - Tested by `test-support/test/under-load.test.js`, which skips (`t.skip`) on a host without
   `taskset`: the count line and exit code for a
   passing and a failing command, the command running pinned to the chosen CPUs, and no helper
-  alive after a normal exit and after TERM.
+  alive after a normal exit and after TERM; the TERM case runs a command that starts a
+  child of its own, and checks that child is gone too.
 - Not run by the full run beyond its own test.
 
 Check: `node --test test-support/test/under-load.test.js`
@@ -83,13 +86,14 @@ run; the test then finds no `viewer-browser stopped`. The fixture stub also writ
 before installing its trap, so a signal can land before the trap exists.
 
 - `stop_run`, after sending TERM to each recorded process group, polls every 0.1 s until no
-  process is left in that group (`kill -0 -- -<pgid>` fails), for up to 10 s; it then sends
-  KILL to any group still present, polls again up to 2 s, and exits 1 without writing
+  process is left in that group (`kill -0 -- -<pgid>` fails), for up to 45 s (longer than
+  Playwright's 30 s worker teardown limit, so a worker closing its browsers is not cut
+  short); it then sends KILL to any group still present, polls again up to 2 s, and exits 1 without writing
   `summary.txt`, as today.
 - Scope (Decision 10): the runner waits for its own suites' process groups. Browser engines
   that Playwright starts in groups of their own are Playwright's to close; its runner
-  closes them on TERM before it exits, so an empty browser-job group means Playwright has
-  finished stopping.
+  closes them on TERM before it exits, so an empty browser-job group within the 45 s means
+  Playwright has finished stopping. After a KILL nothing is promised about browser engines.
 - The fixture stub installs its trap before it writes `start`, and writes its own PID in
   the `start` record. After the runner exits, the test asserts both `stopped` records, the
   no-summary file, and that neither stub PID is still alive (`process.kill(pid, 0)` throws
@@ -121,7 +125,9 @@ worker's message must land inside it; under load it lands later and the nudge fi
 - A test that checks for silence after a step that must land inside the grace (6, 6c, 6d,
   and all of 7, which checks silence in both halves) runs with `WHEELCHAIR_QUIET_GRACE_MS`
   of at least 2000, and each silence check waits past the grace with at least 500 ms
-  margin. Its waits for a nudge in the same test use `until`, whose 8 s deadline already
+  margin. In test 7, after the reminder reaches the fake machine, it waits until the saved
+  thread shows that delivery (queue empty, turn started) before writing the waiting child
+  into the state file. Its waits for a nudge in the same test use `until`, whose 8 s deadline already
   covers the longer grace; raise that deadline for the test if needed.
 - Test 5 keeps its check inside the grace (that no nudge has been sent before the grace
   ends) and its later check after it; its grace grows so that its 100 ms step fits under
@@ -183,8 +189,10 @@ presses; offer press", Firefox) and `viewer/test/app-agents-decks.spec.js:247`
   (`viewer/pages/agents.js:247`), and a render replaces the popover. So geometry can be read
   before the refresh it means to test. Fix: before the refresh, take a handle to the
   current `.deck-pop`; after it, wait until that handle is detached and a new `.deck-pop`
-  is present, then two frames, then check geometry and scroll. This applies to every
-  scenario in that `describe`.
+  is present, then two frames, then check geometry and scroll. In scenarios with a
+  `change`, the wait is for a new `.deck-pop` rendered from the changed data (the deck shows
+  round 41), since a response fetched before the change can replace the popover first.
+  This applies to every scenario in that `describe`.
 - Approval spec, and the deck spec if it still fails: reproduce under load with a
   Playwright trace (`--trace on`), find the cause, and fix it under the general rules.
   Name the cause in the task report.
@@ -235,14 +243,16 @@ those change with each tool version and event (Decision 6).
   file does; the mismatch lists the changed path. `run.sh` runs it, so the full run covers
   it.
 
-Checks: `bash install/test/tree-state-test.sh`; and `bash install/test/run.sh` passes on
-this machine while wheelchair sessions are running, three times in a row.
+Check: `bash install/test/tree-state-test.sh`. The whole install suite is the full run's
+(AGENTS.md, Test picker and full run); on this machine wheelchair sessions are always
+running during it, so a passing full run is the live check.
 
 ### S10. Full-run pass rule
 
 Unchanged: no re-runs. Any suite exit other than 0 fails the run (Decision 5).
-`test-support/test/full-run.test.js`'s failure cases also assert that each suite stub
-wrote exactly one `start` record, so a re-run would fail the test.
+`test-support/test/full-run.test.js`'s stub records which command started it (the
+sudo-helper suite runs two: the Python tests and `install-test.sh`), and the failure cases
+assert exactly one `start` record per command, so a re-run would fail the test.
 
 Check: `node --test test-support/test/full-run.test.js`
 
@@ -257,6 +267,7 @@ Check: `node --test test-support/test/full-run.test.js`
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A new account folder seeded during the install suite (the user adds an account mid-run) shows as a mismatch | Rare path: needs an account added inside the few minutes the suite runs; existing accounts re-seed with identical bytes | review-round-2 |
 | A session start rewrites `wheelchair-account.json` in place (truncate, then write); a snapshot inside that sub-second window reads it empty and reports a mismatch | Rare path: a sub-second race between two actors (`realism.md`) | review-round-2 |
 
 ## Review Rounds
@@ -296,5 +307,23 @@ Check: `node --test test-support/test/full-run.test.js`
 | intent | major | S9 allowlists "wheelchair's entries under skills/", but wheelchair writes nothing there and live sessions change it | upheld | skills/ removed from the allowlist |
 | intent | minor | `agy-models.json` outside accounts/ is rewritten by the live hub when Settings loads | upheld | Live-service files outside accounts/ get the create-or-delete check, each named |
 | intent | minor | Rare path: in-place rewrite of `wheelchair-account.json` at session start | accepted-risk | Accepted Risks |
+| mechanics | blocking | S10's one-start check fails on a correct run: sudo-helper runs two commands | upheld | One start per command, stub records its command |
+| mechanics | blocking | S8 change scenarios can measure a popover rendered from data fetched before the change | upheld | Wait for the popover showing round 41 |
+| mechanics | major | S1 kills only the command PID, leaving descendants | upheld | Own process group, TERM then KILL the group; tested with a child |
+| mechanics | major | S2's 10 s KILL cuts Playwright's 30 s worker teardown short | upheld | 45 s before KILL; no promise after KILL |
+| mechanics | major | S9 flags an account seeded live during the suite | accepted-risk | Rare path; Accepted Risks |
+| mechanics | minor | S4 test 7 writes the fixture before the hub saves the delivery | upheld | Wait for saved state first |
+| mechanics | minor | S9 lists the whole installer suite as a Spec check | upheld | Targeted self-check only; live check is the full run |
+
+### Round 3 — 2026-11-26
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 2:** S1 (command in its own process group, group cleanup on signal, tested with a child); S2 (45 s before KILL, no promise after KILL); S4 (test 7 waits for saved delivery state); S8 (change scenarios wait for the popover showing round 41); S9 (skills/ dropped; live-service files outside accounts/ get the create-or-delete check; whole-suite command removed); S10 (one start per command); two new Accepted Risks.
+
+A first start of this round's reviewers was stopped before they reported, because the plan edits had not been saved; it does not count.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
