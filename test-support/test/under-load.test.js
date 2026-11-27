@@ -82,3 +82,20 @@ test('TERM reaps helper and command child', async t => {
   assert.ok(fs.existsSync(signalled), 'command child did not receive TERM');
   await until(() => [...pids, descendant].every(pid => !alive(pid)), 'process survived TERM');
 });
+
+test('stops with its helpers and command when its starter dies', async t => {
+  if (!available) return t.skip('taskset missing');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'under-load-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const marker = path.join(dir, 'command');
+  const inner = ['bash', script, ...options, '--repeat', '1', '--', 'bash', '-c', 'echo $$ > "$1.tmp" && mv "$1.tmp" "$1"; while :; do sleep .05; done', '_', marker];
+  const starter = spawn('bash', ['-c', '"$@" & wait', '_', ...inner], { stdio: 'ignore' });
+  await until(() => fs.existsSync(marker), 'command did not start');
+  const command = Number(fs.readFileSync(marker, 'utf8'));
+  const [loader] = children(starter.pid);
+  assert.ok(loader > 0, 'under-load did not start');
+  const pids = [loader, ...children(loader), command];
+  assert.ok(pids.length >= 4, `expected loader, helpers and command, got ${pids}`);
+  starter.kill('SIGKILL');
+  await until(() => pids.every(pid => !alive(pid)), 'process survived its starter');
+});

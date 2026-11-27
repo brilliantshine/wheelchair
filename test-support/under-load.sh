@@ -53,6 +53,11 @@ for ((i=0; i<cpus*hogs; i++)); do
   (while :; do :; done) </dev/null >/dev/null 2>&1 &
   helpers+=("$!")
 done
+# If whatever started this script dies, stop too, so the hogs never outlive it.
+starter=$PPID main=$$
+(while [[ $(ps -o ppid= -p "$main" 2>/dev/null | tr -d ' ') == "$starter" ]]; do sleep 1; done
+ kill -TERM "$main" 2>/dev/null) </dev/null >/dev/null 2>&1 &
+helpers+=("$!")
 passed=0
 for ((i=0; i<repeat; i++)); do
   setsid "$@" </dev/null &
