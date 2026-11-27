@@ -322,7 +322,7 @@ None.
 
 ### Round 5 — 2026-11-27
 
-**Lanes:** (filled at start)
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 4:** S4 rewritten (streaming JSON reader; detection on decoded strings and short escape runs; replacement rule; memory budget removed, script tools untouched), S2 (`check` env; refresh sentence removed), S7 (4 KiB stderr pieces), S8 (opening sentence), Validation, Decisions 15–16, Accepted Risks.
 
