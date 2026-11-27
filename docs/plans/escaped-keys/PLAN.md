@@ -289,6 +289,7 @@ As IDEA.md, plus: `\U`, `\u{…}`, octal escapes and HTML entities are not escap
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | tricky: escaped-spelling matcher, cut edges, budget/fallback in `redactCapture`; tests; E4 guide sentence | `machine/lib/key-redact.js` (+ optional `machine/lib/key-spell.js` and its `machine/AGENTS.md` row), `machine/test/key-redact.test.js` (+ optional `key-redact-speed.test.js`), `protocol/tools.md:70`, `docs/plans/escaped-keys/reports/T1.md` | standard / gpt-6.1-terra; rung 2: standard, effort high (attempt 1 delivered tests only, no matcher); rung 3: standard, effort xhigh (attempt 2 delivered an unconnected prototype); rung 4: heavy / gpt-6.2-sol, its own effort (attempt 3 hit the fails-twice guardrail on the speed fixtures) | wc-ac4d5c6479fe-worker (t1-a1), -worker-2 (t1-a2), -worker-3 (t1-a3), all stopped; wc-ac4d5c6479fe-worker-4 (t1-a4) | Spec Validation command; E4 greps; pick-tests | done |
 | R1-T1 | Speed fixtures checked by CPU time, moved into `key-redact.test.js` (REMEDIATION-1.md) | `machine/test/key-redact.test.js`, `machine/test/key-redact-speed.test.js` (deleted), `docs/plans/escaped-keys/reports/R1-T1.md` | light / gpt-6-luna | wc-ac4d5c6479fe-worker-5 (r1-t1-a1) | Spec Validation command | done |
+| R2-T1 | Speed fixture limits per Decision 13 (REMEDIATION-2.md) | `machine/test/key-redact.test.js`, `docs/plans/escaped-keys/reports/R2-T1.md` | light / gpt-6-luna | wc-ac4d5c6479fe-worker-6 (r2-t1-a1) | Spec Validation command | in progress |
 
 ## Log
 
