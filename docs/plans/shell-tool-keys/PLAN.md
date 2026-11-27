@@ -309,6 +309,11 @@ Plus any new test file named above, run with `node --test <file>`.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | S6: `runScript` optional abort signal | machine/lib/tool-run.js, machine/test/folder-tools-run.test.js | standard / gpt-6.1-terra | | folder-tools-run, -launch, key-redact tests | not started |
+| T2 | S1 connector part: `keyedToolsByMachine` in contract, Kimi, Pi, README; export | connectors/contract.js, README.md, kimi/machine.js, pi/machine.js, registry.json, machine/test/connectors-contract.test.js | light / gpt-6-luna | | connectors-contract, name-guard, export --check | not started |
+| T3 | tricky: S1 eligibility helper, S2 launch, S3, S4 run route, API.md | machine/service.js, machine/API.md, machine/test/project-tools-service.test.js, machine/test/folder-tools-launch.test.js, machine/test/tool-machine-run.test.js | standard | | Spec Validation machine command | not started (after T1, T2) |
+| T4 | S5: CLI machine runs | viewer/app/tool-cli.js, viewer/app/wc.js, viewer/test/wc-tool.test.js | standard / gpt-6.1-terra | | wc-tool, app-project-tools-card tests | not started |
+| T5 | S7 guide text in protocol/tools.md | protocol/tools.md | standard / gpt-6.1-terra | | negative grep; rendered read | not started |
 
 ## Log
 
