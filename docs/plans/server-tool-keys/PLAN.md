@@ -231,7 +231,7 @@ None.
 
 ### Round 2 — 2026-11-27
 
-**Lanes:** (filled at start)
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:** S2 (`check` note appended to existing output), S3 (`NODE_DEBUG` refusal; keys read once at start), S4 (lossless tokenizer; replacement only of string values; 32 MiB line limit; shutdown and flush), S5 (rewritten: copy the reply's own clean id, drop key-bearing ids, check generated lines), S6 (client-line tracking moved here), S8 (lifecycle and `NODE_DEBUG` wording), Validation (new cases, name guard), Decisions 10–12, Accepted Risks.
 
