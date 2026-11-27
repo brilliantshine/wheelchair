@@ -368,11 +368,17 @@ A first start of this round's reviewers was stopped before they reported, becaus
 
 | Task | Objective | Ownership boundary | Lane | Validation | Status |
 |------|-----------|--------------------|------|------------|--------|
-| T1 | S1 load harness | `test-support/under-load.sh`, `test-support/test/under-load.test.js` | standard | S1 check; harness smoke runs | not started |
-| T2 | S2 + S10 full-run stop and one start per command `tricky` | `test-support/full-run.sh`, `test-support/test/full-run.test.js` | standard | S2/S10 checks, under load `--repeat 10` | not started (after T1) |
-| T3 | S3 + S5 + S7 holder port, verifier retry, switch timers | `viewer/test/lifecycle.test.js`, `viewer/test/app-hub.test.js` (that test), `machine/test/switch-http.test.js` | standard | S3/S5/S7 checks, each under load | not started (after T1) |
-| T4 | S4 + S6 quiet graces, archive 30 s `tricky` | `viewer/test/app-quiet.test.js`, `viewer/test/app-uploads-archive.test.js`, archive call in `viewer/app/threads.js` | standard | S4/S6 checks, each under load | not started (after T1) |
-| T5 | S8 browser specs | `viewer/test/app-agents-decks.spec.js`, `viewer/test/app-threads.spec.js` (that test) | standard | S8 checks under load | not started (after T1) |
+| T1 | S1 load harness | `test-support/under-load.sh`, `test-support/test/under-load.test.js` | standard (gpt-6.1-terra) | S1 check; harness smoke runs | done |
+| T1b | S1 test races: pid file, trap readiness, affinity match | `test-support/test/under-load.test.js` | light | S1 check, under load `--repeat 10` | not started |
+| T2 | S2 + S10 full-run stop and one start per command `tricky` | `test-support/full-run.sh`, `test-support/test/full-run.test.js` | standard | S2/S10 checks, under load `--repeat 10` | not started |
+| T3 | S3 + S5 + S7 holder port, verifier retry, switch timers | `viewer/test/lifecycle.test.js`, `viewer/test/app-hub.test.js` (that test), `machine/test/switch-http.test.js` | standard | S3/S5/S7 checks, each under load | not started |
+| T4 | S4 + S6 quiet graces, archive 30 s `tricky` | `viewer/test/app-quiet.test.js`, `viewer/test/app-uploads-archive.test.js`, archive call in `viewer/app/threads.js` | standard | S4/S6 checks, each under load | not started |
+| T5 | S8 browser specs | `viewer/test/app-agents-decks.spec.js`, `viewer/test/app-threads.spec.js` (that test) | standard | S8 checks under load | not started |
 
 ## Log
 
+- 2026-11-26 — Choice: T1, under-load.sh CPU pick: `shuf` picks the CPUs; the printed list is unsorted.
+- 2026-11-26 — Choice: T1, under-load.sh helpers: helper stdin and output go to /dev/null so helpers cannot hold the caller's pipes open.
+- 2026-11-26 — Choice: T1, under-load.sh options: `--cpus`, `--hogs`, `--repeat` must be positive integers; `--hogs` counts helpers per CPU; a signal exits 1.
+- 2026-11-26 — Choice: T1, under-load.test.js TERM case: the command's child writes a marker when it receives TERM, so leader-only signalling fails the test.
+- 2026-11-26 — T1 accepted (band: scout): harness matches S1; scout found two races in the TERM test (pid file read before written; child trap may be unset when TERM lands) and a weak affinity regex. Fixed in follow-up T1b.
