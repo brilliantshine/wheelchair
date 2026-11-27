@@ -42,6 +42,7 @@ None.
 | 16 | Supersedes 15 (and see 18): server lines are checked with a streaming JSON reader that undoes JSON escapes first; the escape-aware matcher runs only on escape-containing runs of at most 4 KiB, longer ones count as unchecked; in-place replacement only of raw matches inside string values. `key-spell.js` and `redactCapture` are unchanged | Bounds memory by design instead of by a budget; ordinary JSON escapes never form long runs; script tools untouched | review-round-4 |
 | 17 | After round 6, keep the output-checking work here and run another round | Collin: keep it here (second split offer) | user |
 | 18 | Escape runs are joined into batches of up to 1 MiB with a separator and checked with the existing `findSpellings`; no new export, `key-spell.js` unchanged | Same result as per-run checks with one setup per batch; leaves the shared checker alone | review-round-7 |
+| 19 | After round 9, keep the shutdown and slow-agent handling here and run another round | Collin: keep it here (third split offer) | user |
 | 7 | A held-back request from the server to the client is answered on the server's stdin with an error, not dropped silently | Closes the parent's accepted risk of a server left waiting | defaulted |
 | 8 | Server stderr is piped and redacted with the same capture redaction as script output (`redactCapture`), line by line, with cut marks for very long lines | Keys can't contain newlines (parent Decision 16), so the parent's multiline finding is moot | defaulted |
 | 9 | Detection is the parent's rule (Decision 19): any plain or escaped spelling `key-spell.js` finds; a work-budget overrun makes the line unchecked, which is held back like a key, with its own message | One rule for scripts and servers | defaulted |
@@ -446,6 +447,15 @@ None.
 | mechanics | major | Server closing its stdin leaves the input pause stuck | upheld | S6: error/close releases it |
 | mechanics | major | Rare path: injected-reply queue unbounded | accepted-risk | Accepted Risks |
 | mechanics | minor | Slow-reader test passes with a wall-clock timer | upheld | Test rewritten |
+
+### Round 10 — 2026-11-27
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 9:** S4 (only the stdout pause stops the 5-second timer; 60-second outer limit), S6 (server stdin error or close releases the pause), Validation (shutdown tests), Accepted Risks, Decision 19.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
