@@ -94,7 +94,7 @@ function renderTurn(turn, thread) {
   if (humanText.startsWith('[wc:context switch]')) return turn.replies;
   if (humanText.startsWith('[wc:context stub]')) {
     return [
-      { type: 'context', text: `Started from ${thread.parent_title || 'parent thread'}`, context: 'stub', at: turn.at },
+      { type: 'context', text: thread.parent ? `Started from ${thread.parent_title || 'parent thread'}` : 'Started from a saved idea', context: 'stub', at: turn.at },
       ...turn.replies,
     ];
   }

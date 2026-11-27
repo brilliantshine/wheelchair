@@ -120,7 +120,7 @@ test('replaces a stub context marker and keeps its lead reply', () => {
       message: { role: 'assistant', content: [{ type: 'text', text: 'I have started.' }] },
     },
   ]);
-  const items = transcriptItems('claude', transcript, { parent_title: 'Parent feature' });
+  const items = transcriptItems('claude', transcript, { parent: 'parent-id', parent_title: 'Parent feature' });
   assert.deepEqual(items.map((item) => item.text), ['Started from Parent feature', 'I have started.']);
 });
 
@@ -384,7 +384,7 @@ test('a failed transcript read keeps the last copy for the chat, not for a repor
 test('stamped chat polls share parsed items and invalidate them when parser context changes', async () => {
   const chat = require('../app/chat.js');
   const raw = lines([{ type: 'user', origin: { kind: 'human' }, message: { content: '[wc:context stub]' } }]);
-  const thread = { id: 't', machine: 'm', parent_title: 'First', sessions: [{ name: 'lead', role: 'lead', cli: 'claude' }], cards: [], pinned: {}, queues: {} };
+  const thread = { id: 't', machine: 'm', parent: 'parent-id', parent_title: 'First', sessions: [{ name: 'lead', role: 'lead', cli: 'claude' }], cards: [], pinned: {}, queues: {} };
   const routes = [];
   const hub = { readSnapshot: async () => thread, state: { settings: async () => null }, call: async (_, route) => { routes.push(route); return route.includes('?') ? { unchanged: true, gen: 'g', end: 4 } : { data: raw, gen: 'g', end: 4 }; } };
   const original = chat.transcriptItems; let parses = 0;
@@ -520,4 +520,10 @@ test('queued leaves out messages waiting for other agents in the thread', async 
   assert.equal((await chat.chat(hub, 't')).queued, 0);
   thread.queues.lead = [{ text: 'mine', source: 'user' }];
   assert.equal((await chat.chat(hub, 't')).queued, 1);
+});
+
+test('stub markers distinguish a parent from a saved idea', () => {
+  const raw = lines([{ type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: '[wc:context stub] text' } }]);
+  assert.equal(transcriptItems('claude', raw, { parent: 'p' })[0].text, 'Started from parent thread');
+  assert.equal(transcriptItems('claude', raw, {})[0].text, 'Started from a saved idea');
 });
