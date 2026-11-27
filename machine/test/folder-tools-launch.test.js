@@ -565,7 +565,7 @@ test('keyed discovery omits missing keys and keeps secrets out of launch artifac
 
 test('shared project uses shared store and missing shared tool identifies its source', async t => {
   const {writeSharedKeys}=require('../lib/shared-keys'); const f=await fixture(t); const remote=await sharedRepo(f);
-  await keyedTool(remote.source,'shared'); git(remote.source,'add','.wheelchair'); git(remote.source,'commit','-m','keyed'); git(remote.source,'push','origin','main');
+  await keyedTool(remote.source,'shared',['TOKEN'],'server'); git(remote.source,'add','.wheelchair'); git(remote.source,'commit','-m','keyed'); git(remote.source,'push','origin','main');
   const missing=await f.start({cli:'claude',choice:remote.choice}); assert.equal(missing.project_tools.folder[0].text,'shared tool shared needs key TOKEN, not set on this machine'); assert.ok(!missing.command.includes('--mcp-config'));
   git(f.worktree,'init'); git(f.worktree,'remote','add','origin',origin); git(f.worktree,'config',`url.file://${remote.bare}.insteadOf`,origin);
   const dir=await keyedTool(f.worktree,'own'); await writeSharedKeys(f.stateDir,{set:{TOKEN:'sharedvalue'}});
@@ -573,15 +573,20 @@ test('shared project uses shared store and missing shared tool identifies its so
   const args=(await f.config(own))['wheelchair-tools'].args; assert.ok(args.includes(dir)); assert.equal(args[args.indexOf('--key-store')+1],'shared');
 });
 
-test('keyed server is excluded while keyless server connects', async t => {
-  const f=await fixture(t); await keyedTool(f.worktree,'bad',['TOKEN'],'server'); await putTool(f.worktree,'good','good','server');
-  const session=await f.start({cli:'claude'}), entries=await f.config(session);
-  assert.equal(entries.bad,undefined); assert.ok(entries.good); assert.match(session.project_tools.folder[0].text,/keys for server tools aren't supported yet/);
+test('keyed server discovery checks keys and keeps values out of entries', async t => {
+  const {projectIdentity,writeKeyStore}=require('../lib/project-keys'); const f=await fixture(t); git(f.worktree,'init');
+  await keyedTool(f.worktree,'bad',['TOKEN'],'server'); await putTool(f.worktree,'good','good','server');
+  const missing=await f.start({cli:'claude'}), entries=await f.config(missing);
+  assert.equal(entries.bad,undefined); assert.ok(entries.good); assert.equal(missing.project_tools.folder[0].text,'tool bad needs key TOKEN, not set on this machine');
+  const value='sentinelservervalue'; await writeKeyStore(f.stateDir,await projectIdentity(f.worktree),{set:{TOKEN:value}});
+  const present=await f.start({cli:'claude'}), entry=(await f.config(present)).bad;
+  assert.ok(entry.args.includes('--state-dir')); assert.ok(entry.args.includes(f.stateDir)); assert.ok(entry.args.includes('--key-store')); assert.ok(entry.args.includes('project')); assert.ok(entry.args.includes('--key')); assert.ok(entry.args.includes('TOKEN')); assert.ok(!JSON.stringify(entry).includes(value));
+  for (const options of [{cli:'kimi'},{cli:'pi'},{mode:'sandboxed'}]) { const session=await f.start(options); assert.ok(!session.project_tools.folder.some(line=>line.text.includes('needs key TOKEN'))); }
 });
 
 test('agent routes report key status and sandbox restriction without values', async t => {
   const {projectIdentity,writeKeyStore}=require('../lib/project-keys'); const f=await fixture(t); git(f.worktree,'init');
-  await keyedTool(f.worktree,'secret',['SET','MISSING','BAD']); await writeKeyStore(f.stateDir,await projectIdentity(f.worktree),{set:{SET:'sentinelvalue',BAD:'short'}});
+  await keyedTool(f.worktree,'secret',['SET','MISSING','BAD'],'server'); await writeKeyStore(f.stateDir,await projectIdentity(f.worktree),{set:{SET:'sentinelvalue',BAD:'short'}});
   const unrestricted=await f.start(), sandbox=await f.start({mode:'sandboxed'}), eligible=await f.start({cli:'kimi'}); const server=http.createServer((req,res)=>f.machine.handle(req,res)); server.listen(0,'127.0.0.1'); await once(server,'listening');
   try {
     const request=async (session,route)=>{const response=await fetch(`http://127.0.0.1:${server.address().port}/v1/agent/${route}`,{method:'POST',headers:{'x-wheelchair-session-token':session.token},body:'{}',signal:AbortSignal.timeout(4000)}); assert.equal(response.status,200); return response.json();};

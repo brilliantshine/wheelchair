@@ -156,8 +156,3 @@ test('bridge refuses keyed calls with Node child process debugging but runs keyl
   const child=spawn(process.execPath,[bridge,'--project-dir',f.root,'--state-dir',state,'--tool',f.dir,'--key-store','shared','--key','TOKEN','--tool',other],{env:{...process.env,NODE_DEBUG:'child_process'}}); child.stderr.resume(); const call=rpc(child);
   try { assert.equal((await call('tools/call',{name:'example'})).result.content[0].text,"Node debug output for child processes is on; keyed tools won't run"); assert.equal((await call('tools/call',{name:'other'})).result.isError,false); } finally { child.stdin.end(); }
 });
-
-test('launcher refuses server tool declaring keys', async () => {
-  const f=await fixture('',{kind:'server',start:[process.execPath,'main.js'],keys:['TOKEN']}); const child=spawn(process.execPath,[launch,'--project-dir',f.root,'--tool',f.dir]); const result=await completed(child);
-  assert.notEqual(result.code,0); assert.match(result.stderr,/keys for server tools aren't supported yet/);
-});
