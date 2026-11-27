@@ -1,6 +1,6 @@
 ---
 slug: load-flaky-tests
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-26
 ---
 
@@ -37,6 +37,16 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Split off S9: the install suite's real-folder check moves to its own thread; IDEA.md's What and What good looks like drop it and Not doing points to the new thread. Decisions 6 and 8 and S9's two Accepted Risks go with it | Collin picked "Split it off" after S9 drew blocking or major findings in rounds 1-3 while the rest settled | idea-change |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  H[S1 under-load.sh: pin to 2 random CPUs + busy helpers] --> R[Reproduce each named test under load]
+  R --> F[Fix the cause: widen good/bad gap, wait on events, time deadlines]
+  F --> T1[S2 full-run stop: wait for suite groups to empty]
+  F --> T2[S3-S7 node tests: holder port, quiet grace, retry save, archive 30 s, switch timers]
+  F --> T3[S8 browser specs: wait for the real redraw]
+  T1 & T2 & T3 --> C[Each passes under load; no assertion loosened; no re-runs]
+```
 
 ### General rules for every fix
 
@@ -251,6 +261,8 @@ Check: `node --test test-support/test/full-run.test.js`
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A TERM to `under-load.sh` in the instant between spawning `setsid` and the new process group existing may leave the command starting after the harness exits | Rare path: sub-second window (`realism.md`) | review-round-6 |
+| In the deck spec, an older overlapping `/api/agents` response can redraw the page after the round-41 wait succeeds | Rare path: needs two polls to overlap and arrive out of order within the wait | review-round-6 |
 
 ## Review Rounds
 
@@ -348,5 +360,8 @@ A first start of this round's reviewers was stopped before they reported, becaus
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | minor | Rare path: TERM between spawning `setsid` and the new group existing | accepted-risk | Accepted Risks |
+| mechanics | minor | Rare path: an overlapping older poll response redraws after the round-41 wait | accepted-risk | Accepted Risks |
 
 ## Implementation Tasks
