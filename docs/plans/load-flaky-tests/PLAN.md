@@ -101,8 +101,9 @@ before installing its trap, so a signal can land before the trap exists.
   closes them on TERM before it exits, so an empty browser-job group within the 45 s means
   Playwright has finished stopping. After a KILL nothing is promised about browser engines.
 - The fixture stub installs its trap before it writes `start`, and writes its own PID in
-  the `start` record. Its trap waits 1 s before writing `stopped` and exiting, so a runner
-  that returns as soon as the browser job's leader dies is caught by the test. After the runner exits, the test asserts both `stopped` records, the
+  the `start` record. The browser stub's trap waits until the viewer-node stub's `stopped` record exists
+  (polling, up to 5 s), then 1 s more, before writing its own `stopped` and exiting, so a
+  runner that returns as soon as the browser job's leader dies is caught by the test. After the runner exits, the test asserts both `stopped` records, the
   no-summary file, and that neither stub PID is still alive (`process.kill(pid, 0)` throws
   `ESRCH`).
 
@@ -181,7 +182,13 @@ and it passes under load.
 
 ### S7. Account switch (`machine/test/switch-http.test.js:107,136`)
 
-`waitFor` polls every 10 ms to a 20 s time deadline instead of 300 iterations.
+- `waitFor` polls every 10 ms to a 20 s time deadline instead of 300 iterations.
+- Cause found in review: the service's background readiness poll (every 2 s,
+  `machine/service.js:471`) can mark the switch done and clear `active_switch`
+  (`machine/service.js:1239`) before a slow test sees it, so the wait never succeeds. The
+  test fixture stops that timer (`clearInterval(instance.pollTimer)`) right after
+  `listen()`; the tests already call `checkReady` themselves where they mean readiness to
+  happen. Product code unchanged.
 
 Check: `node --test machine/test/switch-http.test.js`, and it passes under load.
 
@@ -212,7 +219,7 @@ presses; offer press", Firefox) and `viewer/test/app-agents-decks.spec.js:247`
 
 Checks, each passing under load (`--repeat 5`):
 `npm --prefix viewer run test:browser -- test/app-threads.spec.js -g "offer press" --project firefox --workers 1`
-`npm --prefix viewer run test:browser -- test/app-agents-decks.spec.js -g "popover invariant across a refresh" --project chromium --workers 1`
+`npm --prefix viewer run test:browser -- test/app-agents-decks.spec.js -g "popover invariant across a refresh|popover scrolled to the bottom grows on refresh" --project chromium --workers 1`
 
 ### S9. (Removed)
 
@@ -308,6 +315,19 @@ A first start of this round's reviewers was stopped before they reported, becaus
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** S1 (CPUs picked at random and printed; small cost for its own test; 60 s before KILL); S2 (stub trap waits 1 s before `stopped`); S8 (the bottom-scroll test also waits for round 41); S9 removed and split off (Decision 12), with IDEA.md updated; S9's Accepted Risks removed with it.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | blocking | S7: the background readiness poll can finish the switch and clear `active_switch` before the test sees it | upheld | Fixture stops the poll timer |
+| mechanics | minor | S2: equal delays on both stubs let the old runner pass | upheld | Browser stub waits for viewer-node's `stopped` first |
+| mechanics | minor | S8's deck command misses the bottom-scroll test | upheld | Filter extended |
+
+### Round 5 — 2026-11-26
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 4:** S7 (fixture stops the background readiness poll); S2 (browser stub waits for viewer-node's `stopped`); S8 (deck command covers the bottom-scroll test).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
