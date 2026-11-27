@@ -215,7 +215,7 @@ npm --prefix viewer run test:browser -- app-settings-hold.spec.js app-settings.s
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S1 agent sentence and default style text (`renderStyle`, `DEFAULT_STYLE.text`) + unit test | `viewer/app/settings.js`, `viewer/test/app-settings.test.js` | light / gpt-6-luna | wc-4a3b11f9c1b8-worker | `node --test viewer/test/app-settings.test.js`; `node --test machine/test/name-guard.test.js` | done |
 | T2 | S1 labels, S2 sign-in guard in `refreshUsage`, S3 `holdPlace` anchors, new hold spec — tricky | `viewer/pages/settings.js`, `viewer/test/app-settings-hold.spec.js`, `viewer/test/firefox-specs.js` | standard / gpt-6.1-terra (asked claude; hub sent it to gpt) | wc-4a3b11f9c1b8-worker-2 | `node --test machine/test/name-guard.test.js`; `npm --prefix viewer run test:browser -- app-settings-hold.spec.js app-settings.spec.js app-accounts.spec.js app-harnesses.spec.js` | done |
-| T3 | Tidy the hold spec: no fixed `/tmp` screenshot, correct header comment, press test checks one Lead order save | `viewer/test/app-settings-hold.spec.js` | light / gpt-6-luna | wc-4a3b11f9c1b8-worker-3 | `npm --prefix viewer run test:browser -- app-settings-hold.spec.js` | in progress |
+| T3 | Tidy the hold spec: no fixed `/tmp` screenshot, correct header comment, press test checks one Lead order save | `viewer/test/app-settings-hold.spec.js` | light / gpt-6-luna | wc-4a3b11f9c1b8-worker-3 | `npm --prefix viewer run test:browser -- app-settings-hold.spec.js` | done |
 
 ## Log
 - 2026-11-26 — T1 and T2 dispatched in parallel (disjoint files).
@@ -225,3 +225,4 @@ npm --prefix viewer run test:browser -- app-settings-hold.spec.js app-settings.s
 - 2026-11-26 — Choice: T2, spec: the header comment is copied from `app-accounts.spec.js` and describes that file, not this one.
 - 2026-11-26 — Choice: T2, spec: the Lead order press test checks that Claude left first place, not that the move ran exactly once; the failed/expired test covers failed only (expiry goes through the same `fail()`).
 - 2026-11-26 — T2 accepted (band: self, tricky): the source matches the brief's S1/S2/S3 design line for line; I re-ran name-guard (pass 2) and the four browser specs (193 passed, 1 skipped, hold spec in Chromium and Firefox). The three spec problems above go to T3.
+- 2026-11-26 — T3 accepted (band: scout): the three edits match the brief exactly, with no choices made; I re-ran the hold spec (16 passed, Chromium and Firefox).
