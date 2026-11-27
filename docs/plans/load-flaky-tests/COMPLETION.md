@@ -2,7 +2,10 @@
 slug: load-flaky-tests
 date: 2026-11-26
 implemented-by: "standard (gpt-6.1-terra): T1, T2, T3, T4, T4b, T4c, T5; light (gpt-6-luna): T1b; sub-lead: claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5
+    checks: standard gpt-6.1-terra, light gpt-6-luna
 ---
 
 # Completion Report — Make the whole-project test run reliable when the machine is busy
@@ -89,3 +92,39 @@ Before the fix, on the feature branch at `5f7abd63` (stalled-upload setup race):
 - Install suite: `install/test/run.sh` "real wheelchair directory is byte-identical after suite" fails on this machine while live sessions run. It is split into its own thread (Decision 12) and expected to fail in the full run as it does on main.
 
 ## Remediation rounds
+
+## Verification attempt 1 and full runs (2026-11-26)
+
+The verifier (claude-opus-5-5) checked `19557ff6` and returned VERDICT: PASS with no gaps. It ran every Spec check as written and under load. It also re-ran S2 with the old `full-run.sh`: pass 0 of 3, so the new test catches the old runner.
+
+Full run 2 on `19557ff6` (this is the run the gate counts):
+
+```text
+commit 19557ff687918054311bab45e578ff52d37cd160
+suite viewer-browser exit 1 seconds 403
+suite viewer-node exit 0 seconds 107
+suite machine exit 0 seconds 139
+suite test-support exit 0 seconds 28
+suite sensitivity exit 0 seconds 3
+suite codex exit 0 seconds 10
+suite install exit 0 seconds 39
+suite sudo-helper exit 0 seconds 10
+```
+
+The `viewer-browser` failure is already on main. Three `test/app-accounts.spec.js` "lead waiting line" tests (:576, :584, :591) fail when now + 3 h crosses midnight: the page shows "about Fri 12:22 AM", and the test expects a digit after "about". The same three tests fail with the same error at the comparison commit `9bd3be98` (run at 21:22 local, in a scratch checkout). This build does not touch that spec or its page.
+
+Full run 1 on `19557ff6`, started at the same moment as the verifier session:
+
+```text
+commit 19557ff687918054311bab45e578ff52d37cd160
+suite viewer-browser exit 0 seconds 422
+suite viewer-node exit 0 seconds 104
+suite machine exit 0 seconds 145
+suite test-support exit 0 seconds 28
+suite sensitivity exit 0 seconds 4
+suite codex exit 0 seconds 12
+suite install exit 1 seconds 40
+suite sudo-helper exit 0 seconds 10
+```
+
+Its `install` failure was `FAIL real wheelchair directory is byte-identical after suite` (the check split off by Decision 12; live sessions write to `~/.wheelchair`). It did not reproduce on its own: `install/test/run.sh` passed 213/213 once at `19557ff6` and five times at `9bd3be98`, and `install` exited 0 in full run 2 on the same commit.
