@@ -582,6 +582,8 @@ for (const [label, size] of SIZES) {
       let req = page.waitForRequest((r) => r.url().endsWith(`/cards/${ap.id}/press`));
       await btn.click();
       expect((await req).postDataJSON()).toEqual({ action: 'start-building' });
+      // The approval response redraws the pinned cards; wait for that redraw before clicking the offer.
+      await expect(page.locator('#pinned .card-approval')).toHaveCount(0);
       req = page.waitForRequest((r) => r.url().endsWith(`/cards/${off.id}/press`));
       await page.locator('#pinned').getByRole('button', { name: 'Take it into planning' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'picked', value: 'take it into planning' });
