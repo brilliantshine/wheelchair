@@ -14,7 +14,7 @@ function fixture(t, failure = '') {
   fs.copyFileSync(source, path.join(dir, 'test-support/full-run.sh'));
   fs.writeFileSync(path.join(dir, 'viewer/test/a.test.js'), '');
   fs.writeFileSync(path.join(dir, 'test-support/test/a.test.js'), '');
-  const stub = `#!/bin/bash\ncase "$0 $*" in\n *npm*) name=viewer-browser;;\n *viewer/test*) name=viewer-node;;\n *test-support/test*) name=test-support;;\n *machine/test*) name=machine;;\n *sensitivity/test*) name=sensitivity;;\n *codex/test*) name=codex;;\n *install/test*) name=install;;\n *) name=sudo-helper;;\nesac\nprintf '%s start %s\\n' "$name" "$(date +%s%N)" >> "$EVENTS"\ntrap 'printf "%s stopped %s\\n" "$name" "$(date +%s%N)" >> "$EVENTS"; exit 143' TERM HUP\nif [[ $name == viewer-browser ]]; then sleep \${BROWSER_SLEEP:-3} & else sleep \${OTHER_SLEEP:-1} & fi\nwait $!\nprintf '%s end %s\\n' "$name" "$(date +%s%N)" >> "$EVENTS"\n[[ $name != "$FAIL_SUITE" ]] || exit 7\n`;
+  const stub = `#!/bin/bash\ncase "$0 $*" in\n *npm*) name=viewer-browser;;\n *viewer/test*) name=viewer-node;;\n *test-support/test*) name=test-support;;\n *machine/test*) name=machine;;\n *sensitivity/test*) name=sensitivity;;\n *codex/test*) name=codex;;\n *install/test*) name=install;;\n *) name=sudo-helper;;\nesac\nstop_stub() {\n  if [[ $name == viewer-browser ]]; then\n    deadline=$((SECONDS + 5))\n    while ! grep -q '^viewer-node stopped ' "$EVENTS" && (( SECONDS < deadline )); do sleep 0.1; done\n    sleep 1\n  fi\n  printf '%s stopped %s\\n' "$name" "$(date +%s%N)" >> "$EVENTS"\n  exit 143\n}\ntrap stop_stub TERM HUP\nprintf '%s start %s %s %s\\n' "$name" "$(date +%s%N)" "$$" "$0 $*" >> "$EVENTS"\nif [[ $name == viewer-browser ]]; then sleep \${BROWSER_SLEEP:-3} & else sleep \${OTHER_SLEEP:-1} & fi\nwait $!\nprintf '%s end %s\\n' "$name" "$(date +%s%N)" >> "$EVENTS"\n[[ $name != "$FAIL_SUITE" ]] || exit 7\n`;
   for (const file of ['bin/npm', 'bin/node', 'bin/python3', 'machine/test/run.sh', 'sensitivity/test/run.sh', 'codex/test/run.sh', 'install/test/run.sh', 'sudo-helper/test/install-test.sh']) {
     fs.writeFileSync(path.join(dir, file), stub, { mode: 0o755 });
   }
@@ -43,6 +43,16 @@ for (const failure of ['', 'machine', 'viewer-browser']) test(`summary and exit:
   assert.equal(lines.length, names.length);
   names.forEach((name, i) => assert.match(lines[i], new RegExp(`^suite ${name} exit ${name === failure ? 7 : 0} seconds \\d+$`)));
   const e = events(f).trim().split('\n').map(line => line.split(' '));
+  if (failure) {
+    for (const name of names) {
+      const starts = e.filter(x => x[0] === name && x[1] === 'start');
+      assert.equal(starts.length, name === 'sudo-helper' ? 2 : 1, `${name} starts`);
+      assert.equal(new Set(starts.map(x => x.slice(4).join(' ').trim())).size, starts.length, `${name} commands`);
+    }
+    const sudoCommands = e.filter(x => x[0] === 'sudo-helper' && x[1] === 'start').map(x => x.slice(4).join(' ').trim());
+    assert.ok(sudoCommands.some(command => /python3 -m unittest discover -s sudo-helper\/test$/.test(command)));
+    assert.ok(sudoCommands.some(command => /sudo-helper\/test\/install-test\.sh$/.test(command)));
+  }
   const stamp = (name, event) => BigInt(e.find(x => x[0] === name && x[1] === event)[2]);
   assert.ok(stamp('viewer-browser', 'start') < stamp('machine', 'end') && stamp('machine', 'start') < stamp('viewer-browser', 'end'));
   for (const name of names) assert.match(result.output, new RegExp(`${name}: exit \\d+ seconds \\d+`));
@@ -54,6 +64,11 @@ for (const signal of ['TERM', 'HUP']) test(`${signal} stops both suites`, async 
   assert.notEqual(result.code, 0);
   assert.match(events(f), /viewer-browser stopped/); assert.match(events(f), /viewer-node stopped/);
   assert.ok(!fs.existsSync(path.join(f.log, 'summary.txt')));
+  for (const name of ['viewer-browser', 'viewer-node']) {
+    const start = events(f).trim().split('\n').map(line => line.split(' ')).find(x => x[0] === name && x[1] === 'start');
+    assert.ok(start, `${name} start recorded`);
+    assert.throws(() => process.kill(Number(start[3]), 0), { code: 'ESRCH' });
+  }
 });
 test('dirty tracked tree is refused', async t => {
   const f = fixture(t); fs.appendFileSync(path.join(f.dir, 'viewer/test/a.test.js'), 'dirty');
