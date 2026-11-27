@@ -2,7 +2,10 @@
 slug: new-thread-stubs
 date: 2026-11-27
 implemented-by: "T1 hub: standard gpt-6.1-terra (attempt 2 at xhigh effort); T2 page: standard gpt-6.1-terra (Claude requested, hub routed to gpt); T3 protocol: light gpt-6-luna"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5 (top-tier verifier)
+    checks: gpt (gpt-6.1-terra, gpt-6-luna)
 ---
 
 # Completion Report — Save an idea as a stub from the New thread screen
@@ -79,7 +82,21 @@ Read against `lead.md:926-933`: the summary after the marker starts with `(saved
 
 Screenshots (posted to the thread): `/tmp/wc-t2-new-phone.png`, `/tmp/wc-t2-new-desktop.png`, `/tmp/wc-t2-stub.png`.
 
-The full run (`test-support/full-run.sh`) for the verified commit is pasted below once it finishes.
+Full run (`bash test-support/full-run.sh`), `summary.txt`:
+
+```
+commit be8bcebb299193cffb81a037b8e17274d4a0a5d5
+suite viewer-browser exit 0 seconds 462
+suite viewer-node exit 0 seconds 114
+suite machine exit 0 seconds 168
+suite test-support exit 0 seconds 28
+suite sensitivity exit 0 seconds 6
+suite codex exit 0 seconds 14
+suite install exit 0 seconds 43
+suite sudo-helper exit 0 seconds 9
+```
+
+Verification attempt 1 (claude-opus-5-5): PASS on be8bcebb, no gaps.
 
 ## Known gaps / residual risks
 
