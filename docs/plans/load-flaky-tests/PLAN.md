@@ -30,6 +30,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | The full run never re-runs a failed test; any failure fails the run | Collin picked "No re-run": a retry could let a real timing bug through | user |
 | 6 | The install suite byte-checks only what wheelchair itself writes in the real `~/.wheelchair`, and skips what the AI tools write there while sessions run | Collin picked "Wheelchair's own files": passes while sessions run and still catches a wheelchair leak | user |
 | 7 | Fixtures in `lifecycle.test.js` that start the real viewer with an explicit `--port` keep the probe-then-bind pattern unless a load run reproduces a clash there | Only the test's own holder has a reported failure; the viewer's own port handling is what those tests check | defaulted |
+| 8 | S9 checks an allowlist of wheelchair's own files in account folders, not a skip list of AI-tool files | AI-tool file names change by version and event; the allowlist stays stable | review-round-1 |
+| 9 | Supersedes 1: the load harness pins to 2 CPUs with 2 helpers per CPU by default, still leaving the rest of the machine alone | One CPU shared by a multi-process test and 3 helpers is harsher than the reported load | review-round-1 |
 
 ## Spec
 
@@ -45,15 +47,17 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - New files that need picker coverage get a `test-support/test-map.json` entry, per that
   file's existing pattern.
 - "Passes under load" below means
-  `bash test-support/under-load.sh --hogs 3 --repeat <K> -- <command>` exits 0.
+  `bash test-support/under-load.sh --repeat <K> -- <command>` exits 0 with the default CPUs and helpers.
 
 ### S1. A load harness: `test-support/under-load.sh`
 
-`bash test-support/under-load.sh [--hogs N] [--repeat K] [--cpu C] -- <command...>`
+`bash test-support/under-load.sh [--cpus N] [--hogs H] [--repeat K] -- <command...>`
 
-- Picks CPU C (default: the highest-numbered CPU, `$(nproc --all) - 1`), pins itself and
-  everything it starts to it with `taskset -c C`, and starts N busy-loop helpers there
-  (default 3). Only that one CPU is loaded, so other threads on the machine are unaffected.
+- Picks the N highest-numbered CPUs (default 2), pins itself and everything it starts to
+  them with `taskset -c`, and starts H busy-loop helpers there (default 2 per CPU). Only
+  those CPUs are loaded, so other threads on the machine are unaffected. The default
+  roughly matches the reported load (about 3 to 4 busy processes per core). Usage errors
+  include N larger than the machine's CPU count.
 - Runs the command K times in a row (default 5), each with stdin from `/dev/null`, its
   output passed through, then prints `under-load: pass <p> of <K>` and exits 0 only if all
   K passed, else 1. Usage errors exit 2.
@@ -61,7 +65,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   running command and exits non-zero.
 - Without `taskset` it prints `under-load: taskset not found` and exits 2.
 - Tested by `test-support/test/under-load.test.js`: the count line and exit code for a
-  passing and a failing command, the command running pinned to one CPU, and no helper
+  passing and a failing command, the command running pinned to the chosen CPUs, and no helper
   alive after a normal exit and after TERM.
 - Not run by the full run beyond its own test.
 
@@ -121,10 +125,12 @@ The test checks that archive ends the stalled upload instead of waiting for the 
 default timeout, with under 5 s of margin between them.
 
 - Reproduce under load and note which wait or budget fails.
-- Widen the gap: set the machine-side timeout this test distinguishes from to at least
-  60 s for this test (through the setting the code already reads, or a new test-only
-  setting if there is none), and set the archive budget to at most half of it. A slow
-  machine passes; an archive that waits for that timeout still fails.
+- Widen the gap inside the test first: measure the stall and archive steps against the
+  default machine timeout the code already uses, instead of the fixed `delay(5200)` and
+  `< 5000` budget (`viewer/test/app-uploads-archive.test.js:96-99`), so a slow machine
+  passes and an archive that waits for that timeout still fails. Only if that cannot keep
+  a clear gap, make the timeout longer for this test through a setting the code already
+  reads, or, failing that, a new one, named in the report.
 - Waits that only cover setup (the `.part` file appearing, the upload outcome) poll to at
   least a 15 s deadline; the test's own timeout grows to fit.
 
@@ -157,25 +163,26 @@ Checks, each passing under load (`--repeat 5`):
 
 ### S9. Install suite's real-folder check (`install/test/run.sh:27-49,234,705`)
 
-- `tree_state` (or a new helper beside it) covers the real `~/.wheelchair` except the files
-  and folders the AI tools write themselves while sessions run, inside each
-  `accounts/<name>/` (Decision 6). The skip list is explicit and named in a comment, each
-  entry with the tool that writes it, built from what the Claude and Codex CLIs keep in
-  their config folder (for example `projects/`, `sessions/`, `history.jsonl`,
-  `file-history/`, `shell-snapshots/`, `paste-cache/`, `session-env/`, `telemetry/`,
-  `backups/`, `cache/`, `plugins/`, `.claude.json`, `.credentials.json`, Codex's
-  `sessions/`, `log/`, `auth.json`). Wheelchair's own files there (for example `CLAUDE.md`,
-  `AGENTS.md`, `wheelchair-account.json`, settings and hooks it writes) stay checked.
-- To build the list: snapshot the real folder, let it sit for 10 minutes while sessions
-  run, and list which paths changed; each changed path is either on the skip list as an AI
-  tool's file, or, if wheelchair's own running services wrote it, it is named in the task
-  report and skipped only if it is a cache those services rewrite on their own (never a
-  file the installer or its fixtures write).
+The check names what wheelchair writes; it never lists what the AI tools write, since
+those change with each tool version and event (Decision 6).
+
+- Outside `accounts/`, the real `~/.wheelchair` stays checked in full, as today.
+- Inside each `accounts/<name>/`, only the files wheelchair's code writes there are
+  checked, byte for byte: `CLAUDE.md`, `AGENTS.md`, `wheelchair-account.json`, and
+  wheelchair's entries under `skills/`. The worker confirms the list by searching the
+  code that writes into account folders (for example `connectors/common.js`,
+  `machine/lib/harness-install.js`, `viewer/app/`) and names every writer in a comment
+  beside the list. Everything else inside an account folder is not checked.
+- Files both sides write (for example Codex's `config.toml`, which wheelchair creates once
+  at `connectors/common.js:13` and Codex may then change, and Claude's `settings.json`)
+  are checked only for being created or deleted during the suite, not for content. The
+  comment names them.
 - On a mismatch the failure lists the changed paths (relative to `~/.wheelchair`), not only
   two hashes.
-- The existing `accounts/*/tmp` skip stays.
-- A self-check in the suite: writing a file into a checked path of a temporary copy of the
-  tree changes the result, and writing one into a skipped path does not.
+- A self-check in the suite, on a temporary copy of the tree: changing a checked file
+  changes the result; changing an unchecked account file does not; creating or deleting a
+  shared file does.
+- The other five real-file checks at `install/test/run.sh:700-704` stay as they are.
 
 Check: `bash install/test/run.sh` passes on this machine while wheelchair sessions are
 running, three times in a row.
@@ -200,11 +207,14 @@ Unchanged: no re-runs. Any suite exit other than 0 fails the run (Decision 5).
 
 ### Round 1 — 2026-11-26
 
-**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | S9's skip list of AI-tool files is unstable: tools add versioned and event-written files the 10-minute watch misses | upheld | S9 now lists what wheelchair writes in account folders (allowlist); shared files checked for create/delete only |
+| intent | minor | S1 on one CPU with 3 helpers is harsher than the reported load, inviting needless budget growth | upheld | S1 defaults to 2 CPUs, 2 helpers per CPU |
+| intent | minor | S6 jumps to a new product setting before trying an in-test fix | upheld | S6 widens the gap inside the test first |
 
 ## Implementation Tasks
