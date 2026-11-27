@@ -44,7 +44,7 @@ None.
 | 18 | Escape runs are joined into batches of up to 1 MiB with a separator and checked with the existing `findSpellings`; no new export, `key-spell.js` unchanged | Same result as per-run checks with one setup per batch; leaves the shared checker alone | review-round-7 |
 | 7 | A held-back request from the server to the client is answered on the server's stdin with an error, not dropped silently | Closes the parent's accepted risk of a server left waiting | defaulted |
 | 8 | Server stderr is piped and redacted with the same capture redaction as script output (`redactCapture`), line by line, with cut marks for very long lines | Keys can't contain newlines (parent Decision 16), so the parent's multiline finding is moot | defaulted |
-| 9 | Detection is the parent's rule (Decision 19): any plain or escaped spelling `key-spell.js` finds; a work-budget overrun counts as a key | One rule for scripts and servers | defaulted |
+| 9 | Detection is the parent's rule (Decision 19): any plain or escaped spelling `key-spell.js` finds; a work-budget overrun makes the line unchecked, which is held back like a key, with its own message | One rule for scripts and servers | defaulted |
 
 ## Spec
 
@@ -127,12 +127,15 @@ None.
     alone, and key setup is paid once per batch.
   - Every byte of any spelling the parent's rule covers is escape-like, so a spelling always
     lies inside one such run; undoing JSON escapes first means ordinary JSON escapes (`\n`,
-    `\"`, `\/`, `é`) never form long runs. Memory for detection is the line, one decoded
-    string and one batch of at most 1 MiB at a time.
+    `\"`, `\/`, `\u00e9`) never form long runs. Memory for detection is the line, one decoded
+    string, one batch of at most 1 MiB, and the matcher's state for that batch (which grows with
+    the number and length of keys: tens of MiB with 20 keys of 4096 characters).
+  - The result is **clean** (nothing found, nothing unchecked), or not. A line is unchecked if
+    any batch, or any part of it, is unchecked, and has a key if any batch finds one; a later
+    clean batch never clears an earlier result.
 - **Backpressure.** When a write to the launcher's stdout returns `false`, the launcher pauses
   reading the server's stdout until `drain`; so at most one handled line waits in the write
   queue besides the line being read (itself at most 32 MiB). The same for stderr.
-  - The result is **clean** (nothing found, nothing unchecked), or not.
 - Outcomes for a line, checked in order, for every kind of line alike (replies, server
   requests, notifications):
   1. **Unchanged.** Detection is clean: the original bytes are written.
@@ -163,7 +166,7 @@ None.
     server's stdout and stderr have ended and the server has exited, it handles any final line
     without `\n` the same way (without adding a newline), waits for its own stdout and stderr
     writes to flush, and exits with the server's code (1 on a signal). If the server has not
-    exited 5 seconds after stdin ended, the launcher kills its process group as today and then
+    exited 5 seconds after stdin ended (counting only time while it is not paused for backpressure), the launcher kills its process group as today and then
     exits the same way.
   - Server exits first: the same flush, then exit with its code.
   - After the server process exits, the launcher waits at most 2 seconds more for its stdout
@@ -174,7 +177,7 @@ None.
   - The client goes away: an `error` (such as `EPIPE`) or `close` on the launcher's stdout or
     stderr means that destination is gone. Its pause is released and its pending output is
     discarded; nothing more is written to it. If stdout is gone, the launcher kills the server
-    group and exits once stderr has flushed or is gone, at most 2 seconds later.
+    group and exits with code 1 once stderr has flushed or is gone, at most 2 seconds later.
   - A signal to the launcher (SIGINT, SIGTERM, SIGHUP): kill the group and exit, as today; no
     flush promise.
 
@@ -195,13 +198,18 @@ None.
 ### S6. Held-back requests from the server
 
 - For a held-back server request, the launcher writes to the server's stdin
-  `{"jsonrpc":"2.0","id":<the server line's exact id text>,"error":{"code":-32603,"message":"held back by wheelchair: the request contained one of this tool's keys"}}\n`.
+  `{"jsonrpc":"2.0","id":<the server line's exact id text>,"error":{"code":-32603,"message":"held back by wheelchair: the request contained one of this tool's keys"}}\n`
+  (with `…could not be checked for keys` or `…was over 32 MiB` in place of `contained one of
+  this tool's keys` for those cases).
   (That id goes back to the server, which already knows it.)
 - The launcher passes the client's stdin bytes to the server unchanged and immediately, and
   tracks only whether a client line is part-way through. An injected line is never written
   inside a client line: it is queued and written right after the client's next `\n` (or at
   once if none is part-way). After client stdin ends, a queued line is written before the
   server's stdin is ended.
+- Both kinds of write go through the server's stdin with the same backpressure as today's
+  pipe: when a write returns `false`, the launcher pauses reading the client's stdin until
+  `drain`.
 
 ### S7. Server stderr
 
@@ -245,7 +253,7 @@ None.
 
 - S1: `node --test machine/test/folder-tools.test.js` (keyed server accepted; old refusal gone).
 - S2: `node --test machine/test/folder-tools-run.test.js viewer/test/wc-tool.test.js machine/test/project-tools.test.js` — keyed server with missing key not offered with the needs-key line; set key offered; `check` keeps the server name and tool list and adds the note; list status.
-- S3–S7: `node --test machine/test/folder-tools-launch.test.js machine/test/key-redact.test.js` with a fake keyed server covering at least: keys reach the server env and not argv/MCP entry; `NODE_DEBUG=child_process` refusal with no value on stderr; keys-changed and missing-key refusals; `check` with a declared key already set in the caller's environment does not pass it to the server; keyless lines byte-identical (odd spacing, `1.0`, `9007199254740993`); a key echoed in a result string replaced with `[key]`; a key echoed in `\u`-escaped and `\/` forms replaced or held back, never passed; a key in a property name held back and answered with the reply's own `id` bytes (including `9007199254740993` and a string id); a key in the reply's `id` dropped; a server request whose `method` is the key (`roots/list` as the key value) held back and answered on the server's stdin, never reaching the client; a server request carrying a key answered on the server's stdin and not inside a client line; a notification with a key in a string value passed with `[key]`, and one with a key in a property name dropped; a server request with a key in a string param passed with `[key]`; a client that waits for each reply before sending the next request completes (no stall); a 1 MiB string value that is a run of `A` with one `%41` (and one with `\\u0041`) held back as unchecked, with the launcher's heap growth under 200 MiB, for 20 declared keys of 4096 characters starting with `A`; an 8 MiB JSON reply carrying base64 image data (one written with `\/`) and a 16 MiB JSON reply of escape-heavy text (`\n`, `\"`, `\u00e9`), each passed unchanged within 5 seconds, both with two keys absent from them and with two absent keys sharing their prefixes (`e3…`, `n6…`); with keys of 40 characters: a 16 MiB reply with 200,000 separated `%20` URLs of 30–60 characters passed unchanged within 10 seconds; a 4 MiB `content[].text` reply holding pretty-printed JSON (inner `\n`, `\"`, `\\`), with three 40-character keys and again with three 8-character keys, absent, passed unchanged within 5 seconds; a 32 MiB line built to exhaust the work budget held back as unchecked within 15 seconds, the client getting the unchecked error text with the exact `id` bytes; the same with the unchecked stretch inside the `id`, and no reply written; a key spelled as `\u0041…` with no raw match held back, never passed unchanged; a key matched raw but overlapping an escape (`\u0041` followed by the rest of a key starting `1`) held back, not replaced; a 32 MiB reply of many small tokens with one echoed key replaced without heap growth beyond a few times the line; a line over 32 MiB discarded, with held input never above 32 MiB, with an error reply when its `id` came before the cut, and dropped when it came after; client stdin closed while a reply is still being written, and the reply arrives whole; a server that exits while a child keeps its stdout open: the launcher exits within about 2 seconds with what it had delivered; a keyless entry whose tool gained a key, and a keyed entry whose tool lost all keys, both refused as changed; stderr key replaced, including one straddling a 4 KiB piece edge, and a 20 KiB stderr line of ordinary words passed whole; a client that closes its end while the launcher is paused on a full stdout: the launcher kills the server group and exits within about 2 seconds; a client that stops reading while the server sends five 20 MiB replies, with the launcher's queued stdout bytes (`writableLength`) never above one reply and its external buffer memory under 100 MiB until it reads again; a server that exits while the client is paused for more than 2 seconds, with every reply delivered once the client resumes; 1,000,000 bytes of stdout fully delivered before exit; keyless server unchanged (stderr inherited).
+- S3–S7: `node --test machine/test/folder-tools-launch.test.js machine/test/key-redact.test.js` with a fake keyed server covering at least: keys reach the server env and not argv/MCP entry; `NODE_DEBUG=child_process` refusal with no value on stderr; keys-changed and missing-key refusals; `check` with a declared key already set in the caller's environment does not pass it to the server; keyless lines byte-identical (odd spacing, `1.0`, `9007199254740993`); a key echoed in a result string replaced with `[key]`; a key echoed in `\u`-escaped and `\/` forms replaced or held back, never passed; a key in a property name held back and answered with the reply's own `id` bytes (including `9007199254740993` and a string id); a key in the reply's `id` dropped; a server request whose `method` is the key (`roots/list` as the key value) held back and answered on the server's stdin, never reaching the client; a server request carrying a key answered on the server's stdin and not inside a client line; a notification with a key in a string value passed with `[key]`, and one with a key in a property name dropped; a server request with a key in a string param passed with `[key]`; a client that waits for each reply before sending the next request completes (no stall); a 1 MiB string value that is a run of `A` with one `%41` (and one with `\\u0041`) held back as unchecked, with the launcher's heap growth under 200 MiB, for 20 declared keys of 4096 characters starting with `A`; an 8 MiB JSON reply carrying base64 image data (one written with `\/`) and a 16 MiB JSON reply of escape-heavy text (`\n`, `\"`, `\u00e9`), each passed unchanged within 5 seconds, both with two keys absent from them and with two absent keys sharing their prefixes (`e3…`, `n6…`); with keys of 40 characters: a 16 MiB reply with 200,000 separated `%20` URLs of 30–60 characters passed unchanged within 10 seconds; a 4 MiB `content[].text` reply holding pretty-printed JSON (inner `\n`, `\"`, `\\`), with three 40-character keys and again with three 8-character keys, absent, passed unchanged within 5 seconds; a 32 MiB line built to exhaust the work budget held back as unchecked within 15 seconds, the client getting the unchecked error text with the exact `id` bytes; the same with the unchecked stretch inside the `id`, and no reply written; a key spelled as `\u0041…` with no raw match held back, never passed unchanged; a key matched raw but overlapping an escape (`\u0041` followed by the rest of a key starting `1`) held back, not replaced; a 32 MiB reply of many small tokens with one echoed key replaced without heap growth beyond a few times the line; with 20 declared keys of 4096 characters, a 1 MiB reply with 250 qualifying 4 KiB runs checked with heap plus array-buffer growth under 150 MiB; a reply whose first batch holds a fully escaped key followed by clean batches held back, and one whose key is first found in a later batch held back; a held-back server request for the unchecked and size cases gets its own message; a slow-reading client that closed stdin while the server is still writing its last reply gets it whole; a client sending a 20 MiB request to a server that reads slowly, with the launcher's queued stdin bytes never above about one read chunk; a line over 32 MiB discarded, with held input never above 32 MiB, with an error reply when its `id` came before the cut, and dropped when it came after; client stdin closed while a reply is still being written, and the reply arrives whole; a server that exits while a child keeps its stdout open: the launcher exits within about 2 seconds with what it had delivered; a keyless entry whose tool gained a key, and a keyed entry whose tool lost all keys, both refused as changed; stderr key replaced, including one straddling a 4 KiB piece edge, and a 20 KiB stderr line of ordinary words passed whole; a client that closes its end while the launcher is paused on a full stdout: the launcher kills the server group and exits within about 2 seconds; a client that stops reading while the server sends five 20 MiB replies, with the launcher's queued stdout bytes (`writableLength`) never above one reply and its external buffer memory under 100 MiB until it reads again; a server that exits while the client is paused for more than 2 seconds, with every reply delivered once the client resumes; 1,000,000 bytes of stdout fully delivered before exit; keyless server unchanged (stderr inherited).
 - Name guard: `node --test machine/test/name-guard.test.js`.
 - S8: `grep -n -i "aren't supported yet" protocol/tools.md` finds nothing; `grep -n -i "never print or log a key" protocol/tools.md` finds the rule; read the rendered guide (CONTRIBUTING.md).
 
@@ -274,6 +282,7 @@ None.
 
 | # | What to check | Round |
 |---|---------------|-------|
+| 2 | A key found in any batch of a line holds the line back, whatever later batches find | review-round-8 |
 | 1 | A reply whose payload exhausts the work budget while its `id` is clean gets the unchecked error with the exact `id` bytes; with the unchecked stretch in the `id`, no reply is written (the `id` and generated line get fresh budgets) | review-round-7 |
 
 ## Review Rounds
@@ -407,6 +416,23 @@ None.
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 7:** S4 (batched runs through the existing `findSpellings`, no new export; client going away), S5 (unchecked error text; fresh budgets), Validation, Check Once Built 1, Decision 18.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Decision 9 says overrun counts as a key | upheld | Reworded: unchecked, held back with its own message |
+| intent | minor | "clean" defined under Backpressure | upheld | Moved under Detection |
+| intent | minor | Exit code when client goes away | upheld | Code 1 |
+| mechanics | major | 5-second stdin-end timer ignores backpressure | upheld | Counts only unpaused time; test |
+| mechanics | major | Client-to-server writer has no backpressure | upheld | S6: pause client stdin on a full server stdin; test |
+| mechanics | minor | Memory wording omits matcher state | upheld | S4 wording; batched-path memory test |
+| mechanics | minor | Server request told "contained a key" for unchecked/size | upheld | S6 messages |
+| mechanics | blocking | Check once built: batch results combined | check-once-built | Check Once Built 2; S4 states the rule; test |
+
+### Round 9 — 2026-11-27
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 8:** S4 (clean definition and batch combining under Detection; matcher memory wording; 5-second timer ignores paused time; exit code), S6 (messages per reason; client-side backpressure), Decision 9 wording, Validation, Check Once Built 2.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
