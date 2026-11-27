@@ -352,3 +352,5 @@ Plus any new test file named above, run with `node --test <file>`.
 - 2026-11-27 — T6 accepted (band: scout): all nine brief items covered; tool-machine-run 14/14 on five runs. The route's disconnect and stop tests can't tell a group kill from a parent-only SIGTERM; the group kill itself is covered by T1's runner tests.
 - 2026-11-27 — Verification attempt 1 on d81671ee: verifier (claude-opus-5-5) PASS, no gaps; full run failed suite machine (7 tests, `this.toolRuns` undefined in prototype-built services). 0 rare paths. Remediation 1 written.
 - 2026-11-27 — R1-1 accepted (band: scout; the 1-line diff is exactly the change the brief dictated, read in the diff-size output): `this.toolRuns?.get`; 58/58 targeted tests pass. Choices: none.
+- 2026-11-27 — Verification attempt 2 on 6d0bf766: verifier (claude-opus-5-5) PASS, no gaps, 0 rare paths. First full run hit EADDRINUSE on 7374 in the unchanged plan-files test while the verifier ran; the rerun with nothing else running passed every suite.
+
