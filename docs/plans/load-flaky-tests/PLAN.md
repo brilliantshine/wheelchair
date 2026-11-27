@@ -67,8 +67,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   output passed through, then prints `under-load: pass <p> of <K>` and exits 0 only if all
   K passed, else 1. Usage errors exit 2.
 - Kills every helper on normal exit and on TERM, HUP and INT; a signal also sends TERM to
-  the running command's whole process group, waits up to 10 s for it to empty, then KILLs
-  it, and exits non-zero.
+  the running command's whole process group, waits up to 60 s for it to empty (longer than
+  S2's 45 s runner cleanup, so a nested full-run fixture can finish stopping), then KILLs
+  it, and exits non-zero. Processes the command moved into groups of their own are the
+  command's to stop.
 - Without `taskset` it prints `under-load: taskset not found` and exits 2.
 - Tested by `test-support/test/under-load.test.js`, which skips (`t.skip`) on a host without
   `taskset`: the count line and exit code for a
@@ -98,7 +100,8 @@ before installing its trap, so a signal can land before the trap exists.
   closes them on TERM before it exits, so an empty browser-job group within the 45 s means
   Playwright has finished stopping. After a KILL nothing is promised about browser engines.
 - The fixture stub installs its trap before it writes `start`, and writes its own PID in
-  the `start` record. After the runner exits, the test asserts both `stopped` records, the
+  the `start` record. Its trap waits 1 s before writing `stopped` and exiting, so a runner
+  that returns as soon as the browser job's leader dies is caught by the test. After the runner exits, the test asserts both `stopped` records, the
   no-summary file, and that neither stub PID is still alive (`process.kill(pid, 0)` throws
   `ESRCH`).
 
@@ -195,7 +198,8 @@ presses; offer press", Firefox) and `viewer/test/app-agents-decks.spec.js:247`
   is present, then two frames, then check geometry and scroll. In scenarios with a
   `change`, the wait is for a new `.deck-pop` rendered from the changed data (the deck shows
   round 41), since a response fetched before the change can replace the popover first.
-  This applies to every scenario in that `describe`.
+  This applies to every scenario in that `describe` and to "popover scrolled to the bottom
+  grows on refresh", which adds round 41 inline rather than in `change`.
 - Approval spec, and the deck spec if it still fails: reproduce under load with a
   Playwright trace (`--trace on`), find the cause, and fix it under the general rules.
   Name the cause in the task report.
@@ -330,5 +334,10 @@ A first start of this round's reviewers was stopped before they reported, becaus
 |------|----------|---------|--------------|------------|
 | intent | minor | S1 always picks the same CPUs, so two threads' load checks stack on them | upheld | CPUs picked at random and printed |
 | intent | minor | S1's own test could burn two CPUs on every full run | upheld | Test limited to one helper, one CPU, at most 2 repeats |
+| mechanics | blocking | S1's 10 s KILL can cut short a nested full-run fixture's 45 s cleanup when a load check is cancelled | downgraded to minor | Only on cancelling a check; leftovers are fixture sleeps that end on their own. S1 now waits 60 s before KILL |
+| mechanics | minor | S2's browser stub exits fast enough that the old leader-only wait could still pass | upheld | Stub's trap waits 1 s before `stopped` |
+| mechanics | minor | S8: the bottom-scroll test adds round 41 inline and needs the same marker wait | upheld | Named in S8 |
+| mechanics | blocking | S9: create-or-delete check still trips on live first creation of `agy-models.json` and on a Settings CLI install's result and PID files | upheld | Pending the split question |
+| mechanics | blocking | S9: the moved snapshot helper is also used for fixture isolation and idempotence checks; the allowlist must apply only to the real-home snapshots | upheld | Pending the split question |
 
 ## Implementation Tasks
