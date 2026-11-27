@@ -2,7 +2,10 @@
 slug: install-real-home-check
 date: 2026-11-26
 implemented-by: "standard, gpt-6.1-terra (T1); sub-lead: claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: verifier, claude-opus-5-5
+    checks: standard, gpt-6.1-terra
 ---
 
 # Completion Report — Install tests: only check wheelchair's own files in the real folder
@@ -50,9 +53,30 @@ $ grep -n 'real wheelchair directory is byte-identical' install/test/run.sh
 
 Negative checks (the worker's, pasted in `docs/plans/install-real-home-check/reports/T1.md`): with the `-u` flags removed, `FAIL codex_only ignores model path overrides` and `FAIL kimi_on_path ignores model path overrides`; with `.lock` dropped from the list, `FAIL real wheelchair mismatch names both changed files`; with `agy-models.json` added to the list, `FAIL real wheelchair state ignores unlisted files`. ShellCheck: 90 SC2016 + 1 SC2086 notes vs 91 + 1 on the base (no new warnings; scout-checked).
 
+### Verification attempt 1 (commit db73471b)
+
+Verifier (claude-opus-5-5): VERDICT PASS, no gaps. It ran `bash install/test/run.sh` with the real HOME (217 passed, 0 failed) and the old-assert grep (no output), and ran its own leak test on a scratch HOME: changing `models`, creating `.lock` and adding `agy-models.json` before the Darwin cases gave `FAIL real wheelchair file changed during suite: models, .lock`.
+
+Full run (`bash test-support/full-run.sh`), `summary.txt`:
+
+```text
+commit db73471b6aa6c5b7a845dcf7dc1927519f64e3b4
+suite viewer-browser exit 1 seconds 419
+suite viewer-node exit 0 seconds 108
+suite machine exit 0 seconds 146
+suite test-support exit 0 seconds 27
+suite sensitivity exit 0 seconds 4
+suite codex exit 0 seconds 12
+suite install exit 0 seconds 37
+suite sudo-helper exit 0 seconds 9
+```
+
+`viewer-browser` exit 1 is already on main: four chromium tests in `viewer/test/app-accounts.spec.js:576,584,591,599` ("lead waiting line") fail with the same error, e.g. `Expected pattern: /^Waiting for GPT to refill, about \d/`, `Received string: "Waiting for GPT to refill, about Fri 02:55 AM"`. The test adds 3 hours to now, and the suite ran just before midnight (Thu Nov 26 11:55 PM PST), so the label shows a weekday. The `viewer/` tree at this commit is identical to the comparison commit 0b5e05cf (`git diff --quiet 0b5e05cf HEAD -- viewer` exits 0), and a rerun of those tests alone failed the same way. Not caused by this change; it does not fail the gate.
+
 ## Known gaps / residual risks
 
 - As in PLAN.md Accepted Risks: a model pin changed in Settings during a suite run, or the machine's first-ever `.lock`, fails the check (false failure, rerun); `file_state` blind spots for directories/unreadable files/symlinks.
+- Pre-existing on main: the "lead waiting line" browser tests fail when now + 3h crosses midnight (above).
 - `real_wheelchair_mismatch` matches with an unanchored `grep -F "<path> "`; a future listed name that is a suffix of another (e.g. `lock` beside `.lock`) would need anchoring.
 
 ## Remediation rounds
