@@ -15,14 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q2: When should the assistant ask for confirmation before applying a change?
-- **Context:** Some settings are harmless preferences (writing style, tool steps, model choices), while others change safety boundaries or remove data (turning the assistant itself off, loosening session permissions or aside access, enabling auto-merge or branch deletion, removing an account/template/lesson, resetting model pins).
-- **Options:**
-  1. Ask before risky or destructive changes, apply normal preferences right away.
-  2. Apply every requested change right away without a second confirmation.
-  3. Always confirm every setting change with a card first.
-- **Recommendation:** Option 1 (Ask before risky or destructive changes).
-
 ### Q3: Should an already-open Settings page update automatically when the assistant changes a setting?
 - **Context:** Today the Settings page fetches `/wheelchair/api/settings` once on load and does not poll general settings. If Collin uses the assistant popup while on the Settings page, controls would look stale until reload unless the page refreshes.
 - **Options:**
@@ -53,8 +45,19 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | Route all assistant setting reads and writes through the hub's existing validation and write handlers via `wc.js assistant`, with no automatic retry on writes | Preserves every Settings page invariant and matches existing assistant action transport and safety rules | defaulted |
 | 4 | Keep browser-only "Enter to send" out of assistant writes; assistant tells Collin where to toggle it | Stored only in browser `localStorage`; hub cannot change another browser's local preference | defaulted |
 | 5 | Allow assistant to change hub-stored settings only (You except browser-only "Enter to send", Models, Usage & balancing, Threads, Agent behavior templates & lessons, Assistant & project leads, AI provider enable/disable & account metadata, Shared tools repo); keep logins, CLI installs, API keys/secrets, and Project tools PR edits manual | Gives chat control over normal settings without putting secrets, interactive sign-ins, or surprise repo PRs into assistant chat | user |
+| 6 | Apply normal preference changes right away; require a `question` card confirmation before high-impact or destructive changes (loosening session permissions or aside access, enabling auto-merge or branch deletion, turning off the personal assistant or disabling an AI provider, removing an account/template/lesson, or resetting model pins) | Keeps everyday tweaks fast while guarding against accidental safety-boundary changes, deletions, or shutting off the assistant | user |
 
 ## Spec
+
+### Confirmation Policy
+
+- **Immediate (no extra card):** Everyday preferences (name, writing style, diagram sensitivity, background opacity, model/tier/ladder/effort/escalation choices, balancing settings, tool steps, default project folder, lead names, shared tools repo, creating/editing/duplicating templates, editing/restoring lessons, adding/renaming/pausing/resuming/updating accounts, enabling a provider, enabling assistant/project leads, tightening/turning off permissions or auto-merge).
+- **Confirm first with a `question` card:**
+  - Loosening session permission modes (switching to unrestricted/bypass) or broadening aside access.
+  - Turning on auto-merge or delete-branch.
+  - Turning off the personal assistant (warns that its own session will stop) or disabling an AI provider.
+  - Removing an account, deleting a template, removing a lesson, removing the background image, or resetting model pins.
+  - Any ambiguous request where multiple settings or values could match.
 
 ### Scope & Boundaries
 
