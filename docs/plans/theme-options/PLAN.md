@@ -15,9 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Overlap with 72ca062b2848 (Auto-refresh an open Settings page when settings change): both threads touch Settings (`viewer/pages/settings.js`), `viewer/app/settings.js`, and `viewer/app/routes.js`.
-- **Context:** Thread `72ca062b2848` (`settings-live-refresh`) is planning auto-refresh for an open Settings page: polling, block dirty/focus guards, and save-ordering in `viewer/pages/settings.js`, plus a lightweight settings revision endpoint in `viewer/app/routes.js` / `viewer/app/settings.js`. Our thread adds Theme controls in Settings → You (`viewer/pages/settings.js`) and theme persistence/routes in `viewer/app/settings.js` / `viewer/app/routes.js` (if hub-synced).
-
 ### Q4: Agree the mockups
 - **Context:** Designer is creating mockups for Settings → You (desktop and phone) and a themed Light-mode Thread page with a custom accent color.
 
@@ -36,6 +33,7 @@ Log and is deleted from here.
 | 4 | Apply theme (color mode, preset, custom accent color) to all signed-in app pages, standalone doc (`viewer/doc.html`), and graph viewer (`viewer/index.html` + `picture-export.js`), while keeping the embedded terminal (`xterm.js` in `viewer/pages/term-view.js`) dark. | Keeps all Wheelchair UI and diagrams cohesive without making CLI ANSI colors unreadable in light mode. | user |
 | 5 | Store theme settings in hub `settings.json` synced across all devices, backed by a browser-local cache applied before first paint so pages do not flash the wrong theme on load. | Matches Background sync behavior across phone and computer; `system` color mode lets each device follow its own OS light/dark schedule. | user |
 | 6 | Ship curated full-palette theme presets (Wheelchair Default plus 5–7 cohesive palettes such as Midnight, Forest, Warm Sand, Rose, and Monochrome) that each define both light and dark surface/border/text palettes and a default accent, while allowing the user to override the accent to any custom hex color (and reset to preset or default). | Lets the user change the whole mood of the app in both light and dark modes while keeping full freedom over the accent color. | user |
+| 7 | Overlap with 72ca062b2848: isolate Theme storage, routes, and Settings → You UI in dedicated modules (`viewer/app/theme.js`, `viewer/pages/theme.js`, `viewer/pages/theme-editor.js`) rather than modifying shared Settings polling; thread 72ca062b2848 was building Settings auto-refresh (in-memory revision endpoint and per-block polling in `viewer/pages/settings.js`, with no `settings.json` schema changes) at the time (overlap card 6ba3f145-8654-4340-8c7c-3268b8559d43) | Keeps Theme cleanly decoupled from Settings auto-refresh, matching how Background is structured. | user |
 
 ## Spec
 
@@ -49,6 +47,7 @@ Log and is deleted from here.
 - A single chosen hex accent color (or the active preset's default accent) derives the full 7-token accent family (`--accent`, `--accent-ink`, `--accent-soft`, `--accent-line`, `--accent-text`, `--accent-hi`, `--accent-chip`) for the resolved light or dark mode, maintaining WCAG AA contrast for `--accent-ink` on `--accent` and for `--accent-text`/`--accent-hi` on panel/page surfaces.
 
 ### 3. Storage, syncing, and pre-paint bootstrap
+- Theme logic is isolated in its own hub module (`viewer/app/theme.js`), dedicated routes (`GET /theme`, `PUT /theme`), and dedicated browser modules (`viewer/pages/theme-palette.js`, `viewer/pages/theme.js`, `viewer/pages/theme-editor.js`), keeping edits to `viewer/pages/settings.js` minimal (just mounting the Theme block in Settings → You) so it stays decoupled from Settings auto-refresh.
 - Theme settings are stored in hub `settings.json` under a `theme` object with revision-checked writes (serialized through `viewer/app/state.js`'s settings file queue, matching `background`).
 - Signed-in pages apply the last cached theme from `localStorage` via a tiny synchronous pre-paint script before stylesheets paint, then refresh from the hub (and re-sync on focus/pageshow/polling like Background) so changes on one device propagate to other open tabs and devices.
 
