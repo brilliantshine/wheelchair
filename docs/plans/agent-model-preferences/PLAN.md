@@ -15,25 +15,17 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q2: How should the reworked Models page organize tiers, agents, and model pickers?
-- **Context:** With every agent picking a tier, we can eliminate the separate Leads section and rethink how tiers, agent assignments, and model/effort pickers are laid out so the page feels unified and uncluttered on both desktop and phone.
-- **Options:**
-  - `tier-cards`: One card per tier (`Light`, `Standard`, `Heavy`, `Critical`) showing the agents assigned to it (as clickable chips you can move between tiers) and each enabled provider's model + effort pills.
-  - `agents-plus-provider-tabs`: Top block has every agent role with a 4-way segmented tier picker (`Light | Standard | Heavy | Critical`) and a subtle preview of its models; bottom block has provider tabs (`Claude`, `GPT`, etc.) so you configure one provider's 4 tiers at a time.
-  - `cleaned-up-split`: Streamlined Tiers grid (all enabled providers visible at once, effort pills instead of effort dropdowns) directly paired with one unified Agents list using segmented tier buttons.
-- **Recommendation:** `agents-plus-provider-tabs` — one-tap tier switching for every agent with live model previews, and provider tabs keep the tier pickers uncluttered as more providers are enabled.
-
-### Q3: Should Personal assistant and Project leads share the Lead preference or have their own?
+### Q3: Should Personal assistant and Project leads share the Lead tier or have their own?
 - **Context:** Today Personal assistant and Project leads silently use the Lead slot with no mention on the Models page.
 - **Options:**
-  - `share-lead`: Keep sharing the Lead preference and label it clearly ("Leads, Personal assistant & Project leads").
-  - `separate`: Give Personal assistant and/or Project leads their own tier/model preference on the Models page.
-- **Recommendation:** `share-lead` unless Collin wants a lighter/different model for chat assistants.
+  - `share-lead`: Keep sharing the Lead tier and label it clearly ("Leads (also Personal assistant & Project leads)").
+  - `separate`: Give Personal assistant and Project leads their own tier switches in the Agents block.
+- **Recommendation:** `share-lead` unless Collin wants a lighter or different tier for chat assistants.
 
-### Q4: How should Escalation and Reviewers/Checkers family mix sit in the new layout?
-- **Context:** Escalation governs worker step-ups (4 segmented controls) and Reviewers & checkers family mix governs cross-family review. Both live on the Models page today.
-- **Options:** Keep them integrated cleanly (family mix beside Reviewer/Checker; Escalation in a compact secondary section or collapsible area).
-- **Recommendation:** Decide once Q2 layout is chosen.
+### Agree the mockups
+- **Context:** Designer started for desktop (`1280x900`) and phone (`390x844`) mockups of the reworked **Settings → Models** page.
+- **Options:** Agree the mockups or request changes.
+- **Recommendation:** Review with Collin once the designer finishes.
 
 ## Watch List
 
@@ -56,13 +48,20 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | 1 | Every agent role — including Leads and Sub-leads — picks a model tier (`light`, `standard`, `heavy`, `critical`) rather than maintaining separate per-provider Lead/Sub-lead model pickers. | One unified tier system for all agents removes the separate Leads block and lets you define each provider's models once in Tiers. | user |
+| 2 | Layout for **Settings → Models**: **Agent tier buttons + Provider tabs** — top **Agents** block with 4-way segmented tier switches (`Light | Standard | Heavy | Critical`) and live model previews per role, followed by **Tier models** with tabs per enabled provider and inline effort pills instead of a second dropdown. | One-tap tier switching for every agent and single-provider tabs keep the page clean on both desktop and phone. | user |
+| 3 | Place the `Reviewers and checkers` family mix control in the Agents block alongside Plan reviewers and Checker, and keep `Escalation` as a compact block below Tier models. | Keeps review/check settings together and keeps worker escalation visible without competing with the main tier/agent controls. | defaulted |
 
 ## Spec
 
 ### 1. Unified tier-based agent model preferences
 - Every configurable agent role picks a model tier (`light`, `standard`, `heavy`, `critical`): Leads, Sub-leads, Plan reviewers, Checker, Code mapping, Mockups, Scout, and Scout for bigger changes.
 - The separate per-provider `Leads` model-picker block is removed from **Settings → Models**.
-- Session placement for `lead` and `sub-lead` resolves through their configured tier (defaulting to `heavy` for existing/new setups unless migrated or configured otherwise — exact migration/backward-compatibility rules to be specified after remaining design decisions).
+- Session placement for `lead` and `sub-lead` resolves through their configured tier (exact default and migration/backward-compatibility rules to be specified once remaining questions settle).
+
+### 2. Reworked Settings → Models layout
+- **Agents block (top):** Lists each agent role with a 4-way segmented tier control (`Light | Standard | Heavy | Critical`) and a subtle live preview of the models that tier resolves to across enabled providers. Includes the `Reviewers and checkers` family mix control alongside Plan reviewers and Checker.
+- **Tier models block (middle):** Tabs for each enabled provider (`Claude`, `GPT`, `Antigravity`, etc.); the active provider tab shows its 4 tiers (`Light`, `Standard`, `Heavy`, `Critical`), each with a model picker (including `Not used` and `Other…`) and inline segmented effort pills (`CLI default` plus the model's supported effort levels) instead of a second dropdown, plus any heads-up actions for that provider/tier.
+- **Escalation block (bottom):** Compact block with the 4 worker step-up segmented controls and live summary text.
 
 ## Accepted Risks
 
