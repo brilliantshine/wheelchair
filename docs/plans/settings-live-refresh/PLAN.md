@@ -520,3 +520,9 @@ Targeted commands covering all touched files (full-run is handled before push pe
 - 2026-11-28 — Choice: T2, `settings.js` `paintHarnesses` & `loadLessonThreads`: routed through `repaint` so they keep focus too.
 - 2026-11-28 — T2 accepted (band: self): merged wc-72ca062b2848-w2 (commit 94ac06e6); Playwright browser specs verified (worker: 378 passed, 2 skipped; sub-lead spot-check: all live-refresh + background-editor specs passed).
 - 2026-11-28 — R1-1 accepted (band: scout): merged wc-72ca062b2848-w3 (commit 773285e9); 71/71 Node tests passed; choices: none.
+- 2026-11-28 — Choice: R1-2, `settings.js` template editor: Really delete got its own `data-focus` key (`tpl:<id>:confirm-delete`) rather than sharing Delete's, so focus cannot move between the two.
+- 2026-11-28 — Choice: R1-2, `settings.js` `renderBackground`: Save and Cancel keep matching by their ids; only `Remove background` received `data-focus="background:remove"`.
+- 2026-11-28 — Choice: R1-2, `settings.js` `rereadAfterWrite`: the Gap 5 repaint runs after the keys are read so the new view draws the fresh list at once; a value typed during that read marks the block stale instead.
+- 2026-11-28 — Choice: R1-2, `settings.js` `change()`: on 409 the refusal reason moves onto the repainted shared-tools block.
+- 2026-11-28 — Choice: R1-2, `app-settings.spec.js`: Gap 3 test triggers `refreshDiffs()` via a tier save with a real seeded models file and uses an Escalation save as the newer write so only the `startGen` guard protects it.
+- 2026-11-28 — R1-2 accepted (band: scout): merged wc-72ca062b2848-w4 (commit 25e396f8); worker 232 passed / 2 skipped, sub-lead 68/68 live-refresh + background-editor passed.
