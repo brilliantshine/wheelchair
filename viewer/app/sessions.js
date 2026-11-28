@@ -101,9 +101,9 @@ async function activityEvent(hub, thread, s, payload) {
 
 
 // Spec "How the hub picks a session's model": model cells are per provider and role.
-async function resolveModel(hub, cli, role, requestedTier = 'top') {
+async function resolveModel(hub, cli, role, requestedTier = 'top', thread = null, resolvedSlot = null) {
   if (!providerOf(cli)) throw appError(400, `unknown cli: ${cli}`);
-  const slot = await slotFor(hub, role, requestedTier);
+  const slot = resolvedSlot || await slotFor(hub, role, requestedTier, thread);
   const provider = providerOf(cli);
   try {
     const model = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), [provider, slot])).stdout.trim();
@@ -360,8 +360,8 @@ async function startSession(hub, thread, input) {
     }
   }
   await usage.recordChosen(hub, selection.provider, selection.account.id);
-  if (role === 'lead' && !thread.provider) { thread.provider = selection.provider; thread.cli = cli; }
-  const resolved = await resolveModel(hub, cli, role, input.tier);
+  if (role === 'lead' && (!thread.provider || thread.assistant || thread.project_lead)) { thread.provider = selection.provider; thread.cli = cli; }
+  const resolved = await resolveModel(hub, cli, role, input.tier, thread, selection.slot);
   const settings = await settingsStore.load(hub);
   // Worked out before the scouts, so they read the list this may refresh.
   const levels = role === 'sub-lead' ? await settingsStore.levelLines(hub, settings) : [];

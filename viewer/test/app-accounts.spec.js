@@ -324,7 +324,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await expect(page.locator('.balancing .note')).toHaveText(/Saved/);
       const sent = state.calls.filter((c) => c[1] === '/settings/balancing').pop()[2];
       expect(sent).toMatchObject({ leave: 150, within: 'spread', held_back: { worker: true, reviewer: false, verifier: true, mapper: true } });
-      expect(Object.keys(sent).sort()).toEqual(['held_back', 'leave', 'margin', 'notify_below', 'save_for_leads', 'within', 'worker_order']);
+      expect(Object.keys(sent).sort()).toEqual(['held_back', 'leave', 'margin', 'notify_below', 'save_for_leads', 'within']);
       await noSideScroll(page);
     });
 
@@ -332,7 +332,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       const state = { settings: { lead_order: ['gpt', 'any'], reserved_provider: 'GPT' }, savedProvider: 'Claude' };
       await mock(page, state);
       await open(page, 'usage');
-      await expect(page.getByRole('group', { name: 'Worker order' })).toContainText('Antigravity');
+      await expect(page.locator('[data-order]')).toHaveCount(0);
       const checkbox = page.locator('#bal-save-lead');
       await expect(checkbox).toHaveAttribute('aria-label', 'Save GPT for leads');
       await expect(checkbox.locator('..')).toContainText('Save GPT for leads');
@@ -360,22 +360,20 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await noSideScroll(page);
     });
 
-    test('the lead order editor in Usage and balancing saves through the balancing route', async ({ page }) => {
+    test('the Lead ladder on Models saves through the balancing route', async ({ page }) => {
       const state = { savedProvider: 'GPT' };
       await mock(page, state);
-      await open(page, 'usage');
-      const editor = page.locator('.lead-order');
+      await open(page, 'models');
+      const editor = page.locator('[data-order="lead_order"]');
       await expect(editor.getByRole('button', { name: '+ Antigravity' })).toBeVisible();
       await expect(editor.locator('li').first()).toContainText('Claude');
       await editor.getByRole('button', { name: '+ GPT' }).click();
       await editor.getByRole('button', { name: 'Move Claude down' }).click();
       await editor.locator('input[type="checkbox"]').uncheck();
-      await page.locator('#lead-order-save').click();
-      await expect.poll(() => state.calls.some((c) => c[1] === '/settings/balancing')).toBe(true);
-      expect(state.calls.find((c) => c[1] === '/settings/balancing')[2]).toEqual({ lead_order: ['gpt', 'claude'] });
-      await expect(page.locator('.lead-order-box .note')).toHaveText(/Saved/);
-      await expect(page.locator('.balancing .note')).toHaveText('');
-      await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save GPT for leads');
+      const sent = () => state.calls.filter((c) => c[1] === '/settings/balancing').map((c) => c[2]);
+      await expect.poll(() => sent().length).toBe(3);
+      expect(sent().at(-1)).toEqual({ lead_order: ['gpt', 'claude'] });
+      await expect(page.locator('.note[data-for="section"]')).toHaveText(/Saved/);
       await noSideScroll(page);
     });
 

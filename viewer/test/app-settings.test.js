@@ -34,7 +34,7 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     assert.ok(initial.body.accounts.some((account) => account.id === 'default-gemini'));
     assert.deepEqual(initial.body.worker_order, ['gpt', 'claude', 'gemini', 'kimi']);
     assert.ok(initial.body.accounts.some((account) => account.id === 'default-kimi'));
-    assert.deepEqual(initial.body.other_agents, { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', designer: 'standard', scout: 'light', 'scout-heavy': 'standard' });
+    assert.deepEqual(initial.body.other_agents, { lead: 'heavy', 'sub-lead': 'heavy', assistant: 'heavy', 'project-lead': 'heavy', reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', designer: 'standard', scout: 'light', 'scout-heavy': 'standard' });
     const old = settings.normalize({ other_agents: { mapper: 'heavy' }, held_back: { worker: false, reviewer: true, verifier: false, mapper: false } });
     assert.equal(old.other_agents.designer, 'standard');
     assert.deepEqual(old.held_back, { worker: false, reviewer: true, verifier: false, mapper: false, designer: true });
@@ -620,4 +620,90 @@ test('an Antigravity scout is named by its member id only when the list has it',
       ['single', 'orchestrator @low', 'orchestrator'],
     ]) assert.match((await start(attempt, pin)).lead, new RegExp(`Scout model for code reading: ${named}\\.`), attempt);
   });
+});
+
+test('role tiers, ladders and legacy notice normalize and compare cells', () => {
+  const base = settings.defaults();
+  const normalized = settings.normalize({ other_agents: { lead: 'critical', mapper: 'bad', unknown: 'light' }, provider_orders: { lead: ['gpt', 'any'], reviewer: ['any'], unknown: 'lead' } });
+  assert.equal(normalized.other_agents.lead, 'critical');
+  assert.equal(normalized.other_agents.mapper, 'standard');
+  assert.equal(normalized.other_agents.unknown, undefined);
+  assert.deepEqual(normalized.provider_orders.lead, ['gpt', 'any']);
+  assert.equal(normalized.provider_orders.reviewer, 'worker');
+  assert.equal(settings.validProviderOrder(['any'], { allowAny: true }), true);
+  assert.equal(settings.validProviderOrder(['gpt', 'gpt']), false);
+  assert.equal(settings.validProviderOrder(['any']), false);
+  for (const p of Object.keys(base.harnesses)) base.harnesses[p] = p === 'gpt';
+  const cells = { gpt: { lead: { model: 'old', effort: 'high' }, 'sub-lead': { model: 'old', effort: 'high' }, heavy: { model: 'new', effort: 'high' }, light: null } };
+  assert.equal(settings.legacyLeadDiffs(base, cells).length, 1);
+  base.other_agents['sub-lead'] = 'light';
+  assert.equal(settings.legacyLeadDiffs(base, cells).length, 2);
+  base.lead_tier_notice_dismissed = true;
+  assert.deepEqual(settings.legacyLeadDiffs(base, cells), []);
+});
+
+test('role preferences round trip and validate before dismissing the notice', async () => {
+  await withContext(async c => {
+    const put = body => api(c, '/settings/preferences', { method: 'PUT', body });
+    const initial = (await api(c, '/settings')).body;
+    assert.equal(initial.lead_tier_notice_dismissed, false);
+    assert.deepEqual(initial.legacy_lead_diffs, []);
+    const other_agents = Object.fromEntries(Object.keys(initial.other_agents).map((role, i) => [role, ['light', 'standard', 'heavy', 'critical'][i % 4]]));
+    const provider_orders = Object.fromEntries(Object.keys(initial.provider_orders).map(role => [role, ['lead', 'sub-lead', 'assistant', 'project-lead'].includes(role) ? ['gpt', 'any'] : ['gpt', 'claude']]));
+    const saved = await put({ other_agents, provider_orders, lead_tier_notice_dismissed: false });
+    assert.equal(saved.status, 200); assert.deepEqual(saved.body.other_agents, other_agents); assert.deepEqual(saved.body.provider_orders, provider_orders); assert.equal(saved.body.lead_tier_notice_dismissed, false);
+    const got = (await api(c, '/settings')).body;
+    assert.deepEqual(got.other_agents, other_agents); assert.deepEqual(got.provider_orders, provider_orders); assert.equal(got.lead_tier_notice_dismissed, false);
+    for (const body of [{ other_agents: [] }, { other_agents: { unknown: 'light' } }, { other_agents: { mapper: 'bad' } }, { provider_orders: [] }, { provider_orders: { unknown: 'lead' } }, { provider_orders: { reviewer: ['any'] } }, { provider_orders: { reviewer: [] } }]) assert.equal((await put(body)).status, 400, JSON.stringify(body));
+    assert.equal((await api(c, '/settings')).body.lead_tier_notice_dismissed, false);
+  });
+});
+
+test('notice dismissal follows successful model and role saves', async () => {
+  await withContext(async c => {
+    await fs.writeFile(c.models, 'this is malformed\n');
+    const save = () => api(c, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'light', model: 'gpt-6-sol' } });
+    assert.equal((await save()).status, 400);
+    assert.equal((await api(c, '/settings')).body.lead_tier_notice_dismissed, false);
+    await fs.unlink(c.models);
+    assert.equal((await save()).status, 200);
+    assert.equal((await api(c, '/settings')).body.lead_tier_notice_dismissed, true);
+  });
+  await withContext(async c => {
+    assert.equal((await api(c, '/settings/preferences', { method: 'PUT', body: { other_agents: { mapper: 'heavy' } } })).status, 200);
+    assert.equal((await api(c, '/settings')).body.lead_tier_notice_dismissed, true);
+  });
+});
+
+test('heads-up switch dismisses only an empty legacy notice', async () => {
+  for (const legacy of [false, true]) {
+    await withContext(async c => {
+      if (legacy) await fs.writeFile(c.models, 'gpt.lead = legacy-model\n');
+      const before = (await api(c, '/settings')).body;
+      assert.equal(before.lead_tier_notice_dismissed, false);
+      assert.equal(before.legacy_lead_diffs.length > 0, legacy);
+      const switched = await api(c, '/settings/models/heads-up', { method: 'POST', body: { action: 'switch', tier: 'heavy', model: 'custom-heavy' } });
+      assert.equal(switched.status, 200);
+      const after = (await api(c, '/settings')).body;
+      assert.equal(after.lead_tier_notice_dismissed, !legacy);
+      if (!legacy) assert.deepEqual(after.legacy_lead_diffs, []);
+      else assert.ok(after.legacy_lead_diffs.length > 0);
+      const saved = JSON.parse(await fs.readFile(path.join(c.state, 'settings.json'), 'utf8'));
+      assert.equal(saved.lead_tier_notice_dismissed, !legacy);
+    });
+  }
+});
+
+test('legacy lead comparisons include effort and distinct sub-lead cells', () => {
+  const value = settings.defaults();
+  for (const p of Object.keys(value.harnesses)) value.harnesses[p] = p === 'gpt';
+  const same = { model: 'm', effort: 'high' }, different = { model: 'm', effort: 'low' };
+  const cells = { gpt: { lead: same, 'sub-lead': same, heavy: different, light: different }, claude: { lead: same, heavy: different } };
+  assert.deepEqual(settings.legacyLeadDiffs(value, cells).map(d => d.role), ['lead']);
+  cells.gpt['sub-lead'] = different;
+  assert.deepEqual(settings.legacyLeadDiffs(value, cells).map(d => d.role), ['lead']);
+  cells.gpt['sub-lead'] = { model: 'other', effort: 'high' };
+  assert.deepEqual(settings.legacyLeadDiffs(value, cells).map(d => d.role), ['lead', 'sub-lead']);
+  cells.gpt['sub-lead'] = same; value.other_agents['sub-lead'] = 'light';
+  assert.deepEqual(settings.legacyLeadDiffs(value, cells).map(d => d.role), ['lead', 'sub-lead']);
 });

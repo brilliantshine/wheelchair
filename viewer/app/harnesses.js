@@ -7,7 +7,7 @@ const balancer = require('./balancer.js');
 const ready = require('./ready.js');
 
 function enabledLeadOrder(value) {
-  return [...new Set(value.lead_order.flatMap((p) => p === 'any' ? value.worker_order : [p]))].filter((p) => value.harnesses[p]);
+  return [...new Set(balancer.expandOrder(value.provider_orders.lead, value))].filter((p) => value.harnesses[p]);
 }
 function names(providers) { return providers.map((p) => DISPLAY_NAMES[p]).join(', ') || 'no harnesses'; }
 async function describe(hub, fresh = false) {
@@ -25,13 +25,14 @@ async function describe(hub, fresh = false) {
     try {
       const selection = await balancer.choose(hub, { machine: 'hub', sessions: [] }, role, role === 'lead' ? 'top' : 'standard');
       if (selection.provider) { can_start[role] = { ok: true }; continue; }
+      if (selection.wait?.reason?.endsWith('in Settings → Models')) { can_start[role] = { ok: false, reason: selection.wait.reason }; continue; }
       const order = role === 'lead' ? enabledLeadOrder(value) : value.worker_order.filter((p) => value.harnesses[p]);
       const signed = (p) => value.accounts.some((a) => a.provider === p && !a.paused && state.accounts[a.id]);
       let reason;
       if (!order.some(signed)) {
         reason = `New ${role === 'lead' ? 'leads' : 'workers'} try ${names(order)}; none is installed and signed in on ${machine}.`;
         const others = Object.keys(PROVIDERS).filter((p) => value.harnesses[p] && !order.includes(p) && signed(p));
-        if (others.length) reason += ` Add ${names(others)} to ${role === 'worker' || value.lead_order.includes('any') ? 'Workers try first' : 'Leads try'} in Settings.`;
+        if (others.length) reason += ` Add ${names(others)} to ${role === 'worker' || value.provider_orders.lead === 'worker' || (value.provider_orders.lead === 'lead' && value.lead_order.includes('any')) ? 'Worker ladder' : value.provider_orders.lead === 'lead' ? 'Lead ladder' : 'Leads provider order'} in Settings.`;
       } else reason = `No account has room for a new ${role} right now (usage limits, or the share saved for leads).`;
       can_start[role] = { ok: false, reason };
     } catch (error) { can_start[role] = { ok: false, reason: error.message }; }

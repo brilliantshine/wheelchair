@@ -95,7 +95,8 @@ test('placement ranks accounts and respects provider policy', async (t) => {
     const hub = await fixture({ worker_order: ['claude', 'gpt'], lead_order: ['claude', 'any'] });
     assert.equal((await choose(hub, { machine: 'hub' }, 'worker')).provider, 'gpt');
     assert.equal((await choose(hub, { machine: 'hub' }, 'worker', 'top', { not_provider: 'gpt' })).provider, 'claude');
-    for (const role of ['lead', 'sub-lead']) assert.equal((await choose(hub, { machine: 'hub', provider: 'gpt' }, role)).provider, 'gpt');
+    assert.equal((await choose(hub, { machine: 'hub', provider: 'gpt' }, 'lead')).provider, 'gpt');
+    assert.equal((await choose(hub, { machine: 'hub', provider: 'gpt' }, 'sub-lead')).provider, 'claude');
   });
   await t.test('lead any and constraint fallback', async () => {
     const hub = await fixture({ lead_order: ['claude', 'any'] }, {}, ['default-gpt']);
@@ -471,10 +472,16 @@ test('waiting lead records provider and promoted role layers and style', async (
   } finally { await close(c); }
 });
 
-test('lead and sub-lead use distinct model slots', async () => {
-  const { slotFor } = require('../app/balancer.js');
-  assert.equal(await slotFor(null, 'lead'), 'lead');
-  assert.equal(await slotFor(null, 'sub-lead'), 'sub-lead');
+test('standalone roles use their configured tier', async () => {
+  const { slotFor, expandOrder } = require('../app/balancer.js');
+  const settings = require('../app/settings.js');
+  const value = settings.defaults();
+  value.other_agents['sub-lead'] = 'light'; value.other_agents.assistant = 'critical';
+  const hub = { state: { settings: async () => value } };
+  assert.equal(await slotFor(hub, 'lead'), 'heavy');
+  assert.equal(await slotFor(hub, 'sub-lead'), 'light');
+  assert.equal(await slotFor(hub, 'lead', 'top', { assistant: true }), 'critical');
+  assert.deepEqual(expandOrder(['gpt', 'any'], value), ['gpt', ...value.worker_order]);
 });
 
 test('OpenRouter explicit placement outside order respects review family', async () => {
@@ -498,4 +505,55 @@ test('OpenRouter explicit placement outside order respects review family', async
   assert.ok((await choose(hub, thread, 'worker', 'heavy', { provider: 'gpt' })).wait);
   await settings.update(hub, s => { s.review_families = 'claude'; });
   assert.equal((await choose(hub, thread, 'reviewer', 'heavy', { provider: 'openrouter' })).provider, 'claude');
+});
+
+test('standalone ladders, waiting metadata and selected slots', async () => {
+  const { Hub } = require('../app/hub.js');
+  const settings = require('../app/settings.js');
+  const { choose, slotFor } = require('../app/balancer.js');
+  const { resolveModel } = require('../app/sessions.js');
+  const { makeDir } = require('./helpers/server.js');
+  const hub = new Hub({ stateDir: await makeDir('role-ladders-') }); await hub.state.init();
+  hub.machines = async () => ({ hub: { name: 'hub' } });
+  hub.call = async () => ({ claude: { installed: true }, codex: { installed: true }, pi: { installed: true }, accounts: ['claude', 'gpt', 'openrouter'].map((p, i) => ({ id: `default-${p}`, cli: ['claude', 'codex', 'pi'][i], logged_in: true })) });
+  hub.allThreads = async () => [];
+  const roles = ['lead', 'sub-lead', 'assistant', 'project-lead', 'reviewer', 'verifier', 'mapper', 'designer'];
+  await settings.update(hub, s => { s.save_for_leads = false; for (const role of roles) { s.other_agents[role] = 'light'; s.provider_orders[role] = ['gpt']; } });
+  for (const role of roles) {
+    const thread = { machine: 'hub', ...(role === 'assistant' ? { assistant: true, provider: 'claude' } : role === 'project-lead' ? { project_lead: true, provider: 'claude' } : role === 'sub-lead' ? { provider: 'claude' } : {}) };
+    const actual = ['assistant', 'project-lead'].includes(role) ? 'lead' : role;
+    assert.equal(await slotFor(hub, actual, 'critical', thread), 'light', role);
+    const selected = await choose(hub, thread, actual, 'critical');
+    assert.equal(selected.provider, 'gpt', role); assert.equal(selected.slot, 'light', role);
+  }
+  assert.equal(await slotFor(hub, 'worker', 'critical'), 'critical');
+  const selection = await choose(hub, { machine: 'hub' }, 'mapper', 'critical');
+  await settings.update(hub, s => { s.other_agents.mapper = 'critical'; s.accounts.forEach(a => { a.paused = true; }); });
+  assert.equal((await resolveModel(hub, 'codex', 'mapper', 'critical', null, selection.slot)).slot, 'light');
+  for (const [role, thread, expected] of [['sub-lead', { provider: 'claude' }, null], ['lead', { assistant: true, provider: 'claude' }, 'gpt'], ['lead', { project_lead: true, provider: 'claude' }, 'gpt'], ['lead', { provider: 'claude' }, 'claude']]) {
+    assert.equal((await choose(hub, { machine: 'hub', ...thread }, role)).wait.provider, expected);
+  }
+  await settings.update(hub, s => { s.harnesses.gpt = false; });
+  assert.match((await choose(hub, { machine: 'hub' }, 'mapper')).wait.reason, /No enabled provider.*Settings → Models$/);
+});
+
+test('Not used waits account for pinned, single, multiple and appended candidates', async () => {
+  const { Hub } = require('../app/hub.js'); const settings = require('../app/settings.js'); const { choose } = require('../app/balancer.js');
+  const { execFileSync } = require('node:child_process'); const { makeDir } = require('./helpers/server.js');
+  const hub = new Hub({ stateDir: await makeDir('unused-ladders-') }); await hub.state.init();
+  hub.machines = async () => ({ hub: { name: 'hub' } });
+  hub.call = async () => ({ claude: { installed: true }, codex: { installed: true }, pi: { installed: true }, accounts: [{ id: 'default-openrouter', cli: 'pi', logged_in: true }] }); hub.allThreads = async () => [];
+  const model = (...args) => execFileSync(path.join(__dirname, '../../codex/model.sh'), args);
+  try {
+    model('set', 'claude', 'heavy', 'none'); model('set', 'gpt', 'heavy', 'none');
+    await settings.update(hub, s => { s.provider_orders.lead = ['claude']; s.worker_order = ['claude', 'gpt']; });
+    for (const thread of [{ machine: 'hub', provider: 'claude' }, { machine: 'hub' }]) { const wait = (await choose(hub, thread, 'lead')).wait; assert.equal(wait.provider, 'claude'); assert.match(wait.reason, /Not used for heavy in Settings → Models$/); }
+    await settings.update(hub, s => { s.provider_orders.lead = ['claude', 'gpt']; });
+    const wait = (await choose(hub, { machine: 'hub' }, 'lead')).wait; assert.equal(wait.provider, null); assert.match(wait.reason, /All enabled providers.*Not used/);
+    const appended = await choose(hub, { machine: 'hub' }, 'worker', 'heavy', { provider: 'openrouter' }); assert.equal(appended.provider, 'openrouter');
+    model('set', 'openrouter', 'heavy', 'none');
+    hub.call = async () => ({ claude: { installed: true }, pi: { installed: true }, accounts: [{ id: 'default-openrouter', cli: 'pi', logged_in: true }, { id: 'default-claude', cli: 'claude', logged_in: true }] });
+    const afterAppend = await choose(hub, { machine: 'hub' }, 'reviewer', 'heavy', { provider: 'openrouter' });
+    assert.match(afterAppend.wait.reason, /All enabled providers.*Not used/);
+  } finally { model('reset'); }
 });

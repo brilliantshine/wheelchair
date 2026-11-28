@@ -9,10 +9,13 @@ const { PROVIDERS, DISPLAY_NAMES, providerOf } = require('./providers.js');
 const { appError } = require('./state.js');
 const exec = promisify(execFile);
 
-async function slotFor(hub, role, requestedTier = 'top') {
-  if (['lead', 'sub-lead'].includes(role)) return role;
+function preferenceRole(role, thread) { return role === 'lead' ? (thread?.assistant ? 'assistant' : thread?.project_lead ? 'project-lead' : 'lead') : role; }
+function isPinnedThreadLead(role, thread) { return role === 'lead' && !thread?.assistant && !thread?.project_lead && Boolean(thread?.provider); }
+function expandOrder(entry, settings) { return (entry === 'lead' ? settings.lead_order : entry === 'worker' ? settings.worker_order : entry).flatMap(p => p === 'any' ? settings.worker_order : [p]); }
+async function slotFor(hub, role, requestedTier = 'top', thread = null) {
   const settings = await settingsStore.load(hub);
-  if (['reviewer', 'verifier', 'mapper', 'designer'].includes(role)) return settings.other_agents[role];
+  const prefRole = preferenceRole(role, thread);
+  if (Object.hasOwn(settings.provider_orders, prefRole)) return settings.other_agents[prefRole];
   const tier = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[requestedTier] || requestedTier;
   try { const slot = settingsStore.tier(tier, 'tier', true); return slot === 'top' ? 'heavy' : slot; }
   catch { throw appError(400, `unknown tier "${requestedTier}"; use light, standard, heavy, critical, or top`); }
@@ -67,7 +70,7 @@ async function chooseSwitch(hub, thread, target) {
 async function choose(hub, thread, role, tier, constraints = {}) {
   let { provider, not_provider: excluded } = constraints;
   if ((provider || excluded) && (!['worker', 'reviewer', 'verifier'].includes(role) || (provider && excluded) || (provider && !Object.hasOwn(PROVIDERS, provider)) || (excluded && !Object.hasOwn(PROVIDERS, excluded)))) throw appError(400, 'invalid provider constraint');
-  const slot = await slotFor(hub, role, tier);
+  const slot = await slotFor(hub, role, tier, thread);
   const [settings, readings, machines, last, threads] = await Promise.all([settingsStore.load(hub), usage.readings(hub), usage.machineAccounts(hub), usage.lastChosen(hub), hub.allThreads()]);
   const now = Date.now();
   const machineName = await machineNameOf(hub, thread);
@@ -86,8 +89,9 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   }
   if (role === 'worker' && provider && (!settings.harnesses[provider] || !signedIn(settings, machines, machineName, provider))) { droppedProvider = provider; provider = undefined; }
   if (!thread.provider && thread.cli && thread.sessions?.length) thread.provider = providerOf(thread.cli);
-  let order = role === 'lead' && !thread.provider ? settings.lead_order.flatMap((p) => p === 'any' ? settings.worker_order : [p]) : ['lead', 'sub-lead'].includes(role) ? [thread.provider] : [...settings.worker_order];
-  if (['lead', 'sub-lead'].includes(role) && thread.provider && !settings.harnesses[thread.provider]) return { wait: { provider: thread.provider, until: new Date(now + 60000).toISOString(), reason: `${DISPLAY_NAMES[thread.provider]} is left out in Settings` } };
+  const pinned = isPinnedThreadLead(role, thread);
+  let order = pinned ? [thread.provider] : Object.hasOwn(settings.provider_orders, preferenceRole(role, thread)) ? expandOrder(settings.provider_orders[preferenceRole(role, thread)], settings) : [...settings.worker_order];
+  if (pinned && !settings.harnesses[thread.provider]) return { wait: { provider: thread.provider, until: new Date(now + 60000).toISOString(), reason: `${DISPLAY_NAMES[thread.provider]} is left out in Settings` } };
   order = (strictReview ? [strictReview] : [...new Set(order.filter(Boolean))]).filter((p) => settings.harnesses[p]);
   if (provider && role === 'worker') {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [provider, slot]); }
@@ -95,8 +99,11 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   }
   const available = {};
   const margin = {};
-  for (const p of connectors.byProvider(provider)?.placement.appendWhenRequested && !order.includes(provider) ? [...order, provider] : order) {
+  const candidates = settings.harnesses[provider] && connectors.byProvider(provider)?.placement.appendWhenRequested && !order.includes(provider) ? [...order, provider] : order;
+  let configuredCount = 0;
+  for (const p of candidates) {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [p, slot]); } catch (e) { if (e.code === 3) continue; throw e; }
+    configuredCount++;
     const accounts = providerAccounts(settings, threads, p);
     margin[p] = heldBack(settings, reserved, role, p, accounts, readings, now);
     available[p] = usage.rank(accounts, readings, machines, settings, machineName, now, last).find((a) => a.next);
@@ -123,7 +130,9 @@ async function choose(hub, thread, role, tier, constraints = {}) {
     else if (constraints.not_provider === picked) note = `Could not avoid ${picked}; using ${picked}.`;
   }
   if (picked && fallbackReview) note = `Reviewers and checkers are set to ${PROVIDERS[fallbackReview].label}, but ${PROVIDERS[fallbackReview].label} is not available; using ${PROVIDERS[picked].label}.`;
-  if (picked) return { provider: picked, account: available[picked], ...(note ? { note } : {}) };
+  if (picked) return { provider: picked, account: available[picked], slot, ...(note ? { note } : {}) };
+  if (!candidates.length) return { wait: { provider: null, until: new Date(now + 60000).toISOString(), reason: "No enabled provider in this role's provider ladder in Settings → Models" } };
+  if (!configuredCount) return { wait: { provider: candidates.length === 1 ? candidates[0] : null, until: new Date(now + 60000).toISOString(), reason: candidates.length === 1 ? `${DISPLAY_NAMES[candidates[0]]} is set to Not used for ${slot} in Settings → Models` : `All enabled providers on this role's ladder are set to Not used for ${slot} in Settings → Models` } };
   const relevant = provider && role === 'worker' && !margin[provider] ? [provider] : excluded && role === 'worker' ? order.filter((p) => p !== excluded) : order;
   const resets = settings.accounts.filter((a) => relevant.includes(a.provider) && !a.paused && machines[machineName]?.accounts?.[a.id]).flatMap((a) => {
     const reading = usage.effective(readings[a.id], now);
@@ -136,7 +145,7 @@ async function choose(hub, thread, role, tier, constraints = {}) {
     }
     return blockers.length ? [new Date(Math.max(...blockers)).toISOString()] : [];
   }).sort();
-  const waitingProvider = strictReview || (['lead', 'sub-lead'].includes(role) && thread.provider ? thread.provider : role === 'worker' && provider && !margin[provider] ? provider : role === 'lead' ? order[0] || null : null);
+  const waitingProvider = strictReview || (isPinnedThreadLead(role, thread) ? thread.provider : role === 'worker' && provider && !margin[provider] ? provider : role === 'lead' ? order[0] || null : null);
   return { wait: { provider: waitingProvider, until: resets[0] || new Date(now + 60000).toISOString(), reason: `no ${relevant.length === 1 ? relevant[0] + ' account' : 'account'} has room` } };
 }
-module.exports = { chooseSwitch, choose, slotFor, reservedProvider, reviewFamilies };
+module.exports = { preferenceRole, isPinnedThreadLead, expandOrder, chooseSwitch, choose, slotFor, reservedProvider, reviewFamilies };

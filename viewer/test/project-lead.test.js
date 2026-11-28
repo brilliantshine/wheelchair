@@ -233,9 +233,11 @@ test('restart drops old card messages and renders the project lead fresh-context
     record.cards.push({ id: 'q', kind: 'question', answered: false }, { id: 'n', kind: 'needs', answered: false });
     record.sent.push({ text: 'Old history', source: 'user' });
   });
+  assert.equal((await preferences(c, { provider_orders: { 'project-lead': ['gpt'] } })).status, 200);
   const restarted = await post(c, `/threads/${id}/restart`);
   assert.equal(restarted.status, 201, JSON.stringify(restarted.body));
   const saved = JSON.parse(await fs.readFile(path.join(c.state, 'threads', id + '.json'), 'utf8'));
+  assert.equal(saved.provider, 'gpt'); assert.equal(saved.cli, 'codex');
   const queue = saved.sessions.at(-1).queue;
   assert.ok(queue.some((message) => message.text === 'Waiting user message'));
   assert.ok(!queue.some((message) => message.source === 'card'));
