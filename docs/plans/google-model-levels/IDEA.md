@@ -19,8 +19,8 @@ The Google (Antigravity) model list in Settings shows new Google models soon aft
 ## What good looks like
 
 - A model newly offered by Antigravity appears in Settings the next time Collin opens Settings, without waiting an hour.
-- In Settings, Google models appear once each (e.g. "Gemini 4 Hydrogen"), with effort chosen beside them as for other providers.
-- An agent started on a Google model at a given effort runs the matching level (Hydrogen at high runs Hydrogen High).
+- In Settings, Google models appear once each (e.g. "Gemini 4 Hydrogen"), with effort chosen beside them as for other providers. This holds for every model Antigravity lists in levels, including Neon, Carbon, Argon and Flash, not only Hydrogen.
+- An agent started on a Google model at a given effort runs the matching level (Hydrogen at high runs Hydrogen High; Neon at xhigh runs Neon XHigh; Carbon at low runs Carbon Low).
 - Stepping up a failing task's effort starts it on the next level up.
 - Settings already saved with a level in the model name keep working.
 
