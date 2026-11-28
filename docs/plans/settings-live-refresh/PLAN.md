@@ -70,43 +70,54 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      ```
    - Scope `withLocalWrite` strictly to Settings-domain mutations (never account sign-in POSTs under `/accounts/.../signin` or read-only POSTs `/settings/style/preview`, `/project-tools/read`, `/shared-keys/read`, `/usage/seen`):
      - Inside `api(path, opts)` when `opts && opts.method && opts.method !== 'GET'` and `(path.startsWith('/settings') && path !== '/settings/style/preview') || path === '/shared-keys/save' || path === '/shared-keys/remove'`.
-     - Wrap full save-plus-reread handlers (`saveTemplate`, `duplicateTemplate`, `deleteTemplate`, `toggleTemplate`, `saveLessons`, lesson import raw `fetch`, account add/edit/delete/restore rereads, and `saveBackground` raw `fetch`) so `inFlightWrites` stays > 0 across both the write and its immediate follow-up `reload()` / `api('/settings')`.
-   - Add `parseRev(token)` parsing `<boot>:<seq>` into `{ boot, seq }` (or `null`), and one monotonic snapshot helper `applySettingsSnapshot(next, { reconcile = true } = {})`:
-     - If `data?.settings_revision` and `next?.settings_revision` share the same `boot` and `next.seq < data.seq`, discard `next` and return `false` (an older snapshot can never roll back a newer one).
-     - Otherwise set `data = next;`, update `if (next.settings_revision) lastRev.settings = next.settings_revision;`, and if `reconcile`, run `reconcileVisibleBlocks()` (§3) against `renderedSlice` so even a whole-page `reload()` after a local save surfaces any external changes that arrived in the same snapshot. Return `true`.
-   - `reload(keep)` fetches `GET /settings` and applies it through `applySettingsSnapshot(fresh, { reconcile: true })`. If `applySettingsSnapshot` returns `false` (a newer snapshot already landed), `data` already holds the newer state so callers proceed safely using `data`. Account add/edit/delete/restore rereads also go through `reload(false)`.
+     - Wrap full save-plus-reread handlers (`saveTemplate`, `duplicateTemplate`, `deleteTemplate`, `toggleTemplate`, `saveLessons`, lesson import raw `fetch`, account add/edit/delete/restore rereads, `modelPicker` `commit` + `refreshModels`, `legacyNotice` `use`, and `saveBackground` raw `fetch`) so `inFlightWrites` stays > 0 across both the write and its immediate follow-up `GET /settings`.
+   - Add `parseRev(token)` parsing `<boot>:<seq>` into `{ boot, seq }` (or `null`), and helper `isOlderRev(incoming, current)` returning `true` when both parse with the same `boot` and `incoming.seq < current.seq`.
+   - Add one monotonic snapshot helper `applySettingsSnapshot(next, { reconcile = true } = {})`:
+     - If `isOlderRev(next?.settings_revision, data?.settings_revision)`, discard `next` and return `false` (an older snapshot can never roll back a newer one).
+     - Save `const prev = data;`.
+     - Set `data = next;` and `if (next.settings_revision) lastRev.settings = next.settings_revision;`.
+     - **Invalidate `sharedProjects` on any accepted snapshot whose `saved_dirs` changed**, regardless of which category is currently open (`if (prev && JSON.stringify(prev.saved_dirs) !== JSON.stringify(next.saved_dirs)) sharedProjects = null;`).
+     - If `reconcile`, run `reconcileVisibleBlocks()` (§3) against `renderedSlice` so even a whole-page `reload()` after a local save surfaces any external changes that arrived in the same snapshot. Return `true`.
+   - **All `/settings` rereads go through monotonic checks**:
+     - `reload(keep)` fetches `GET /settings` and applies it through `applySettingsSnapshot(fresh, { reconcile: true })`. If `applySettingsSnapshot` returns `false`, `data` already holds the newer state so callers proceed safely using `data`. Account add/edit/delete/restore rereads also go through `reload(false)`.
+     - Partial rereads (`refreshModels()` at `settings.js:250-268` and `legacyNotice`'s `use` reread at `settings.js:866`) also apply their `GET /settings` response via `applySettingsSnapshot(fresh, { reconcile: true })` (discarding it if `isOlderRev` is true), instead of unconditionally overwriting `data.models` / `data.model_options` / `data.legacy_lead_diffs`.
 
-2. **Lightweight polling loop via `window.wcPoller`**
-   - Maintain `let lastRev = { settings: null, diagram: null, shared_keys: null };` and `let pollRunning = false;`.
-   - On initial page load (`settings.js:2914`), fetch `GET /settings` (required) and `GET /settings/revision` (best-effort: if it fails, leave `lastRev = { settings: data.settings_revision || null, diagram: null, shared_keys: null }` so the first successful poll initializes it instead of breaking page load). Start one `window.wcPoller(pollSettings, 5000)` (pauses while hidden and fires once on tab visible).
+2. **Non-blocking per-domain polling loop via `window.wcPoller`**
+   - Maintain `let lastRev = { settings: null, diagram: null, shared_keys: null };`, `let revRunning = false;`, and per-domain in-flight flags `const domainRunning = { settings: false, diagram: false, shared_keys: false };` so a slow machine read (such as `/shared-keys/read`) never stalls `settings` or `diagram` polling on later ticks.
+   - On initial page load (`settings.js:2914`), fetch `GET /settings` (required) and `GET /settings/revision` (best-effort: if it fails, initialize `lastRev = { settings: data.settings_revision || null, diagram: null, shared_keys: null }` so the first successful poll syncs it instead of breaking page load). Start one `window.wcPoller(pollSettings, 5000)` (pauses while hidden and fires once on tab visible).
    - On each `pollSettings()` tick:
-     1. Return immediately if `!data || pollRunning || inFlightWrites > 0`.
-     2. Set `pollRunning = true` and `const startGen = localWriteGen;`.
-     3. Fetch `const rev = await api('/settings/revision');` (on network error, return silently and retry on next tick).
-     4. If `inFlightWrites > 0 || localWriteGen !== startGen`, return without mutating state.
-     5. Process each domain in its own independent `try { ... } catch {}` block so a failure in one domain never blocks the others on the same tick, and acknowledge each token **only after** its secondary read succeeds:
-        - **`settings` (`rev.settings !== lastRev.settings`)**:
+     1. Return immediately if `!data || revRunning || inFlightWrites > 0`.
+     2. Set `revRunning = true` and `const tickGen = localWriteGen;`.
+     3. Fetch `const rev = await api('/settings/revision');` inside `try/finally` (`revRunning = false`; on network error, return silently and retry on next tick).
+     4. If `inFlightWrites > 0 || localWriteGen !== tickGen`, return without dispatching.
+     5. Dispatch each changed domain independently (without awaiting slow secondary reads inside `revRunning`), each guarded by its own `domainRunning[domain]` flag and its own `try/catch/finally`:
+        - **`settings` (`rev.settings !== lastRev.settings && !domainRunning.settings`)**:
+          - Set `domainRunning.settings = true;` and capture `const startGen = localWriteGen;`.
           - Fetch `const next = await api('/settings');`.
-          - Re-check `if (inFlightWrites > 0 || localWriteGen !== startGen)` -> abort this domain without mutating `data` or `lastRev.settings`.
+          - If `inFlightWrites > 0 || localWriteGen !== startGen`, return without mutating `data` or `lastRev.settings`.
           - Capture `const prev = data;` before `applySettingsSnapshot(next, { reconcile: true })`.
           - If `applySettingsSnapshot` accepted `next`:
             - If `section === 'providers'` and (`JSON.stringify(prev.harnesses) !== JSON.stringify(next.harnesses)` or `JSON.stringify(prev.accounts) !== JSON.stringify(next.accounts)`), call `refreshStatus()`.
             - If `section === 'usage'`: if `accounts` or `harnesses` changed, call `refreshUsage()`; if any balancing key or `provider_orders` / `lead_order` / `worker_order` changed, call `readReserved()`.
-            - If `section === 'shared-tools'` and `JSON.stringify(prev.saved_dirs) !== JSON.stringify(next.saved_dirs)`, reset `sharedProjects = null` and call `loadSharedProjects()`.
+            - If `section === 'shared-tools'` and `sharedProjects === null`, call `loadSharedProjects()`.
             - If `section === 'shared-tools'` and `prev.shared_tools_repo !== next.shared_tools_repo`, trigger `refreshSharedKeys(null)` (guarded by §3).
-        - **`diagram` (`rev.diagram !== lastRev.diagram`)**:
+        - **`diagram` (`rev.diagram !== lastRev.diagram && !domainRunning.diagram`)**:
           - If `!youShown()`: set `diagram = null; lastRev.diagram = rev.diagram;` so entering `you` fetches fresh.
-          - If `youShown()`: call `const ok = await loadDiagram({ fromRefresh: true });` — `loadDiagram()` returns `true` only when `GET /settings/diagram-sensitivity` succeeded (not caught error); only then set `lastRev.diagram = rev.diagram;`.
-        - **`shared_keys` (`rev.shared_keys !== lastRev.shared_keys`)**:
+          - If `youShown()`: set `domainRunning.diagram = true;`, call `const ok = await loadDiagram({ fromRefresh: true });`, and advance `lastRev.diagram = rev.diagram;` **only when `ok === true`** (HTTP 200 AND every machine in `next.machines` has no `.error`; if any machine timed out or errored, leave `lastRev.diagram` unacknowledged so the next poll retries automatically).
+        - **`shared_keys` (`rev.shared_keys !== lastRev.shared_keys && !domainRunning.shared_keys`)**:
           - If `section !== 'shared-tools'`: set `lastRev.shared_keys = rev.shared_keys;`.
-          - If `section === 'shared-tools'`: call `refreshSharedKeys(rev.shared_keys)` (which calls `readKeys({ fromRefresh: true })` when clean and unfocused, advancing `lastRev.shared_keys = rev.shared_keys` only on success; if focused, defers in `deferredBlocks` without advancing `lastRev.shared_keys`; if dirty, marks `staleBlocks.add('shared-tools')` and shows `.stale-banner` without advancing `lastRev.shared_keys` until loaded or saved).
-     6. In `finally`, set `pollRunning = false`.
+          - If `section === 'shared-tools'`: set `domainRunning.shared_keys = true;` and call `refreshSharedKeys(rev.shared_keys)` (which calls `readKeys({ fromRefresh: true })` when clean and unfocused, advancing `lastRev.shared_keys = rev.shared_keys` only on success; if focused, defers in `deferredBlocks` without advancing `lastRev.shared_keys`; if dirty, marks `staleBlocks.add('shared-tools')` and shows `.stale-banner` without advancing `lastRev.shared_keys` until loaded or saved).
 
 ### §3. Uniform per-block rendered slices, editor baselines, focus/dirty guards, and "Updated elsewhere" banner (`viewer/pages/settings.js`, `viewer/pages/settings.css`)
 
-1. **Focus guard (`blockFocused(name)`)**
-   - Returns `true` when `document.activeElement` is inside `blockHost(name)` and matches `'input, textarea, select, [contenteditable]'`.
-   - Buttons, `<summary>` disclosures, and links are intentionally excluded so clicking Save or a toggle (or switching tabs and returning) never freezes stale values in a clean block; clean repaints use `repaint(name)` (`swapKeepingFocus`) so keyboard focus on `[data-focus]` controls is restored in place.
+1. **Focus guard (`blockFocused(name)`) and generalized `swapKeepingFocus`**
+   - `blockFocused(name)` returns `true` when `document.activeElement` is inside `blockHost(name)` and matches `'input, textarea, select, [contenteditable]'`.
+   - Buttons, `<summary>` disclosures, and links are excluded from `blockFocused` so clicking Save or a toggle (or switching tabs and returning) never freezes stale values in a clean block.
+   - Extend `swapKeepingFocus(host, swap)` (`settings.js:235-240`) so clean repaints restore keyboard focus for **every** button, `<summary>`, and link inside `host`, not only the ~13 controls marked `[data-focus]`:
+     1. If `focused.closest('[data-focus]')` exists, restore by `[data-focus="<key>"]` (existing behavior).
+     2. Else if `focused.id`, restore by `#${CSS.escape(focused.id)}` inside `host`.
+     3. Else if `focused.getAttribute('aria-label')`, restore by `${tag}[aria-label="${CSS.escape(label)}"]` inside `host`.
+     4. Else if `focused` matches `'button, summary, a'`, record its tag, `textContent.trim()`, and ordinal index among same-tag elements inside `host`, and restore focus to the matching element in `host` (if present) using `{ preventScroll: true }`.
 
 2. **Editor baselines and dirty guard (`blockDirty(name)`)**
    - Every editor compares against the **baseline it was built from**, never against live `data` (so updating `data` before or during reconciliation never makes an untouched editor look dirty):
@@ -114,19 +125,19 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - `writing`: store `styleBaseline = structuredClone(data.style)` whenever `styleDraft` is initialized or saved; dirty when `styleDraft !== null && JSON.stringify(currentStyle()) !== JSON.stringify(styleBaseline)` (`currentStyle()` already includes any non-empty `pending` "Never say" input).
      - `balancing`: store `balBaseline = ...` (cloned keys `within`, `leave`, `notify_below`, `save_for_leads`, `margin`, `held_back`) inside `ensureDraft()` and after `saveBalancing()`; dirty when `balDraft !== null && ['within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'].some((k) => JSON.stringify(balDraft[k]) !== JSON.stringify(balBaseline[k]))`.
      - `templates` (holds both Templates and Lessons under `behavior`):
-       - When `isLessons(selected)`: store `lessonEdit.baseList = structuredClone(lessonList(role))` in `select('lessons:...')` and after `saveLessons()`. `lessonDirty()` compares `lessonEdit.texts[item.id]` against `item.text` in `lessonEdit.baseList` (plus `lessonEdit.removals.size > 0`). Dirty when `lessonDirty() || Boolean(lessonEdit?.confirming) || Boolean(lessonEdit?.saving)`.
+       - When `isLessons(selected)`: store `lessonEdit.baseList = structuredClone(lessonList(role))` in `select('lessons:...')` and after `saveLessons()` / `lessonAction()` / lesson import. `lessonDirty()` compares `lessonEdit.texts[item.id]` against `item.text` in `lessonEdit.baseList` (plus `lessonEdit.removals.size > 0`). Dirty when `lessonDirty() || Boolean(lessonEdit?.confirming) || Boolean(lessonEdit?.saving)`.
        - When a template or `'new'` is selected: store `draftBaseline = structuredClone(draft)` in `select(id)`. Dirty when `confirming || JSON.stringify(draft) !== JSON.stringify(draftBaseline)`. An unedited open template editor is clean and refreshes automatically.
      - `thread-view`: `folderDraft !== null && folderDraft !== folderBaseline` (set `folderBaseline = data.default_project_folder || ''` when `folderRow` initializes or saves).
      - `tiers`: `Boolean(blockHost('tiers')?.querySelector('.other input'))` (custom "Other" model input open).
      - `accounts`: separate `accountsDirty()` from focus: `Boolean(editing || adding || (signCard && signCard.waiting && signCard.el.isConnected && blockHost('accounts')?.contains(signCard.el)))`. (`accountsBusy()` remains for existing usage-polling callers or delegates to `accountsDirty() || blockFocused('accounts')`.)
      - `harnesses`: `Boolean(hz.confirmOff)`.
      - `background`: `Boolean(backgroundVisit && (backgroundVisit.dirty || backgroundVisit.pending || backgroundVisit.saving))`.
-     - `shared-tools`: any `<input>` inside `blockHost('shared-tools')` with non-empty `.value` (password key values or new key name/value inputs).
-     - `diagrams`, `usage`, `agents`, `ladders`, `escalation`, `assistants`, `conversations`, `permission`, `lead-names`: `false` (immediate-save or read-only; protected by `blockFocused`).
+     - `shared-tools`: any `<input>` inside `blockHost('shared-tools')` with non-empty `.value` (password key values or new key name/value inputs) OR an unapplied `sharedKeyDraft` (§4.2) for the current machine.
+     - `diagrams`, `usage`, `agents`, `ladders`, `escalation`, `assistants`, `conversations`, `permission`, `lead-names`, and any unlisted future hub-backed block: `false` (immediate-save or read-only; protected by `blockFocused`).
    - `enter` (browser-only) and `tools` (Project tools, out of scope per `IDEA.md`) are never touched by external refresh.
 
 3. **Per-block rendered slice tracking (`renderedSlice` & `blockSlice(name, d)`)**
-   - Maintain `const renderedSlice = new Map();`. Inside `paint(name)`, record `renderedSlice.set(name, JSON.stringify(blockSlice(name, data)))` (and if `staleBlocks.has(name)`, append/prepend the `.stale-banner` so any independent repaint such as `refreshUsage()` never drops an active banner).
+   - Maintain `const renderedSlice = new Map();`. Inside `paint(name)`, record `renderedSlice.set(name, JSON.stringify(blockSlice(name, data)))` (and if `staleBlocks.has(name)`, prepend the `.stale-banner` so any independent repaint such as `refreshUsage()` or category re-entry never drops an active banner).
    - Define `stripVolatileTemplate(t)` returning `{ id: t.id, name: t.name, role: t.role, scope: t.scope, switches: t.switches, text: t.text, in_use: t.in_use }` (omitting `live_sessions` and `scope_missing` so thread starts/stops never trigger false "Updated elsewhere." banners).
    - Exact `blockSlice(name, d)` per block:
      - `name`: `d.user_name`
@@ -146,7 +157,13 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - `lead-names`: `[d.lead_name_list, d.lead_names]`
      - `templates`: `[(d.templates || []).map(stripVolatileTemplate), d.lessons, d.lesson_history, d.lesson_waiting]` (omits `d.projects`)
      - `shared-tools`: `[d.shared_tools_repo, d.saved_dirs]`
-   - On category entry (`renderCategory()`): before painting the category's blocks, reset any clean editor cache whose underlying data may have changed while the category was closed (`if (!blockDirty('writing')) styleDraft = null;`, `if (!blockDirty('balancing')) balDraft = null;`, `if (!blockDirty('name')) nameDraft = null;`, `if (!blockDirty('thread-view')) folderDraft = null;`, `if (!blockDirty('templates') && selected && !isLessons(selected) && selected !== 'new') select(data.templates.some((t) => t.id === selected) ? selected : (data.templates[0]?.id || 'new'))`).
+     - **Default fallback for unlisted blocks** (such as a future Theme block under `you` from peer thread `11c53653de4e`): return `d` so any newly added hub-stored block refreshes automatically when `data` changes.
+   - **Category switching & re-entry (`readHash` & `renderCategory()`)**:
+     - When `leaving` a category in `readHash`: clear `deferredBlocks.clear()`, and remove from `staleBlocks` ONLY blocks that are no longer dirty (`for (const b of [...staleBlocks]) if (!blockDirty(b)) staleBlocks.delete(b);`). Dirty drafts that survive leaving a category (such as `styleDraft`, `balDraft`, `nameDraft`, `folderDraft`, `draft`, `lessonEdit`) **keep** their `staleBlocks` status!
+     - On `renderCategory()` entry:
+       - For each clean editor (`!blockDirty(...)`), reset its cache (`styleDraft = null`, `balDraft = null`, `nameDraft = null`, `folderDraft = null`, or re-run `select(...)` for clean `templates` / `lessons`) and remove it from `staleBlocks`.
+       - For each dirty editor (`blockDirty(...)`), compare its baseline against current `data` (e.g., `styleBaseline` vs `data.style`, `balBaseline` vs `data`, `nameBaseline` vs `data.user_name`, `folderBaseline` vs `data.default_project_folder`, `draftBaseline` vs matching template in `data.templates`, `lessonEdit.baseList` vs `lessonList(role)`): if current `data` differs from the draft's baseline, add that block to `staleBlocks` so `paint(name)` immediately shows `.stale-banner` on re-entry!
+     - **Dirty Lessons editor rendering (`renderLessons()` at `settings.js:1478`)**: when `lessonDirty()` is true, render the lesson rows and Save button from `lessonEdit.baseList` (not live `lessonList(role)`) until `saveLessons()` or `Load latest` resolves the conflict, so leaving and returning after another tab deleted the last lesson never hides the user's draft or Save button.
 
 4. **Reconciliation rules (`reconcileVisibleBlocks()` & secondary read completion guards)**
    - Maintain `const deferredBlocks = new Set();` and `const staleBlocks = new Set();`.
@@ -154,7 +171,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - **Clean and unfocused (`!blockDirty(name) && !blockFocused(name)`)**:
        - Reset clean draft caches (`styleDraft = null` for `writing`; `balDraft = null` for `balancing`; `nameDraft = null` for `name`; `folderDraft = null` for `thread-view`; for `templates`: if `!isLessons(selected) && selected !== 'new'`, `select(data.templates.some((t) => t.id === selected) ? selected : (data.templates[0]?.id || 'new'))`, and if `isLessons(selected)`, refresh `lessonEdit.baseList = structuredClone(lessonList(lessonEdit.role))`).
        - Clear `deferredBlocks.delete(name)` and `staleBlocks.delete(name)`.
-       - Call `repaint(name)` (which uses `swapKeepingFocus`).
+       - Call `repaint(name)` (which uses generalized `swapKeepingFocus`).
      - **Clean and focused (`!blockDirty(name) && blockFocused(name)`)**:
        - Do not repaint now. Add `name` to `deferredBlocks`.
      - **Dirty (`blockDirty(name)`)**:
@@ -169,24 +186,23 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
        - If `blockDirty(name)`: add `name` to `staleBlocks` and render `.stale-banner`.
        - Else: run the clean repaint path from current `data` (and for `diagrams`, call `drawDiagram()`; for `shared-tools`, call `readKeys({ fromRefresh: true })`; for `background`, `repaint('background')`; for `harnesses`, `repaint('harnesses')`).
    - **Clicking `Load latest` on `.stale-banner`**:
-     - Discards that block's draft (`nameDraft = null`, `folderDraft = null`, `styleDraft = null`, `balDraft = null`, `editing = null; adding = null;` for `accounts`, `hz.confirmOff = null;` for `harnesses`, `select(...)` for `templates`/`lessons`, `discardBackground(); bg.refresh(); ensureBackground();` for `background`, clear inputs + `readKeys({ fromRefresh: false })` for `shared-tools`, remove `.other` for `tiers`), clears `staleBlocks.delete(name)` and `deferredBlocks.delete(name)`, and repaints `name` from current `data` (and advances `lastRev.shared_keys` when `readKeys` succeeds).
+     - Discards that block's draft (`nameDraft = null`, `folderDraft = null`, `styleDraft = null`, `balDraft = null`, `editing = null; adding = null;` for `accounts`, `hz.confirmOff = null;` for `harnesses`, `select(...)` for `templates`/`lessons`, `discardBackground(); bg.refresh(); ensureBackground();` for `background`, clear `sharedKeyDraft` + inputs + `readKeys({ fromRefresh: false })` for `shared-tools`, remove `.other` for `tiers`), clears `staleBlocks.delete(name)` and `deferredBlocks.delete(name)`, and repaints `name` from current `data` (and advances `lastRev.shared_keys` when `readKeys` succeeds).
    - **Clicking `Save` on a stale block**:
      - Proceeds as normal and clears `staleBlocks.delete(name)` and `deferredBlocks.delete(name)` on success.
-   - **Switching categories (`readHash` when `leaving` is true)**:
-     - Clears `deferredBlocks` and `staleBlocks`.
    - **Secondary read completion guards** (every async completion checks guards at render time, not only before starting):
-     - `loadDiagram({ fromRefresh = false } = {})`: on response, store `diagram = next`; if `fromRefresh && blockFocused('diagrams')`, add `'diagrams'` to `deferredBlocks` instead of calling `drawDiagram()`; otherwise call `drawDiagram()`. Return `true` on HTTP 200 and `false` on error.
-     - `loadHarnesses()`: when repainting `harnesses` on success or error, if `blockDirty('harnesses')` add `'harnesses'` to `staleBlocks` and show `.stale-banner`; if `blockFocused('harnesses')` add `'harnesses'` to `deferredBlocks`; otherwise `repaint('harnesses')`.
+     - `loadDiagram({ fromRefresh = false } = {})`: on response, store `diagram = next`; if `fromRefresh && blockFocused('diagrams')`, add `'diagrams'` to `deferredBlocks` instead of calling `drawDiagram()`; otherwise call `drawDiagram()`. Return `true` only when HTTP 200 succeeded AND no machine in `next.machines` has an `.error`; return `false` otherwise.
+     - `loadHarnesses()`: capture `const startRev = data?.settings_revision; const startGen = localWriteGen;` before `api('/harnesses')`. When the response arrives, assign `data.harnesses` ONLY if `data?.settings_revision === startRev && localWriteGen === startGen` (so an older `/harnesses` read can never roll back a newer Settings snapshot's switches). On repaint (success or error), if `blockDirty('harnesses')` add `'harnesses'` to `staleBlocks` and show `.stale-banner`; if `blockFocused('harnesses')` add `'harnesses'` to `deferredBlocks`; otherwise `repaint('harnesses')`.
      - `loadSharedProjects()`: persist the selected machine in module state (`let sharedMachine = 'hub'`, updated on machine `<select>` change) so `paint('shared-tools')` restores `machine.value = sharedMachine` instead of resetting to `'hub'`. Before calling `paint('shared-tools')` on completion, if `blockDirty('shared-tools')` show `.stale-banner` and skip repaint; if `blockFocused('shared-tools')` defer in `deferredBlocks`; otherwise `repaint('shared-tools')`.
-     - `readKeys({ fromRefresh = false } = {})`: on both success and `catch` error, if `fromRefresh && blockDirty('shared-tools')`, mark `staleBlocks.add('shared-tools')` and show `.stale-banner` without calling `paintKeys()` or replacing `keyHost`; if `fromRefresh && blockFocused('shared-tools')`, add `'shared-tools'` to `deferredBlocks` without painting; otherwise paint as usual.
+     - `readKeys({ fromRefresh = false } = {})`: on both success and `catch` error, if `fromRefresh && blockDirty('shared-tools')`, mark `staleBlocks.add('shared-tools')` and show `.stale-banner` without calling `paintKeys()` or replacing `keyHost`; if `fromRefresh && blockFocused('shared-tools')`, add `'shared-tools'` to `deferredBlocks` without painting; otherwise paint as usual (and if `sharedKeyDraft.machine === selected`, restore any pending 409 draft per §4.2).
      - `syncBackground(state)`:
        - In `selectBackground(v, file)`, capture `v.baseRevision = bg.current().metadata?.revision ?? null` when setting `v.pending = true` so `baseRev = v.dirty ? v.revision : v.baseRevision` is always defined during decoding.
        - In `syncBackground(state)`: let `incomingRev = state?.metadata?.revision`; if `v && (v.dirty || v.pending || v.saving)`: only if `incomingRev != null && baseRev != null && incomingRev !== baseRev`, add `'background'` to `staleBlocks` and show `.stale-banner` without repainting (never on unchanged poll notifications). If clean and `v.renderedState !== backgroundStateKey(state)`: if `blockFocused('background')`, add `'background'` to `deferredBlocks`; else `repaint('background')`.
 
-### §4. Draft-preserving 409 recovery in `saveLessons()` and Shared-key `change()` (`viewer/pages/settings.js`)
+### §4. Draft-preserving 409 recovery in `saveLessons()`, `keepLessonEdits()`, and Shared-key `change()` (`viewer/pages/settings.js`)
 
-1. **`saveLessons()` (`settings.js:1264-1289`)**
-   - Build `edits` by iterating over `lessonEdit.baseList` (the lessons the editor was built from), NOT live `data.lessons[role]`, so an external removal observed by a prior poll still submits the edited id and receives HTTP 409 instead of being silently omitted.
+1. **`saveLessons()` (`settings.js:1264-1289`) and `keepLessonEdits()` (`settings.js:1318-1362,1460-1465`)**
+   - Build `edits` in `saveLessons()` by iterating over `lessonEdit.baseList` (the lessons the editor was built from), NOT live `data.lessons[role]`, so an external removal observed by a prior poll still submits the edited id and receives HTTP 409 instead of being silently omitted.
+   - In `keepLessonEdits()` (used by `lessonAction` and lesson import), compare `lessonEdit.texts[id]` against `lessonEdit.baseList` (not live `data.lessons[role]`), and after applying the server reply to `data`, advance `lessonEdit.baseList = structuredClone(lessonList(role))`.
    - When `PUT /settings/lessons/:role` fails with `e.status === 409`:
      1. Preserve `prevTexts = { ...lessonEdit.texts }`, `prevRemovals = new Set(lessonEdit.removals)`, and `prevBase = lessonEdit.baseList`.
      2. Call `await reload(false);` to load the current server lessons for `role`.
@@ -196,10 +212,16 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      6. Clear `lessonEdit.saving = false`, clear `staleBlocks.delete('templates')`, repaint `templates`, and display an inline error message naming the removed lesson edit text(s) so Collin can copy or re-add them (matching `lessonAction` and lesson import).
 
 2. **Shared-key `change()` 409 recovery (`settings.js:2738-2749`)**
+   - Maintain `let sharedKeyDraft = { machine: null, values: {}, addName: '', addValue: '' };` (cleared on successful Save, `Load latest`, or switching to another machine).
    - On `error.status === 409` in `shared-tools` `change()`:
-     1. Before calling `await readKeys({ fromRefresh: false })`, snapshot all non-empty inputs inside `keyHost`: existing key password inputs keyed by `.pt-key[data-key]` plus the new-key name and value inputs inside `.pt-addkey`.
+     1. Before calling `await readKeys({ fromRefresh: false })`, snapshot all non-empty inputs inside `keyHost` into `sharedKeyDraft` for the current `sharedMachine`: existing key password inputs keyed by `.pt-key[data-key]` into `values`, plus `.pt-addkey` name/value into `addName`/`addValue`.
      2. Call `await readKeys({ fromRefresh: false })` to refresh the machine-store `revision` and key list.
-     3. Restore the snapshotted values into matching rebuilt inputs (and `.pt-addkey` name/value inputs) so Collin's typed key values are preserved and can be saved immediately against the fresh revision, and prepend the 409 alert message at the top of `keyHost`.
+     3. Inside `paintKeys()` when `sharedKeyDraft.machine === selected`:
+        - Restore each `values[keyName]` into its matching `.pt-key[data-key]` password input.
+        - If a key in `values` was removed externally (no matching row exists in the refreshed key list): prefill `.pt-addkey`'s name and value inputs with that orphaned key when `.pt-addkey` is empty (and if multiple orphaned keys or `.pt-addkey` already had a draft, list any remaining orphaned key names in an inline `.pt-warn` note while retaining them in `sharedKeyDraft`).
+        - Clear restored entries from `sharedKeyDraft` once placed in the live inputs.
+        - If the recovery `readKeys()` fails (network/machine error), keep `sharedKeyDraft` intact so the next successful `readKeys()` for the same machine restores the draft instead of losing it.
+     4. Prepend the 409 alert message at the top of `keyHost`.
 
 ### §5. Validation
 
@@ -217,14 +239,15 @@ Targeted commands covering all touched files (full-run is handled before push pe
 
 2. **Playwright browser tests:**
    ```bash
-   npm --prefix viewer run test:browser -- viewer/test/app-settings.spec.js viewer/test/app-accounts.spec.js viewer/test/app-lessons.spec.js viewer/test/app-diagram-sensitivity.spec.js
+   npm --prefix viewer run test:browser -- viewer/test/app-settings.spec.js viewer/test/app-accounts.spec.js viewer/test/app-lessons.spec.js viewer/test/app-diagram-sensitivity.spec.js viewer/test/background-editor.spec.js
    ```
    Required assertions to add/update:
-   - External setting change (made via API while Settings is open) automatically updates a clean unfocused block within one poll interval without manual reload — covering main settings (`name`, `writing`, `balancing`, `models` including `lead_order`/`worker_order`/`other_agents`/`review_families`, `templates` open by default, `accounts`/`harnesses`, `diagrams`, and `shared-tools` repo/keys).
-   - Focused text/select control in a clean block defers repaint until focus leaves (or transitions to `.stale-banner` if the user types before blurring), then repaints cleanly without stealing focus; clicking a toggle or Save button does not hold stale values after an external update.
-   - Unsaved draft in a dirty block (tested on `name`, `writing` including pending Never say input, `balancing`, `templates`, `lessons`, `accounts`, `shared-tools` key inputs) is preserved when an external change arrives, shows the inline `Updated elsewhere.` banner with `Load latest`, and clicking `Load latest` discards the draft and paints the newer values (while clicking `Save` still saves the draft, including shared-key 409 draft preservation).
-   - Local save ordering: a slow in-flight refresh GET never overwrites a newer local save, and an older post-save reread cannot roll back a newer snapshot.
+   - External setting change (made via API while Settings is open) automatically updates a clean unfocused block within one poll interval without manual reload — covering main settings (`name`, `writing`, `balancing`, `models` including `lead_order`/`worker_order`/`other_agents`/`review_families`, `templates` open by default, `accounts`/`harnesses`, `diagrams`, and `shared-tools` repo/keys, including `saved_dirs` changed while another category is open).
+   - Focused text/select control in a clean block defers repaint until focus leaves (or transitions to `.stale-banner` if the user types before blurring), then repaints cleanly without stealing focus; clicking a button, toggle, or `<summary>` does not hold stale values after an external update and preserves focus via `swapKeepingFocus`.
+   - Unsaved draft in a dirty block (tested on `name`, `writing` including pending Never say input, `balancing`, `templates`, `lessons` including leaving and returning after external removal, `accounts`, `shared-tools` key inputs) is preserved when an external change arrives (including across category switches), shows the inline `Updated elsewhere.` banner with `Load latest`, and clicking `Load latest` discards the draft and paints the newer values (while clicking `Save` still saves the draft, including shared-key 409 draft preservation when a key is modified or removed externally).
+   - Local save ordering: a slow in-flight refresh GET or delayed `refreshModels()` / `loadHarnesses()` response never overwrites a newer local save or newer snapshot.
    - `app-lessons.spec.js`: update the existing 409 conflict test (`viewer/test/app-lessons.spec.js:111-117`) to assert retained surviving edits, reloaded current list, and visible lost text, AND add a case that removes the lesson through a real hub mutation route so the revision poll runs before Save and 409 recovery still preserves the lost text.
+   - `background-editor.spec.js`: extend the external-conflict test to verify `.stale-banner` and `Load latest` (and verify no false banner while an image is decoding against an unchanged poll).
    - Idle Settings tab does not re-fetch `GET /settings` when `GET /settings/revision` is unchanged.
 
 ## Accepted Risks
@@ -269,14 +292,33 @@ Targeted commands covering all touched files (full-run is handled before push pe
 
 ### Round 2 — 2026-11-28
 
-**Changed since Round 1:**
-- Dropped the redundant `background` revision domain from `Hub` (`settingsRevs` now tracks `settings`, `diagram`, `shared_keys`) and kept `syncBackground` dirty/focus guards with `v.baseRevision` captured at decode start (Decision 5, §1, §2.2, §3.4).
-- Added monotonic `applySettingsSnapshot` + `withLocalWrite` covering full save-and-reread handlers scoped strictly to Settings/shared-keys writes, plus independent per-domain `try/catch`, post-success token acknowledgment, and best-effort initial revision fetch (§2.1–§2.2).
-- Added editor baselines (`nameBaseline`, `folderBaseline`, `styleBaseline`, `balBaseline`, `draftBaseline`, `lessonEdit.baseList`), per-block `renderedSlice` tracking, category-entry clean cache reset, and `paint()` preservation of `.stale-banner` (§3.2–§3.3).
-- Narrowed `blockFocused` to `'input, textarea, select, [contenteditable]'` and used `repaint()` (`swapKeepingFocus`) for buttons/summaries/links; separated `accountsDirty()` from focus; promoted dirty `deferredBlocks` to `staleBlocks` on `input`/`focusout` (§3.1–§3.4).
-- Fixed `blockSlice` for `agents`, `assistants`, `ladders`, `tiers`, `thread-view`, and `templates` (stripped `live_sessions`/`scope_missing` and dropped `d.projects`) (§3.3).
-- Named `loadDiagram()` and guarded completion/error paths for `loadDiagram`, `loadHarnesses`, `loadSharedProjects` (preserving `sharedMachine`), and `readKeys` (§3.4).
-- Updated `saveLessons()` to iterate `lessonEdit.baseList` for 409 detection, added draft-preserving 409 recovery in shared-key `change()`, added `machine/test/name-guard.test.js`, and specified updating `app-lessons.spec.js` (§4–§5).
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
+
+**Changed since Round 1:** Dropped `background` revision domain; added monotonic `applySettingsSnapshot`, editor baselines, `renderedSlice`, generalized `blockSlice`, `loadDiagram()`/`loadHarnesses()`/`loadSharedProjects()`/`readKeys()` guards, `lessonEdit.baseList` 409 handling, shared-key 409 recovery, and updated validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Switching category clears `staleBlocks` while dirty drafts survive, dropping the "Updated elsewhere" banner on re-entry | upheld | Keep dirty blocks in `staleBlocks` on `readHash` leave and re-check dirty baselines vs `data` on `renderCategory()` entry in Spec §3.3 |
+| intent | major | `swapKeepingFocus` only restores focus on `[data-focus]` elements (~13 in file), dropping focus from normal buttons/links on clean repaint | upheld | Extended `swapKeepingFocus` with id, `aria-label`, and tag/text/index fallback for buttons, `<summary>`, and links in Spec §3.1 |
+| intent | minor | Closed `blockSlice` map leaves unlisted future blocks (e.g., Theme from peer thread `11c53653de4e`) without live refresh | upheld | Added default fallback returning `d` for unlisted hub-backed blocks in Spec §3.3 |
+| mechanics | blocking | Delayed `refreshModels()` partial reread can overwrite newer `data.models` after a poll advanced `data` | upheld | Routed `refreshModels()` and `legacyNotice` `use` rereads through monotonic `applySettingsSnapshot` and wrapped in `withLocalWrite` in Spec §2.1 |
+| mechanics | blocking | `sharedProjects` cache stays stale if `saved_dirs` changes while another category is open | upheld | Invalidate `sharedProjects = null` inside `applySettingsSnapshot` whenever `saved_dirs` changes, regardless of active category, in Spec §2.1 |
+| mechanics | blocking | Shared-key 409 recovery loses replacement value when another tab removes a stored-only key or recovery `readKeys` fails | upheld | Added persistent `sharedKeyDraft` restoring orphaned keys into `.pt-addkey` (and retaining draft across failed recovery reads) in Spec §4.2 |
+| mechanics | blocking | Dirty Lessons editor loses visible draft and Save button on leave-and-return if another tab removed its only lesson | upheld | Render dirty `renderLessons()` from `lessonEdit.baseList` until Save or Load latest resolves the conflict in Spec §3.3 |
+| mechanics | major | `keepLessonEdits()` in `lessonAction`/import compares against live `data` instead of `lessonEdit.baseList` and does not advance baseline | upheld | Updated `keepLessonEdits()` to compare against and advance `lessonEdit.baseList` in Spec §4.1 |
+| mechanics | major | `loadHarnesses()` mutates `data.harnesses` directly from an older `/harnesses` response, rolling back newer switches | upheld | Guarded `data.harnesses` assignment in `loadHarnesses()` with `startRev` and `startGen` in Spec §3.4 |
+| mechanics | major | `loadDiagram()` HTTP 200 with per-machine `.error` acknowledges `lastRev.diagram`, leaving recovered machine stuck unreachable | upheld | Return `true` from `loadDiagram()` only when HTTP 200 AND no machine has `.error` in Spec §2.2 & §3.4 |
+| mechanics | major | Awaiting slow secondary read (`/shared-keys/read`) holds `pollRunning` and stalls other domains | upheld | Replaced global `pollRunning` with `revRunning` + independent per-domain `domainRunning` flags in Spec §2.2 |
+| mechanics | minor | Targeted browser command omits `viewer/test/background-editor.spec.js` | upheld | Added `viewer/test/background-editor.spec.js` and its conflict-banner test assertions to Spec §5 |
+
+### Round 3 — 2026-11-28
+
+**Changed since Round 2:**
+- Preserved `staleBlocks` for surviving dirty drafts across category switches, re-checked dirty baselines vs `data` on `renderCategory()` entry, and rendered dirty `renderLessons()` from `lessonEdit.baseList` (§3.3).
+- Generalized `swapKeepingFocus` to restore focus on any button, `<summary>`, or link (via `data-focus`, `id`, `aria-label`, or tag/text/index fallback) and added default `blockSlice` fallback for unlisted hub-backed blocks (§3.1, §3.3).
+- Routed partial rereads (`refreshModels`, `legacyNotice`) through monotonic `applySettingsSnapshot`, invalidated `sharedProjects` on any accepted `saved_dirs` change, and guarded `loadHarnesses()`'s `data.harnesses` write (§2.1, §3.4).
+- Replaced single `pollRunning` with `revRunning` + per-domain `domainRunning` flags so slow machine reads never stall other domains, and required zero per-machine `.error` before acknowledging `lastRev.diagram` (§2.2, §3.4).
+- Updated `keepLessonEdits()` to use/advance `lessonEdit.baseList`, added `sharedKeyDraft` orphaned-key / failed-read recovery for shared-key 409s, and added `viewer/test/background-editor.spec.js` to §5 (§4–§5).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
@@ -297,3 +339,4 @@ Targeted commands covering all touched files (full-run is handled before push pe
 - 2026-11-28: Settled Q1 (Decision 4: inline "Updated elsewhere" note + "Load latest" button). Watch List #1 (`11c53653de4e` overlap check) cleared from Watch List per lead rule "Never wait on another lead"; any late reply from `wc-11c53653de4e-lead` will be handled under the late-overlap rule. Wrote Spec (§1–§5) and set `status: ready-for-review`.
 - 2026-11-28: Peer lead `wc-11c53653de4e-lead` confirmed its theme-options thread will add a Theme section in Settings → You (`viewer/pages/settings.js`, and possibly `viewer/app/settings.js` / `viewer/app/routes.js`). Because this thread is already in review (late overlap), replied with our Spec details and noted to mention this overlap in one line of our next visible reply to Collin.
 - 2026-11-28: Triaged Review Round 1 (19 findings: 4 intent minor, 15 mechanics — 5 blocking, 7 major, 3 minor; all 19 upheld) and updated Spec for Round 2.
+- 2026-11-28: Triaged Review Round 2 (12 findings: 3 intent — 2 major, 1 minor; 9 mechanics — 4 blocking, 4 major, 1 minor; all 12 upheld) and updated Spec for Round 3.
