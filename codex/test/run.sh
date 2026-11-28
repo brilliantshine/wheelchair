@@ -413,6 +413,34 @@ run_model agy-launch missing max
 assert 'launch preserves unknown model' equals "$output" $'missing\tmax'
 run_model agy-launch gemini-4-carbon
 assert 'launch preserves CLI default' equals "$output" $'gemini-4-carbon\t'
+# The sub-lead refresh uses only the one-hour age, migration and failure backoff.
+refresh_case() {
+  local kind=$1 expected=$2
+  rm -f "$case_dir/agy-models.json" "$case_dir/agy-models.json.failed"
+  : > "$case_dir/calls"
+  if [[ $kind != missing ]]; then
+    python3 -c 'import json,sys,time; kind=sys.argv[2]; d={"at":time.time()-(3700 if kind in ("stale","failure") else 120),"models":[{"value":"old","label":"Old",**({} if kind=="old" else {"efforts":[]})}]}; d.update({"failed_at":time.time()} if kind=="failure" else {}); json.dump(d,open(sys.argv[1],"w"))' "$case_dir/agy-models.json" "$kind"
+  fi
+  run_model agy-refresh
+  [[ $status == 0 && -z $output && ! -s $stderr && $(wc -l < "$case_dir/calls") -eq $expected ]] || return 1
+  if [[ $expected == 1 ]]; then
+    python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["models"][0]["value"] == "gemini-4-hydrogen"' "$case_dir/agy-models.json"
+  fi
+}
+assert 'refresh reuses a complete two-minute list silently' refresh_case recent 0
+assert 'refresh rewrites a list over an hour old silently' refresh_case stale 1
+assert 'refresh creates a missing list silently' refresh_case missing 1
+assert 'refresh migrates a fresh old-format list silently' refresh_case old 1
+assert 'refresh respects recent failure silently' refresh_case failure 0
+printf '#!/bin/sh\necho call >> "%s"\nexit 1\n' "$case_dir/calls" > "$fake_agy"
+rm -f "$case_dir/agy-models.json" "$case_dir/agy-models.json.failed"
+: > "$case_dir/calls"
+run_model agy-refresh
+assert 'failed refresh exits successfully and silently and records failure' bash -c '[[ $1 == 0 && -z $2 && ! -s $3 && -s $4 && $(wc -l < "$5") == 1 ]]' _ "$status" "$output" "$stderr" "$case_dir/agy-models.json.failed" "$case_dir/calls"
+printf '#!/bin/sh\necho call >> "%s"\ncat "%s"\n' "$case_dir/calls" "$listing" > "$fake_agy"
+rm -f "$case_dir/agy-models.json.failed"
+: > "$case_dir/calls"
+
 # S4.1: each case starts with a controlled saved age and an empty call log.
 launch_refresh_case() {
   local age=$1 models=$2 requested_model=$3 requested_effort=$4 expected=$5 failure=${6:-0}
