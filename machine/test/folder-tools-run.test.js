@@ -47,6 +47,31 @@ test('launcher drains output and propagates child exit',async()=>{
   const f=await fixture("process.stdout.write('x'.repeat(1000000)); process.exitCode=7",{kind:'server',start:[process.execPath,'main.js']});
   const child=spawn(process.execPath,[launch,'--project-dir',f.root,'--tool',f.dir]); const result=await completed(child); assert.equal(result.code,7); assert.equal(result.stdout.length,1000000);
 });
+test('keyless launcher waits for stdout flush and handles EPIPE',()=>{
+  const {EventEmitter}=require('node:events'), {PassThrough}=require('node:stream');
+  const {pipeKeyless}=require('../lib/tool-launch');
+  function setup() {
+    const child=new EventEmitter(); child.stdin=new PassThrough(); child.stdout=new PassThrough();
+    const stdin=new PassThrough(), stdout=new EventEmitter(), exits=[]; let kills=0, pending;
+    stdout.write=(chunk, callback)=>{ assert.equal(chunk,''); pending=callback; return true; };
+    pipeKeyless({child,stdin,stdout,kill:()=>kills++,exit:code=>exits.push(code)});
+    return {child,stdin,stdout,exits,kills:()=>kills,release:()=>pending()};
+  }
+  const drain=setup(); drain.child.emit('close',7,null);
+  assert.equal(drain.kills(),1); assert.deepEqual(drain.exits,[]);
+  drain.release(); assert.deepEqual(drain.exits,[7]);
+  const broken=setup(); broken.stdout.emit('error',Object.assign(new Error('closed'),{code:'EPIPE'}));
+  assert.equal(broken.kills(),1); assert.deepEqual(broken.exits,[0]);
+});
+test('keyed launcher drains output and propagates child exit',async()=>{
+  const text=JSON.stringify({jsonrpc:'2.0',id:1,result:'x'.repeat(999963)})+'\n';
+  assert.equal(Buffer.byteLength(text),1000000);
+  const f=await fixture(`process.stdout.write(${JSON.stringify(text)}); process.exitCode=7`,{kind:'server',start:[process.execPath,'main.js'],keys:['TOKEN']});
+  const {writeSharedKeys}=require('../lib/shared-keys'), state=path.join(f.root,'state');
+  await writeSharedKeys(state,{set:{TOKEN:'secretvalue'}});
+  const child=spawn(process.execPath,[launch,'--project-dir',f.root,'--tool',f.dir,'--state-dir',state,'--key-store','shared','--key','TOKEN']);
+  const result=await completed(child); assert.equal(result.code,7); assert.equal(result.stdout,text); assert.equal(result.stderr,'');
+});
 test('launcher serves MCP round trip and stdio methods',async()=>{
   const code=`require(${JSON.stringify(path.join(__dirname,'../lib/mcp-stdio.js'))}).serve({name:'server',version:'1',tools:[{name:'hello',description:'Hi',inputSchema:{type:'object'},call:async a=>({text:a.name})}]})`;
   const f=await fixture(code,{kind:'server',start:[process.execPath,'main.js']}); const child=spawn(process.execPath,[launch,'--project-dir',f.root,'--tool',f.dir]); const call=rpc(child);

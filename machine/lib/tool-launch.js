@@ -8,6 +8,7 @@ const { debuglog } = require('util');
 const { projectIdentity, readKeyStore, usableReason } = require('./project-keys');
 const { readSharedKeys } = require('./shared-keys');
 const { relay } = require('./server-relay');
+function main() {
 const args = process.argv.slice(2); let dir, projectDir, stateDir, keyStore; const keys = [];
 for (let i = 0; i < args.length; i++) { if (args[i] === '--project-dir') projectDir = args[++i]; else if (args[i] === '--tool') dir = args[++i]; else if (args[i] === '--state-dir') stateDir = args[++i]; else if (args[i] === '--key-store') keyStore = args[++i]; else if (args[i] === '--key') keys.push(args[++i]); }
 if (!projectDir || projectDir.startsWith('--')) { console.error('usage: --project-dir <dir> --tool <dir>'); process.exit(1); }
@@ -48,10 +49,28 @@ if (keyed) {
   relay({ child, name: tool.name, values, kill, stdin: process.stdin, stdout: process.stdout, stderr: process.stderr });
   return;
 }
-process.stdin.pipe(child.stdin); child.stdout.pipe(process.stdout); child.stdin.on('error', () => {});
-process.stdin.on('end', () => { kill(); process.exit(0); });
+pipeKeyless({ child, stdin: process.stdin, stdout: process.stdout, kill, exit: code => process.exit(code) });
 child.on('error', e => { console.error(`tool ${tool.name}: cannot start ${tool.start[0]}: ${e.message.replace(/[\r\n]+/g, ' ')}`); process.exit(1); });
-child.on('close', (code, signal) => { kill(); if (signal) process.exit(1); else process.exit(code ?? 1); });
 
 }
 start();
+}
+
+function pipeKeyless({ child, stdin, stdout, kill, exit }) {
+  child.stdin.on('error', () => {});
+  stdin.pipe(child.stdin);
+  child.stdout.pipe(stdout, { end: false });
+  stdout.on('error', e => { if (e.code === 'EPIPE') { kill(); exit(0); } });
+  stdin.on('end', () => { kill(); exit(0); });
+  child.on('close', (code, signal) => {
+    kill();
+    stdin.pause?.();
+    stdin.unref?.();
+    const result = signal ? 1 : (code ?? 1);
+    if (stdout.writableEnded || stdout.destroyed) exit(result);
+    else stdout.write('', () => exit(result));
+  });
+}
+
+if (require.main === module) main();
+module.exports = { pipeKeyless };
