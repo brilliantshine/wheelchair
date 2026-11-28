@@ -519,3 +519,4 @@ Targeted commands covering all touched files (full-run is handled before push pe
 - 2026-11-28 — Choice: T2, `settings.js` `stable()`: slice/draft comparisons ignore object key order; `renderedSlice` is not recorded for untracked blocks.
 - 2026-11-28 — Choice: T2, `settings.js` `paintHarnesses` & `loadLessonThreads`: routed through `repaint` so they keep focus too.
 - 2026-11-28 — T2 accepted (band: self): merged wc-72ca062b2848-w2 (commit 94ac06e6); Playwright browser specs verified (worker: 378 passed, 2 skipped; sub-lead spot-check: all live-refresh + background-editor specs passed).
+- 2026-11-28 — R1-1 accepted (band: scout): merged wc-72ca062b2848-w3 (commit 773285e9); 71/71 Node tests passed; choices: none.
