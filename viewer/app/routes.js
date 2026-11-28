@@ -383,8 +383,17 @@ async function handleSettings(hub, request, response, url, bits, body) {
       args = ['skip', body.model];
     } else if (body.action === 'reset') args = ['reset'];
     else throw appError(400, 'unknown heads-up action');
-    try { await settings.modelCommand(hub, args); }
-    catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
+    if (body.action === 'switch') {
+      await settings.update(hub, async (value) => {
+        const dismiss = !value.lead_tier_notice_dismissed && !settings.legacyLeadDiffs(value, await settings.models(hub)).length;
+        try { await settings.modelCommand(hub, args); }
+        catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
+        if (dismiss) value.lead_tier_notice_dismissed = true;
+      });
+    } else {
+      try { await settings.modelCommand(hub, args); }
+      catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
+    }
     return send(response, 200, { models: await settings.models(hub), heads_up: await settings.headsUp(hub) });
   }
   if (bits[1] === 'preferences' && request.method === 'PUT') {
