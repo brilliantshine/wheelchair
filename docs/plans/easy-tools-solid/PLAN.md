@@ -15,13 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q2: Should HTTP folder tools keep secret header keys hidden behind a local proxy, or pass them directly in the agent's MCP config?
-- **Context:** Folder tools can now use existing project/shared key stores. For an HTTP folder tool (`url` + optional `headers` with `${KEY}` placeholders), passing keys directly in the agent's MCP config/env is simpler, while routing keyed HTTP tools through a local proxy keeps raw keys out of the agent's config and environment (matching how script and stdio server folder tools protect keys today).
-- **Options:**
-  - Keep keys hidden behind a local proxy (agent never sees raw key values)
-  - Pass keys directly in the agent's MCP config / environment (like `.mcp.json`)
-- **Recommendation:** Keep keys hidden behind a local proxy.
-
 ### Q3: Which languages should `wc.js tool new --kind server --lang` support?
 - **Context:** Today `wc.js tool new --kind server` only generates a Node.js echo server. We are adding `--lang` while keeping Node.js as the default when `--lang` is omitted.
 - **Options:**
@@ -49,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 2 | Fix the keyless launcher output-drain race in `machine/lib/tool-launch.js` by waiting for `process.stdout` to flush before exiting, and verify both keyless and keyed drain paths under load in `machine/test/folder-tools-run.test.js`. | `child.on('close')` currently calls `process.exit(code)` while piped `process.stdout` still has buffered bytes under load. | defaulted |
 | 3 | Support Windows-side folder tools from WSL for both stdio servers and scripts (and localhost HTTP forwarding if marked) by reusing the existing Windows readiness file and `win-tool-wrap.js` / `win-tool-proxy.js` handoff. | Matches existing `.mcp.json` WSL behavior and `IDEA.md`. | defaulted |
 | 4 | Enable both unkeyed and keyed folder tools over MCP in sandboxed Codex sessions. The bridge/launcher runs outside the sandbox to load keys and redact output, and confines each tool process inside `codex sandbox` with the worktree as writable root and matching `CODEX_HOME` and worktree trust. | Gives sandboxed Codex full folder-tool parity without exposing raw keys in the agent's config or environment. | user |
+| 5 | Route keyed HTTP folder tools through a local proxy that loads declared keys from the project/shared key store, injects header values on outbound HTTP requests, and redacts any leaked key values from responses so raw keys never appear in the agent's MCP config or environment. | Matches how script and stdio server folder tools protect keys and works uniformly across Claude, Codex, and Antigravity. | user |
 
 ## Spec
 
