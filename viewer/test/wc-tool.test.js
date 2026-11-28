@@ -27,6 +27,32 @@ test('templates work, reject existing folders and names, and use checkout top', 
   assert.notEqual(run(makeTempSync('outside-'), ['list']).status, 0);
 });
 
+test('server languages and new argument validation', () => {
+  const dir = repo();
+  for (const [name, flags] of [['python', ['--kind', 'server', '--lang', 'python']], ['ordered', ['--lang', 'python', '--kind', 'server']], ['node', ['--kind', 'server', '--lang', 'node']]]) {
+    const created = run(dir, ['new', name, ...flags]); assert.equal(created.status, 0, created.stderr);
+    const folder = path.join(dir, '.wheelchair/tools', name);
+    const manifest = JSON.parse(fs.readFileSync(path.join(folder, 'tool.json'), 'utf8'));
+    assert.equal(manifest.name, name);
+    if (name !== 'node') {
+      assert.deepEqual(manifest.start, ['python3', 'server.py']);
+      assert.equal(fs.statSync(path.join(folder, 'server.py')).mode & 0o777, 0o755);
+      assert.match(fs.readFileSync(path.join(folder, 'server.py'), 'utf8'), new RegExp(`"name": "${name}"`));
+      assert.equal(fs.existsSync(path.join(folder, 'mcp-stdio.js')), false);
+      const check = run(dir, ['check', name]); assert.equal(check.status, 0, check.stderr); assert.match(check.stdout, /echo/);
+    } else assert.equal(fs.existsSync(path.join(folder, 'mcp-stdio.js')), true);
+  }
+  for (const [flags, error] of [
+    [['--kind', 'script', '--lang', 'node'], /--lang is only supported with --kind server/],
+    [['--kind', 'server', '--lang', 'ruby'], /unsupported --lang "ruby"; supported: node, python/],
+    [['--kind', 'server', '--kind', 'server'], /usage: wc.js tool new/],
+    [['--kind', 'server', '--lang', 'node', '--lang', 'python'], /usage: wc.js tool new/],
+    [['--kind', 'server', 'extra'], /usage: wc.js tool new/],
+    [['--kind', 'server', '--lang'], /usage: wc.js tool new/],
+    [['--kind', 'server', '--unknown', 'value'], /usage: wc.js tool new/],
+  ]) { const result = run(dir, ['new', 'invalid', ...flags]); assert.notEqual(result.status, 0); assert.match(result.stderr, error); }
+});
+
 test('session list reads pinned shared tools and hides collisions', async () => {
   const dir = repo(), shared = makeTempSync('shared-');
   for (const [root, name] of [[dir, 'same'], [shared, 'same'], [shared, 'other']]) tool(root, name, { kind: 'script', inputs: {}, run: ['node'] });

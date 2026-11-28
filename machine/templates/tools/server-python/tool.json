@@ -1,0 +1,6 @@
+{
+  "name": "__NAME__",
+  "description": "Echoes text back (starter MCP server — replace with your own tools).",
+  "kind": "server",
+  "start": ["python3", "server.py"]
+}

@@ -54,18 +54,28 @@ async function main(args, io = {}) {
   if (!['new', 'list', 'check', 'run'].includes(command)) throw new Error('usage: wc.js tool <new|list|check|run>');
   const { worktree, shared, keyed_unavailable, keyed_run } = await roots(command === 'run' ? runRequest : io.request);
   if (command === 'new') {
-    const [name, flag, kind] = tail;
-    if (tail.length !== 3 || flag !== '--kind' || !['script', 'server'].includes(kind)) throw new Error('usage: wc.js tool new <name> --kind script|server');
+    const [name, ...flags] = tail;
+    const usage = 'usage: wc.js tool new <name> --kind script|server [--lang node|python]';
+    const options = {};
+    for (let i = 0; i < flags.length; i += 2) {
+      const flag = flags[i], value = flags[i + 1];
+      if (!['--kind', '--lang'].includes(flag) || Object.hasOwn(options, flag) || !value || value.startsWith('--')) throw new Error(usage);
+      options[flag] = value;
+    }
+    const kind = options['--kind'], lang = options['--lang'];
+    if (!name || name.startsWith('--') || !['script', 'server'].includes(kind)) throw new Error(usage);
+    if (lang !== undefined && kind === 'script') throw new Error('--lang is only supported with --kind server');
+    if (lang !== undefined && !['node', 'python'].includes(lang)) throw new Error(`unsupported --lang "${lang}"; supported: node, python`);
     if (!NAME_RE.test(name || '') || name === RESERVED) throw new Error('invalid or reserved tool name');
     const dest = path.join(worktree, '.wheelchair', 'tools', name);
     await fs.promises.mkdir(path.dirname(dest), { recursive: true });
     try { await fs.promises.mkdir(dest); } catch (e) { if (e.code === 'EEXIST') throw new Error(`tool folder already exists: ${dest}`); throw e; }
-    const template = path.join(__dirname, '../../machine/templates/tools', kind);
+    const template = path.join(__dirname, '../../machine/templates/tools', kind === 'server' && lang === 'python' ? 'server-python' : kind);
     for (const file of await fs.promises.readdir(template)) {
       const source = path.join(template, file), content = (await fs.promises.readFile(source, 'utf8')).replaceAll('__NAME__', name);
       await fs.promises.writeFile(path.join(dest, file), content, { mode: (await fs.promises.stat(source)).mode });
     }
-    if (kind === 'server') await fs.promises.copyFile(path.join(__dirname, '../../machine/lib/mcp-stdio.js'), path.join(dest, 'mcp-stdio.js'));
+    if (kind === 'server' && lang !== 'python') await fs.promises.copyFile(path.join(__dirname, '../../machine/lib/mcp-stdio.js'), path.join(dest, 'mcp-stdio.js'));
     out.write(`${dest}\nNext: wc.js tool check ${name}\n`); return;
   }
   const found = await discover({ worktree, shared, path: process.env.PATH });
