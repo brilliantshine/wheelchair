@@ -367,6 +367,9 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Add assistant `settings` and `setting` CLI commands and tests | `viewer/app/wc.js`, `viewer/test/wc-cli.test.js` | standard / gpt-6.1-terra | `wc-166421be9826-worker` | `node --test viewer/test/wc-cli.test.js` | in-progress |
+| T2 | Export `invokeSettings` adapter, add hub assistant settings dispatcher and tests | `viewer/app/routes.js`, `viewer/app/assistant-actions.js`, `viewer/test/assistant.test.js` | standard / gpt-6.1-terra | `wc-166421be9826-worker-2` | `node --test viewer/test/assistant.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js viewer/test/app-diagram-sensitivity.test.js viewer/test/background.test.js` | in-progress |
+| T3 | Update assistant protocol rules, API docs, and machine relay/prompt tests | `protocol/app/assistant.md`, `viewer/app/API.md`, `machine/test/assistant.test.js` | standard / gpt-6.1-terra | `wc-166421be9826-worker-3` | `node --test machine/test/name-guard.test.js machine/test/assistant.test.js` | in-progress |
 
 ## Log
 
@@ -378,3 +381,4 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 - 2026-11-28: Round 4 triaged (6 upheld, 1 rare-path accepted-risk); resolved and started Round 5.
 - 2026-11-28: Round 5 triaged (6 upheld); resolved and started Round 6.
 - 2026-11-28: Round 6 clean (intent: No findings; mechanics: 4 downgraded to minor and fixed, 2 minor upheld and fixed). Drew Spec Mermaid diagram, set `status: approved`. Ready check passed: `wc.js session list` ok, `codex/preflight.sh` fresh (134h remaining), Claude/GPT/Gemini CLIs working.
+- 2026-11-28 — Dispatched T1, T2, T3 in parallel (`gpt-6.1-terra`, standard tier).
