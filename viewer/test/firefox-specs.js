@@ -10,6 +10,8 @@ module.exports = [
   'touch.spec.js', // Touch gestures.
   'background-rendering.spec.js', // Pixel sampling.
   'background-editor.spec.js', // Background drawing and images.
+  'theme-editor.spec.js', // Horizontal scroll containment and responsive preset grid.
+  'theme-rendering.spec.js', // Theme contrast, pixel rendering and PNG export.
   'app-mockup-png.spec.js', // Mockup image drawing.
   'app-screenshot-view.spec.js', // Screenshot images.
   'app-spot-comment.spec.js', // Drawing and positioning comments.

@@ -78,12 +78,18 @@
     figure.append(map,el('figcaption','',`Thicker line: used more · Ring around the middle: how full its memory is${typeof percent === 'number' ? ` (${percent}%)` : ''} · Dotted line: its last few moves`)); fragment.append(figure); if (insight) fragment.append(insight); const latest = el('div','agents-latest'); latest.append(el('strong','','Latest')); if (!(activity.latest || []).length) latest.append(el('p','agents-muted','Nothing yet.')); else for (const item of activity.latest.slice(0,4)) { const row = el('div','agents-latest-row'); row.append(el('span',`latest-${item.state}`,({running:'●',done:'✓',failed:'✕'})[item.state] || ''),el('time','',clock(item.at)),el('span','',item.label)); latest.append(row); } fragment.append(latest); return fragment;
   }
 
-  const SQUARE = n => n >= 5 ? '#d9645a' : n >= 3 ? '#e0904a' : n >= 1 ? '#d9c45a' : '#4ea87b', GREY = '#6b7280';
+  // The "no objections" and "not counted" squares follow the theme's status colours; the
+  // yellow-to-red steps are the same in every theme.
+  const cssColor = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  const TONES = { high: () => '#d9645a', middle: () => '#e0904a', low: () => '#d9c45a', none: () => cssColor('--good', '#4ea87b'), uncounted: () => cssColor('--idle', '#6b7280') };
+  const tone = n => n === undefined ? 'uncounted' : n >= 5 ? 'high' : n >= 3 ? 'middle' : n >= 1 ? 'low' : 'none';
+  const paint = q => { q.style.background = TONES[q.dataset.tone](); };
+  window.addEventListener('wc-theme-change', () => document.querySelectorAll('.agents-sq[data-tone]').forEach(paint));
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const finishedAt = n => n.finished_at || '';
   const roundOf = n => Number.isInteger(n.round) && n.round >= 1 ? n.round : null;
   const memberRounds = members => [...new Set(members.map(roundOf).filter(r => r !== null))].sort((a, b) => a - b);
-  function square(found, cls = '') { const q = el('span', `agents-sq ${cls}`.trim()); q.style.background = found === undefined ? GREY : SQUARE(found); return q; }
+  function square(found, cls = '') { const q = el('span', `agents-sq ${cls}`.trim()); q.dataset.tone = tone(found); paint(q); return q; }
   function squares(lead, rounds, size) {
     const entries = lead.rounds?.review || {}; const row = el('span', 'agents-squares'); row.setAttribute('role', 'img');
     const counted = rounds.map(r => entries[String(r)]?.found).filter(f => Number.isInteger(f));
@@ -108,7 +114,7 @@
   function infoPopout() {
     const box = el('div', 'agents-info'); box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'How to read this tree'); box.hidden = !infoOpen;
     const head = el('div', 'agents-pop-head'); head.append(el('strong', '', 'How to read this tree'), button('✕', () => { infoOpen = false; box.hidden = true; document.querySelector('.agents-info-btn')?.setAttribute('aria-expanded', 'false'); }, 'agents-pop-close')); head.lastChild.setAttribute('aria-label', 'Close');
-    const key = el('div', 'agents-key'); for (const [c, t] of [[SQUARE(5), '5+'], [SQUARE(3), '3–4'], [SQUARE(1), '1–2'], [SQUARE(0), 'none'], [GREY, 'not counted']]) { const k = el('span', 'agents-key-item'); const q = el('span', 'agents-sq'); q.style.background = c; k.append(q, t); key.append(k); }
+    const key = el('div', 'agents-key'); for (const [n, t] of [[5, '5+'], [3, '3–4'], [1, '1–2'], [0, 'none'], [undefined, 'not counted']]) { const k = el('span', 'agents-key-item'); k.append(square(n), t); key.append(k); }
     const example = (label, seq) => { const row = el('div', 'agents-example'); const sq = el('span', 'agents-squares'); for (const n of seq) sq.append(square(n)); row.append(el('span', '', label), sq); return row; };
     box.append(head, el('p', '', 'Stacked cards are finished agents with the same role and parent. Click one to see them all.'), el('p', '', 'Squares are rounds of review, colored by how many objections each round found:'), key, example('Settling down', [6, 6, 6, 4, 4, 2, 2, 2, 0]), example('Going in circles', [4, 6, 4, 6, 4, 6, 4, 6, 4]));
     return box;
