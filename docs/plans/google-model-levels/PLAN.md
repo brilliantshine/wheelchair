@@ -131,6 +131,7 @@ For a gemini scout whose pin (read by S2) has an effort, the scout line names th
 | The list changes between a save and the page's re-read, so the picker shows choices that differ from what was just checked. | Rare path: needs Antigravity's model list to change within seconds. | review-round-2 |
 | With the shipped defaults (heavy and critical both Flash at high), a step up from heavy to critical can rerun the same model and level. | The sub-lead's lines show each tier's model and levels, so it can see the repeat; the worst case is one extra try. A skip rule drew findings in three rounds and was cut. | review-round-5 |
 | A model whose levels have a gap (e.g. low and high only) can repeat a level on one step up. | Rare path: no model Antigravity lists today has a gap. | review-round-1 |
+| Two overlapping refreshes where one fails while the other succeeds: the failure can write the older list back with the back-off set, holding it for 60 s (`codex/model.sh:373`, `:380`). | Rare path: needs a failed and a successful `agy models` run to overlap; the list is corrected on the next refresh. | verification-1 |
 
 ## Review Rounds
 
@@ -283,3 +284,4 @@ For a gemini scout whose pin (read by S2) has an effort, the scout line names th
 - 2026-11-27 — Choice: T3, viewer/app/API.md: both settings rows updated; screenshot committed at docs/plans/google-model-levels/reports/T3-grid.png.
 - 2026-11-27 — T3 accepted (band: bigger-scout): validation re-run by the sub-lead (node 145 pass, browser 'effort' 10 pass). machine/test/name-guard.test.js fails on four literal tool-name lines in codex/model.sh from T1; follow-up task T5 fixes them.
 - 2026-11-27 — T5 accepted (band: scout): no choices beyond the brief (the scout agrees); name guard 2 pass and codex 211 pass re-run by the sub-lead.
+- 2026-11-27 — Verification attempt 1 (claude-opus-5-5, gpt-6.2-sol): FAIL. Four gaps; the overlapping-refresh race is a rare path (Accepted Risks); three go to REMEDIATION-1.md. Full run on 0eadce68 passed (all suites exit 0).
