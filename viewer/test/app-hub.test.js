@@ -1127,7 +1127,7 @@ test('models per role: leads, other agents, workers, aliases, and critical resol
 
 test('models per role: Claude always gets a model and effort, and preferences reach the machine', async () => {
   await withContext(async (context) => {
-    await api(context, '/settings/models', { method: 'PUT', body: { provider: 'claude', slot: 'lead', model: 'claude-opus-5-5', effort: 'high' } });
+    await api(context, '/settings/models', { method: 'PUT', body: { provider: 'claude', slot: 'heavy', model: 'claude-opus-5-5', effort: 'high' } });
     await api(context, '/settings/preferences', { method: 'PUT', body: { permission_mode: 'bypass', other_agents: { reviewer: 'critical' } } });
     const made = await thread(context, { cli: 'claude' });
     const lead = made.sessions[0];
@@ -1859,7 +1859,7 @@ test('dismiss closes lead needs and refuses a live held system card', async () =
 
 test('worker effort overrides and escalation ceilings reject before starting', async () => {
   await withContext(async (context) => {
-    await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'lead', model: 'gpt-6-sol', effort: 'high' } });
+    await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'heavy', model: 'gpt-6-sol', effort: 'high' } });
     await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'standard', model: 'gpt-6-sol', effort: 'xhigh' } });
     await api(context, '/settings/balancing', { method: 'PUT', body: { lead_order: ['gpt'] } });
     const made = await thread(context);

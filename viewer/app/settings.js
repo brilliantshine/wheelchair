@@ -25,6 +25,8 @@ const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
 const ROLE_REPO_LAW = new Set(['lead', 'sub-lead', 'worker', 'mapper', 'designer', 'reviewer', 'verifier']);
 const STALE_DAYS = 90, HISTORY_MAX = 20, REMOVED_MAX = 50;
 const MODEL_MAX = 64;
+const LEAD_FAMILY_ROLES = ['lead', 'sub-lead', 'assistant', 'project-lead'];
+const validProviderOrder = (value, { allowAny = false } = {}) => value === 'lead' || value === 'worker' || (Array.isArray(value) && value.length > 0 && new Set(value).size === value.length && value.every((v, i) => Object.hasOwn(PROVIDERS, v) || (allowAny && v === 'any' && i === value.length - 1)));
 const WORK_TIERS = ['light', 'standard', 'heavy', 'critical'];
 const TIER_ALIASES = { luna: 'light', terra: 'standard', sol: 'heavy', astra: 'critical' };
 const ESCALATION_VALUES = { first: ['effort', 'model'], max_effort: ['high', 'xhigh', 'max'], max_tier: ['standard', 'heavy', 'critical'], ask_before: ['never', 'critical', 'any'] };
@@ -53,7 +55,7 @@ function reportedPlan(account, planType) {
 }
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'];
 function defaults() {
-  return { background: { image_id: null, media_type: null, opacity: 35, revision: 0 }, harnesses: Object.fromEntries(Object.keys(PROVIDERS).map((p) => [p, true])), onboarding_done: false, lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: PLANS[provider].unknown, paused: false })), lead_order: [...connectors.list().filter(m => m.placement.leadDefault).map(m => m.provider), 'any'], worker_order: connectors.list().filter(m => m.placement.workerRank !== null).sort((a, b) => a.placement.workerRank - b.placement.workerRank).map(m => m.provider), worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true, designer: true }, permission_mode: 'auto', codex_mode: 'sandboxed', shared_tools_repo: null, aside_access: 'read-only', assistant: 'off', project_leads: 'off', auto_merge: 'off', auto_merge_delete_branch: 'off', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', designer: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], lesson_history: {}, lesson_waiting: [], lessons: Object.fromEntries([...ROLES].map((role) => [role, []])), style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
+  return { background: { image_id: null, media_type: null, opacity: 35, revision: 0 }, harnesses: Object.fromEntries(Object.keys(PROVIDERS).map((p) => [p, true])), onboarding_done: false, lead_name_list: 'greek', lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: PLANS[provider].unknown, paused: false })), lead_order: [...connectors.list().filter(m => m.placement.leadDefault).map(m => m.provider), 'any'], worker_order: connectors.list().filter(m => m.placement.workerRank !== null).sort((a, b) => a.placement.workerRank - b.placement.workerRank).map(m => m.provider), worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true, designer: true }, permission_mode: 'auto', codex_mode: 'sandboxed', shared_tools_repo: null, aside_access: 'read-only', assistant: 'off', project_leads: 'off', auto_merge: 'off', auto_merge_delete_branch: 'off', tool_steps: 'show', review_families: 'both', lead_tier_notice_dismissed: false, provider_orders: { lead: 'lead', 'sub-lead': 'lead', assistant: 'lead', 'project-lead': 'lead', reviewer: 'worker', verifier: 'worker', mapper: 'worker', designer: 'worker' }, other_agents: { lead: 'heavy', 'sub-lead': 'heavy', assistant: 'heavy', 'project-lead': 'heavy', reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', designer: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], lesson_history: {}, lesson_waiting: [], lessons: Object.fromEntries([...ROLES].map((role) => [role, []])), style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', user_name: '', saved_dirs: [] };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -332,7 +334,9 @@ function normalize(saved) {
     auto_merge_delete_branch: saved.auto_merge_delete_branch === 'on' ? 'on' : 'off',
     tool_steps: saved.tool_steps === 'hide' ? 'hide' : 'show',
     review_families: ['both', ...connectors.list().filter(m => m.settings.reviewFamily).map(m => m.provider)].includes(saved.review_families) ? saved.review_families : 'both',
-    other_agents: { ...base.other_agents, ...(saved.other_agents || {}) },
+    other_agents: Object.fromEntries(Object.keys(base.other_agents).map(k => [k, WORK_TIERS.includes(saved.other_agents?.[k]) ? saved.other_agents[k] : base.other_agents[k]])),
+    provider_orders: Object.fromEntries(Object.keys(base.provider_orders).map(k => [k, validProviderOrder(saved.provider_orders?.[k], { allowAny: LEAD_FAMILY_ROLES.includes(k) }) ? saved.provider_orders[k] : base.provider_orders[k]])),
+    lead_tier_notice_dismissed: Boolean(saved.lead_tier_notice_dismissed),
     escalation: Object.fromEntries(Object.entries(ESCALATION_VALUES).map(([key, allowed]) => [key, allowed.includes(saved.escalation?.[key]) ? saved.escalation[key] : base.escalation[key]])),
     templates: Array.isArray(saved.templates) ? saved.templates : [],
     style: saved.style ? validateStyle(saved.style) : base.style,
@@ -501,6 +505,21 @@ function options(models) {
   return result;
 }
 
+function legacyLeadDiffs(value, modelValues) {
+  if (value.lead_tier_notice_dismissed) return [];
+  const diffs = [];
+  const equal = (a, b) => (a?.model ?? null) === (b?.model ?? null) && (a?.effort ?? null) === (b?.effort ?? null);
+  for (const provider of Object.keys(PROVIDERS)) {
+    if (!value.harnesses[provider]) continue;
+    const cells = modelValues[provider] || {};
+    for (const role of ['lead', 'sub-lead']) {
+      const tier = value.other_agents[role], legacy = cells[role], target = cells[tier];
+      if (role === 'sub-lead' && tier === value.other_agents.lead && equal(legacy, cells.lead)) continue;
+      if (!equal(legacy, target)) diffs.push({ provider, label: PROVIDERS[provider].label, role, legacy_model: legacy?.model ?? null, legacy_effort: legacy?.effort ?? null, tier, tier_model: target?.model ?? null, tier_effort: target?.effort ?? null });
+    }
+  }
+  return diffs;
+}
 async function describe(hub) {
   const settings = await load(hub);
   const [modelValues, heads, projects, threads] = await Promise.all([models(hub), headsUp(hub), hub.projects(), hub.allThreads()]);
@@ -510,7 +529,7 @@ async function describe(hub) {
   const known = knownProjects(projects, settings);
   const projectSet = new Set(known);
   const templates = settings.templates.map((template) => ({ ...template, live_sessions: templateCounts.get(template.id) || 0, scope_missing: template.scope !== 'all' && !projectSet.has(template.scope) }));
-  return { harnesses: settings.harnesses, lead_name_list: settings.lead_name_list, lead_names: settings.lead_names, accounts: settings.accounts, ...Object.fromEntries(BALANCING.map((key) => [key, settings[key]])), models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, shared_tools_repo: settings.shared_tools_repo, aside_access: settings.aside_access, assistant: settings.assistant, project_leads: settings.project_leads, auto_merge: settings.auto_merge, auto_merge_delete_branch: settings.auto_merge_delete_branch, tool_steps: settings.tool_steps, review_families: settings.review_families, other_agents: settings.other_agents, escalation: settings.escalation, escalation_text: escalationSentences(settings.escalation).join('\n'), templates, lessons: settings.lessons, lesson_history: settings.lesson_history, lesson_waiting: settings.lesson_waiting, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects: known, default_project_folder: settings.default_project_folder, user_name: settings.user_name, saved_dirs: settings.saved_dirs };
+  return { harnesses: settings.harnesses, lead_name_list: settings.lead_name_list, lead_names: settings.lead_names, accounts: settings.accounts, ...Object.fromEntries(BALANCING.map((key) => [key, settings[key]])), models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, shared_tools_repo: settings.shared_tools_repo, aside_access: settings.aside_access, assistant: settings.assistant, project_leads: settings.project_leads, auto_merge: settings.auto_merge, auto_merge_delete_branch: settings.auto_merge_delete_branch, tool_steps: settings.tool_steps, review_families: settings.review_families, other_agents: settings.other_agents, provider_orders: settings.provider_orders, lead_tier_notice_dismissed: settings.lead_tier_notice_dismissed, legacy_lead_diffs: legacyLeadDiffs(settings, modelValues), escalation: settings.escalation, escalation_text: escalationSentences(settings.escalation).join('\n'), templates, lessons: settings.lessons, lesson_history: settings.lesson_history, lesson_waiting: settings.lesson_waiting, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects: known, default_project_folder: settings.default_project_folder, user_name: settings.user_name, saved_dirs: settings.saved_dirs };
 }
 
 async function preview(hub, style) {
@@ -525,4 +544,4 @@ async function preview(hub, style) {
   } catch (error) { throw appError(502, `Preview failed: ${error.message}`); }
 }
 
-module.exports = { isLessonStale, STALE_DAYS, HISTORY_MAX, REMOVED_MAX, recordHistory, mergeLessons, mergeIncoming, exportLessons, restoreLesson, keepLesson, waitingAction, applyLesson, validLessonText, MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, reportedPlan, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, levelLines, levelTool, load, modelCommand, modelLevels, models, normalizeLevelModel, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate, validUserName };
+module.exports = { LEAD_FAMILY_ROLES, validProviderOrder, legacyLeadDiffs, isLessonStale, STALE_DAYS, HISTORY_MAX, REMOVED_MAX, recordHistory, mergeLessons, mergeIncoming, exportLessons, restoreLesson, keepLesson, waitingAction, applyLesson, validLessonText, MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, reportedPlan, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, levelLines, levelTool, load, modelCommand, modelLevels, models, normalizeLevelModel, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate, validUserName };
