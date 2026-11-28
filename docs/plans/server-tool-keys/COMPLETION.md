@@ -94,4 +94,10 @@ Sub-lead measurement: a 2.6 MiB reply of 100,000 short strings each holding `\n`
 
 ## Remediation rounds
 
-None yet.
+### Remediation 1 (after verification attempt 1, `681c2f8f`)
+
+See `REMEDIATION-1.md`. Verifier gap (post-exit deadline counts stderr-paused time) judged a rare path and added to Accepted Risks (round `verification-1`).
+
+- R1 (light / gpt-6-luna): a full-run failure, `server-lines.test.js` `large clean replies and long escape runs stay bounded` over 5 s under load. JSON string decoding now writes escape and UTF-8 bytes directly (`machine/lib/server-lines.js:11-50`). The 16 MiB escape-heavy reply takes 646 ms alone, down from 1,642 ms. New test `reader decodes UTF-8 and escapes byte-for-byte`.
+- R2 (light / gpt-6-luna): found while accepting R1. When a string's first escape was `\"`, the decode buffer (sized by T6) was cut short, so detection missed the rest of that string. A percent-encoded key after an escaped quote was passed to the client. The fix is at `machine/lib/server-lines.js:32`. New tests: `reader decodes strings whose first escape is an escaped quote` and `escaped quote cannot truncate a percent-encoded key in a reply`.
+- The full run's `viewer-browser` failure came from my commit of a viewer-saved diagram (`d0f06a58`), reverted in `b6a6c770`.
