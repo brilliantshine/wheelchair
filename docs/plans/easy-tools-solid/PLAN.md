@@ -386,7 +386,7 @@ npm --prefix viewer run test:browser -- test/app-project-tools.spec.js
 
 ### Round 7 — 2026-11-28
 
-**Lanes:** (pending — paused at 3-round review budget)
+**Lanes:** (pending)
 
 **Changed since Round 6:**
 - S2.2 & S2.3: carried `unity: true` through `extraServers` and `built.loaded` for `win-prompt.js`; gated Windows-marked HTTP forwarding on `this.win?.detected?.kernel` independently of `wsl`.
@@ -415,3 +415,4 @@ npm --prefix viewer run test:browser -- test/app-project-tools.spec.js
 - 2026-11-28: Completed Round 2 triage (13 findings, all upheld and resolved); advancing to Round 3.
 - 2026-11-28: Completed Round 3 triage (10 findings, all upheld and resolved); paused at 3-round review budget and posted `needs` card.
 - 2026-11-28: User chose to keep all five items together and continue review; budget reset, starting Round 4.
+- 2026-11-28: User pressed Keep going after Round 6 budget pause; budget reset, starting Round 7.
