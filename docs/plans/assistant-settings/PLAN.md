@@ -105,29 +105,31 @@ Export a lightweight helper `invokeSettings(hub, method, relPath, body)` from `v
     - Return `{ ...base, diagram_sensitivity, background }`, omitting `lesson_history` unless `input.include_history === true`.
   - **`action === 'setting'`**:
     - Require `typeof input.target === 'string' && input.target.trim()` and `input.payload` to be a plain non-null, non-array object; otherwise throw `appError(400, 'target and object payload are required')`.
-    - Map each allowed `target` to `routes.invokeSettings(...)` (or `background.commit(...)` for `background`), propagating any `appError` thrown by `handleSettings`:
-      1. `preferences`:
-         - If `Object.hasOwn(payload, 'assistant')`, throw `appError(403, 'the assistant cannot change its own on/off setting; change it under Settings → Assistant and project leads')`.
-         - Validate that every key in `payload` is in the allowed preference key set: `lead_names`, `lead_name_list`, `permission_mode`, `shared_tools_repo`, `codex_mode`, `aside_access`, `project_leads`, `auto_merge`, `auto_merge_delete_branch`, `review_families`, `tool_steps`, `escalation`, `default_project_folder`, `user_name`, `other_agents`, `provider_orders`, `lead_tier_notice_dismissed`. Reject any unknown or excluded key (for example `enter_to_send`) with `appError(400, \`unsupported preference key: ${key}\`)` and require at least one key (`appError(400, 'preferences payload must name at least one setting')`).
-         - Call `invokeSettings(hub, 'PUT', '/preferences', payload)` and return `{ ok: true, result: res.body }`.
-      2. `style`: `PUT /style` with `payload`; return `{ ok: true, result: res.body }`.
-      3. `diagram-sensitivity`: `POST /diagram-sensitivity` with `payload`. Invalid `level` throws `appError(400, ...)`. On `res.status === 200`, return `{ ok: true, result: res.body }`. On non-200 (partial/all machine failure, e.g. 502), return `{ ok: false, error: 'one or more machines did not update diagram sensitivity', result: res.body }` (HTTP 200 so the assistant receives the full `machines` map and can report which machine failed).
-      4. `background`: accept `payload.action === 'opacity'` (requires integer `payload.opacity` 0–100; optional integer `payload.revision` — if omitted, reads current `background.metadata(hub)` revision; if `!current.image_id`, throw `appError(400, 'no background image is set')`; calls `background.commit(hub, rev, payload.opacity, current.image_id, current.media_type, null)`) or `payload.action === 'remove'` (**requires** non-negative safe integer `payload.revision`, matching the revision the user approved removing; if missing or invalid, throw `appError(400, 'background remove requires revision')`; calls `background.commit(hub, payload.revision, 35, null, null, null)`). If `background.commit` throws 409 (`Background changed elsewhere`), propagate the 409 error so the assistant re-reads `settings` and asks Collin again before removing a newly uploaded image. Any other `action` throws `appError(400, 'background action must be opacity or remove')`. Return `{ ok: true, result }`.
-      5. `harness`: require non-empty string `payload.provider` (URL-encoded) and boolean `payload.enabled`; `PUT /harnesses/${encodeURIComponent(payload.provider)}` with `{ enabled: payload.enabled }`; return `{ ok: true, result: res.body }`.
-      6. `account-add`: `POST /accounts` with `payload`; return `{ ok: true, result: res.body }`.
-      7. `account-update`: require non-empty string `payload.id`; `PUT /accounts/${encodeURIComponent(payload.id)}` with `{ ...payload }` (without `id`); return `{ ok: true, result: res.body }`.
-      8. `account-remove`: require non-empty string `payload.id`; `DELETE /accounts/${encodeURIComponent(payload.id)}` with `{}`; return `{ ok: true, result: res.body }`.
-      9. `account-restore`: require non-empty string `payload.id`; `POST /accounts/${encodeURIComponent(payload.id)}/restore` with `{}`; return `{ ok: true, result: res.body }`.
-      10. `balancing`: `PUT /balancing` with `payload`; return `{ ok: true, result: res.body }`.
-      11. `model`: `PUT /models` with `payload`; return `{ ok: true, result: res.body }`.
-      12. `models-heads-up`: `POST /models/heads-up` with `payload`; return `{ ok: true, result: res.body }`.
-      13. `template-create`: `POST /templates` with `payload`; return `{ ok: true, result: res.body }`.
-      14. `template-update`: require non-empty string `payload.id`; `PUT /templates/${encodeURIComponent(payload.id)}` with `{ ...payload }` (without `id`); return `{ ok: true, result: res.body }`.
-      15. `template-delete`: require non-empty string `payload.id`; `DELETE /templates/${encodeURIComponent(payload.id)}` with `{}`; return `{ ok: true, result: res.body }`.
-      16. `lessons-update`: require non-empty string `payload.role`; `PUT /lessons/${encodeURIComponent(payload.role)}` with `{ edits: payload.edits, removals: payload.removals }`; return `{ ok: true, result: res.body }`.
-      17. `lesson-restore`: require non-empty string `payload.role`; `POST /lessons/${encodeURIComponent(payload.role)}/restore` with `{ id: payload.id, vid: payload.vid }`; return `{ ok: true, result: res.body }`.
-      18. `lesson-keep`: require non-empty string `payload.role`; `POST /lessons/${encodeURIComponent(payload.role)}/keep` with `{ id: payload.id }`; return `{ ok: true, result: res.body }`.
-      19. `lesson-waiting`: require non-empty string `payload.role`; `POST /lessons/${encodeURIComponent(payload.role)}/waiting` with `{ wid: payload.wid, action: payload.action }`; return `{ ok: true, result: res.body }`.
+    - Map each allowed `target` through one compact lookup table plus three custom handlers (`preferences`, `diagram-sensitivity`, `background`), propagating any `appError` thrown by `handleSettings`:
+      - **Custom handlers:**
+        1. `preferences`:
+           - If `Object.hasOwn(payload, 'assistant')`, throw `appError(403, 'the assistant cannot change its own on/off setting; change it under Settings → Assistant and project leads')`.
+           - Validate that every key in `payload` is in the allowed preference key set: `lead_names`, `lead_name_list`, `permission_mode`, `shared_tools_repo`, `codex_mode`, `aside_access`, `project_leads`, `auto_merge`, `auto_merge_delete_branch`, `review_families`, `tool_steps`, `escalation`, `default_project_folder`, `user_name`, `other_agents`, `provider_orders`, `lead_tier_notice_dismissed`. Reject any unknown or excluded key (for example `enter_to_send`) with `appError(400, \`unsupported preference key: ${key}\`)` and require at least one key (`appError(400, 'preferences payload must name at least one setting')`).
+           - Call `invokeSettings(hub, 'PUT', '/preferences', payload)` and return `{ ok: true, result: res.body }`.
+        2. `diagram-sensitivity`: `POST /diagram-sensitivity` with `payload`. Invalid `level` throws `appError(400, ...)`. On `res.status === 200`, return `{ ok: true, result: res.body }`. On non-200 (partial/all machine failure, e.g. 502), return `{ ok: false, error: 'one or more machines did not update diagram sensitivity', result: res.body }` (HTTP 200 so the assistant receives the full `machines` map and can report which machine failed).
+        3. `background`: accept `payload.action === 'opacity'` (requires integer `payload.opacity` 0–100; optional integer `payload.revision` — if omitted, reads current `background.metadata(hub)` revision; if `!current.image_id`, throw `appError(400, 'no background image is set')`; calls `background.commit(hub, rev, payload.opacity, current.image_id, current.media_type, null)`) or `payload.action === 'remove'` (**requires** non-negative safe integer `payload.revision`, matching the revision the user approved removing; if missing or invalid, throw `appError(400, 'background remove requires revision')`; calls `background.commit(hub, payload.revision, 35, null, null, null)`). If `background.commit` throws 409 (`Background changed elsewhere`), propagate the 409 error so the CLI prints `{"ok":false,"error":"Background changed elsewhere"}`. Any other `action` throws `appError(400, 'background action must be opacity or remove')`. Return `{ ok: true, result }`.
+      - **Route lookup table** (each entry maps `target` → `{ method, path(payload), body(payload) }`, calling `invokeSettings(hub, method, path, body)` and returning `{ ok: true, result: res.body }`; path helpers require a non-empty string for the path parameter (`provider`, `id`, or `role`) and URL-encode it, letting `handleSettings` perform all remaining validation and return its own 400/404/409 errors):
+        - `style` → `PUT /style`, body: `payload`
+        - `harness` → `PUT /harnesses/:provider`, body: `{ enabled: payload.enabled }`
+        - `account-add` → `POST /accounts`, body: `payload`
+        - `account-update` → `PUT /accounts/:id`, body: `payload` without `id`
+        - `account-remove` → `DELETE /accounts/:id`, body: `{}`
+        - `account-restore` → `POST /accounts/:id/restore`, body: `{}` (restores removed `default-<provider>` accounts only; `handleSettings` rejects non-default ids with 404)
+        - `balancing` → `PUT /balancing`, body: `payload`
+        - `model` → `PUT /models`, body: `payload`
+        - `models-heads-up` → `POST /models/heads-up`, body: `payload`
+        - `template-create` → `POST /templates`, body: `payload`
+        - `template-update` → `PUT /templates/:id`, body: `payload` without `id`
+        - `template-delete` → `DELETE /templates/:id`, body: `{}`
+        - `lessons-update` → `PUT /lessons/:role`, body: `{ edits: payload.edits, removals: payload.removals }`
+        - `lesson-restore` → `POST /lessons/:role/restore`, body: `{ id: payload.id, vid: payload.vid }`
+        - `lesson-keep` → `POST /lessons/:role/keep`, body: `{ id: payload.id }`
+        - `lesson-waiting` → `POST /lessons/:role/waiting`, body: `{ wid: payload.wid, action: payload.action }`
       - Any other `target` throws `appError(400, 'unsupported setting target')`.
 
 ### 5. Assistant Protocol Rules (`protocol/app/assistant.md`) & Rollout
@@ -137,17 +139,19 @@ Update `protocol/app/assistant.md`:
 - **Scratch files for action payloads:** In the opening rule (`protocol/app/assistant.md:11`), explicitly permit writing temporary JSON/text files outside any project repository (for example under `/tmp` or the session's scratch directory) when preparing inputs for `wc.js assistant` (`start --message-file`, `message --text-file`, `setting <target> --file`) and `card.js`, while continuing to forbid editing files in any project or running git writes.
 - **Settings rule block** (replacing `"Do not change Settings."`):
   - You can inspect and change hub settings when Collin asks in chat using `wc.js assistant settings [--include-history]` (read) and `wc.js assistant setting <target> --file <json-file>` (write).
-  - Read `settings` first when you need current values, ids (accounts, templates, lessons), or revisions (background), and report clearly what changed (before → after).
+  - Read `settings` first when you need current values, ids (accounts, templates, lessons), or revisions (background), and report clearly what changed (before → after). Note that `account-restore` only restores a removed default account (`default-<provider>`), never a removed custom account.
   - **Preserve untouched fields on replacement payloads:**
     - `model`: read the current slot first; when changing only `model` for a provider that supports effort, carry forward the slot's existing `effort` if compatible with the new model (or omit/adjust only if incompatible, and say so); when changing only `effort`, carry forward the slot's existing `model`.
     - `style`: read current `style` first and send the full style object with only the requested field(s) changed.
     - `balancing`: send only the changed balancing key(s); when changing one role in `held_back`, send the full five-role `held_back` object preserving the other roles.
-    - `preferences` and `template-update`: send only the changed key(s) (plus `id` for `template-update`).
+    - `template-update`: send `id` plus the changed top-level field(s). Because `switches` is replaced as a whole object, when changing any switch read the current template first and send the full `switches` object preserving untouched switches; when changing `role` away from `worker`, omit the worker-only `switches.unsettled` field.
+    - `preferences`: send only the changed key(s).
   - **Confirm first with a `question` card** (naming the exact change and its effect) before applying:
     - Loosening session permissions (`permission_mode: "bypass"`, `codex_mode: "unrestricted"`) or broadening aside access (`aside_access: "full"`).
     - Turning on `auto_merge: "on"` or `auto_merge_delete_branch: "on"`.
     - Turning off `project_leads: "off"` (stops live project-lead sessions) or disabling an AI provider (`harness` with `enabled: false`).
-    - Removing an account (`account-remove`), deleting a template (`template-delete`), removing a lesson (`lessons-update` with non-empty `removals`), discarding a waiting lesson (`lesson-waiting` with `action: "discard"`), removing the background image (`background` with `action: "remove"`, passing the `revision` read before the card — if the write returns 409 because a new image was uploaded meanwhile, re-read `settings` and ask again), or resetting model pins (`models-heads-up` with `action: "reset"`).
+    - Adding an account for a provider that has a provider warning (such as Claude — quote the warning that several Claude accounts behind one setup may get flagged, matching the Settings page's "Add anyway" warning).
+    - Removing an account (`account-remove`), deleting a template (`template-delete`), removing a lesson (`lessons-update` with non-empty `removals`), discarding a waiting lesson (`lesson-waiting` with `action: "discard"`), removing the background image (`background` with `action: "remove"`, passing the `revision` read before the card — if the CLI returns `{"ok":false,"error":"Background changed elsewhere"}` because a new image was uploaded meanwhile, re-read `settings` and ask again), or resetting model pins (`models-heads-up` with `action: "reset"`).
     - Any ambiguous request where more than one setting or value could match.
   - Apply other hub setting changes immediately and confirm what changed.
   - **Stay manual (never attempt; tell Collin which Settings category to use):**
@@ -169,7 +173,7 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
   ```bash
   node --test viewer/test/wc-cli.test.js
   ```
-  Required assertions: `wc.js assistant settings` (with and without `--include-history`) retries on 503; `wc.js assistant setting <target> --file <f>` rejects missing target/file or non-object JSON and never retries on 503; `wc.js project-lead` rejects both `settings` and `setting`.
+  Required assertions: `wc.js assistant settings` (with and without `--include-history`) retries on 503; `wc.js assistant setting <target> --file <f>` rejects missing target/file or non-object JSON, never retries on 503, and prints `{"ok":false,"error":"Background changed elsewhere"}` when the hub returns 409; `wc.js project-lead` rejects both `settings` and `setting`.
 - **Machine relay & name guard (`machine/service.js`):**
   ```bash
   node --test machine/test/name-guard.test.js machine/test/assistant.test.js
@@ -179,7 +183,7 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
   ```bash
   node --test viewer/test/assistant.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js
   ```
-  Required assertions: live personal assistant reads settings (omitting `lesson_history` by default, including it with `include_history: true`) and writes across supported targets; `project-lead-actions.dispatch` rejects `settings`/`setting` with 400 and `assistant-actions.run` without `allowSettings` rejects with 403; `preferences` containing `assistant` is refused with 403; `preferences` containing an unknown or excluded key (such as `enter_to_send`) or empty object is refused with 400; unknown target is refused with 400; `diagram-sensitivity` partial machine failure returns `{ ok: false, error, result: { machines } }`; `background` `remove` requires `revision` and returns 409 on stale revision.
+  Required assertions: live personal assistant reads settings (omitting `lesson_history` by default, including it with `include_history: true`) and writes across supported targets, with an independent browser-facing `GET /wheelchair/api/settings` read confirming persisted changes; `project-lead-actions.dispatch` rejects `settings`/`setting` with 400 and `assistant-actions.run` without `allowSettings` rejects with 403; `preferences` containing `assistant` is refused with 403; `preferences` containing an unknown or excluded key (such as `enter_to_send`) or empty object is refused with 400; unknown target is refused with 400; `diagram-sensitivity` partial machine failure returns `{ ok: false, error, result: { machines } }`; `background` `remove` requires `revision` and returns 409 (`Background changed elsewhere`) on stale revision.
 - **Assistant popup UI (`viewer/test/app-assistant-popup.spec.js`):**
   ```bash
   npm --prefix viewer run test:browser -- app-assistant-popup.spec.js
@@ -191,6 +195,7 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Simultaneous browser edit on Settings during the few seconds while the assistant reads and writes a replacement payload (`style`, `held_back`, or a model slot) can overwrite the concurrent browser save | Rare path per `protocol/app/realism.md`: requires Collin to manually edit and save the same setting block in the browser mid-command right after asking the assistant to change it | review-round-4 |
 
 ## Check Once Built
 
@@ -280,12 +285,32 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 
 ### Round 4 — 2026-11-28
 
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
+
 **Changed since Round 3:**
 - Split automatic live refresh on an already-open Settings page (and the hub `GET /settings/revision` counter) out of this plan into a follow-up stub ("Auto-refresh an open Settings page when settings change"), per Collin's decision (Decision 13, `IDEA.md` Not doing updated).
 - Authorized writing temporary JSON/text payload files outside any project repository in `protocol/app/assistant.md` (Spec §5).
 - Specified partial-payload preservation semantics for `model` (carrying forward compatible `effort`), `style`, `balancing` (`held_back`), `preferences`, and `template-update` in `protocol/app/assistant.md` (Spec §5).
 - Added explicit preference key allowlist + non-empty check in `assistant-actions.js` so excluded keys like `enter_to_send` are refused with HTTP 400 (Spec §4, §6).
 - Narrowed Spec §6 validation commands to the touched areas (removed `app-settings.spec.js` since `viewer/pages/settings.js` is no longer modified).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|---|---|---|---|---|
+| intent | minor | Replace 19 hand-written target branches in §4 with one lookup table + 3 custom handlers | upheld | Replaced 19 branches with route lookup table + 3 custom handlers (`preferences`, `diagram-sensitivity`, `background`) in Spec §4 |
+| mechanics | major | `template-update` partial `switches` replaces whole object and role change away from `worker` must omit `switches.unsettled` | upheld | Specified reading current template and sending full `switches` (omitting `unsettled` when leaving `worker`) in Spec §5 |
+| mechanics | major | Simultaneous browser edit while assistant prepares replacement payload (`style`, `held_back`, model slot) can overwrite concurrent save | accepted-risk | Rare path per `realism.md` (Collin editing same setting in browser mid-command); recorded in Accepted Risks (`review-round-4`) |
+| mechanics | major | Adding an account for a provider with `accountWarning` (Claude) skips Settings page's "Add anyway" confirmation | upheld | Added provider `accountWarning` (such as Claude) to confirmation list in Spec §5 |
+| mechanics | minor | Background removal rule cited HTTP 409, while CLI prints `{"ok":false,"error":"Background changed elsewhere"}` | upheld | Specified the CLI-visible error string in Spec §5 & §6 |
+| mechanics | minor | `account-restore` only restores removed `default-<provider>` accounts, not custom accounts | upheld | Stated `default-<provider>` limit in Spec §4 & §5 |
+| mechanics | minor | Validation should require reading back an assistant write via browser-facing `GET /wheelchair/api/settings` | upheld | Added independent `GET /wheelchair/api/settings` read-back assertion in Spec §6 |
+
+### Round 5 — 2026-11-28
+
+**Changed since Round 4:**
+- Replaced 19 target branches in Spec §4 with one route lookup table plus three custom handlers (`preferences`, `diagram-sensitivity`, `background`), and noted `account-restore` applies only to `default-<provider>` accounts.
+- Updated Spec §5 (`protocol/app/assistant.md`) to preserve sibling `switches` on `template-update` (omitting `switches.unsettled` when leaving `worker`), require confirmation quoting the provider warning when adding an account for a provider with `accountWarning` (such as Claude), and check for `{"ok":false,"error":"Background changed elsewhere"}` on background removal conflict.
+- Recorded simultaneous browser/assistant edit on replacement payloads (`style`, `held_back`, model slot) as a rare-path Accepted Risk (`review-round-4`).
+- Added CLI conflict assertion and independent `GET /wheelchair/api/settings` read-back assertion in Spec §6.
 
 ## Prior Work
 
