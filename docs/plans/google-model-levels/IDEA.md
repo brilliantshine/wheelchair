@@ -9,7 +9,7 @@ created: 2026-11-27
 
 ## What we're building
 
-The Google (Antigravity) model list in Settings shows new Google models soon after Antigravity offers them. Each Google model that comes in levels (Low, Medium, High, XHigh) shows once, and the effort setting picks its level when an agent starts, so stepping up a failing task really moves to a higher level.
+The Google (Antigravity) model list in Settings shows new Google models soon after Antigravity offers them. Any model Antigravity lists in levels (Low, Medium, High, XHigh) shows once, and the effort setting picks its level when an agent starts, just as effort works for Claude and GPT, so stepping up a failing task really moves to a higher level.
 
 ## Why — the problem
 
@@ -19,7 +19,7 @@ The Google (Antigravity) model list in Settings shows new Google models soon aft
 ## What good looks like
 
 - A model newly offered by Antigravity appears in Settings the next time Collin opens Settings, without waiting an hour.
-- In Settings, Google models appear once each (e.g. "Gemini 4 Hydrogen"), with effort chosen beside them as for other providers. This holds for every model Antigravity lists in levels, including Neon, Carbon, Argon and Flash, not only Hydrogen.
+- In Settings, Antigravity models appear once each (e.g. "Gemini 4 Hydrogen"), with effort chosen beside them as for other providers. This is a general rule for any model Antigravity lists in levels (today Hydrogen, Neon, Carbon, Argon and Flash, and any added later), not a fixed list of names.
 - An agent started on a Google model at a given effort runs the matching level (Hydrogen at high runs Hydrogen High; Neon at xhigh runs Neon XHigh; Carbon at low runs Carbon Low).
 - Stepping up a failing task's effort starts it on the next level up.
 - Settings already saved with a level in the model name keep working.
