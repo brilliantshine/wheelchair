@@ -46,16 +46,17 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 4 | Keep browser-only "Enter to send" out of assistant writes; assistant tells Collin where to toggle it | Stored only in browser `localStorage`; hub cannot change another browser's local preference | defaulted |
 | 5 | Allow assistant to change hub-stored settings only (You except browser-only "Enter to send", Models, Usage & balancing, Threads, Agent behavior templates & lessons, Assistant & project leads, AI provider enable/disable & account metadata, Shared tools repo); keep logins, CLI installs, API keys/secrets, and Project tools PR edits manual | Gives chat control over normal settings without putting secrets, interactive sign-ins, or surprise repo PRs into assistant chat | user |
 | 6 | Apply normal preference changes right away; require a `question` card confirmation before high-impact or destructive changes (loosening session permissions or aside access, enabling auto-merge or branch deletion, turning off the personal assistant or disabling an AI provider, removing an account/template/lesson, or resetting model pins) | Keeps everyday tweaks fast while guarding against accidental safety-boundary changes, deletions, or shutting off the assistant | user |
+| 7 | Forbid the personal assistant from turning itself off (enforced by the hub and documented in `protocol/app/assistant.md`); turning the personal assistant off stays manual on Settings → Assistant and project leads | Prevents the assistant from killing its own session or locking itself out | user |
 
 ## Spec
 
 ### Confirmation Policy
 
-- **Immediate (no extra card):** Everyday preferences (name, writing style, diagram sensitivity, background opacity, model/tier/ladder/effort/escalation choices, balancing settings, tool steps, default project folder, lead names, shared tools repo, creating/editing/duplicating templates, editing/restoring lessons, adding/renaming/pausing/resuming/updating accounts, enabling a provider, enabling assistant/project leads, tightening/turning off permissions or auto-merge).
+- **Immediate (no extra card):** Everyday preferences (name, writing style, diagram sensitivity, background opacity, model/tier/ladder/effort/escalation choices, balancing settings, tool steps, default project folder, lead names, shared tools repo, creating/editing/duplicating templates, editing/restoring lessons, adding/renaming/pausing/resuming/updating accounts, enabling a provider, enabling/disabling project leads, tightening/turning off permissions or auto-merge).
 - **Confirm first with a `question` card:**
   - Loosening session permission modes (switching to unrestricted/bypass) or broadening aside access.
   - Turning on auto-merge or delete-branch.
-  - Turning off the personal assistant (warns that its own session will stop) or disabling an AI provider.
+  - Disabling an AI provider.
   - Removing an account, deleting a template, removing a lesson, removing the background image, or resetting model pins.
   - Any ambiguous request where multiple settings or values could match.
 
@@ -66,11 +67,12 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   - **AI providers (metadata only)**: enable/disable harness, add/rename/plan/weight/pause/resume/remove accounts, restore default account.
   - **Usage and balancing**: within-provider mode, leave-for-user %, warning %, save provider for leads, lead margin, held-back roles.
   - **Models**: role tiers, review family, per-role provider preferences, assistant/project-lead tiers, lead/worker provider ladders, per-provider model & effort cells, heads-up switch/reset, escalation settings.
-  - **Assistant and project leads**: personal assistant on/off, project leads on/off.
+  - **Assistant and project leads**: project leads on/off (personal assistant on/off is excluded).
   - **Threads**: show/hide tool steps, auto-merge, delete-branch, default project folder, session permission modes, aside access, lead name list.
   - **Agent behavior**: templates (create, edit, duplicate, delete) and lessons (edit, remove, restore).
   - **Shared tools (repo only)**: shared tools repository (`owner/repo` or null).
 - **Excluded (manual on the Settings page; refused by hub / explained by assistant):**
+  - Turning the personal assistant itself off (refused by the hub; Collin turns it off on Settings → Assistant and project leads).
   - Browser-local "Enter to send" (`localStorage` only).
   - AI provider machine sign-ins / login codes and CLI installations.
   - Project tools (adding/editing/removing tools opens PRs, Windows switch, Unity prep) and Project keys.
