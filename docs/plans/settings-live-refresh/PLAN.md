@@ -495,3 +495,4 @@ Targeted commands covering all touched files (full-run is handled before push pe
 - 2026-11-28: Triaged Review Round 7 (intent: 1 major upheld — pulled `saveLessons()` `baseList` iteration out of `d4`; mechanics: 1 blocking, 1 major, 3 minor upheld) and updated Spec for Round 8.
 - 2026-11-28: Triaged Review Round 8 (intent: 1 major, 1 minor upheld; mechanics: 1 blocking, 3 minor upheld, 1 rare-path minor accepted-risk) and updated Spec for Round 9.
 - 2026-11-28: Round 9 clean (0 upheld blocking/major; 4 minor upheld, 1 blocking downgraded to minor and fixed, 2 rare-path accepted-risk). Added Spec Mermaid diagram, set `status: approved`, verified Ready check (`wc.js session list` ok, `codex/preflight.sh` fresh 131h remaining), and posted `approval` card.
+- 2026-11-28: Build accepted: approval 825360b2-9343-4bac-8e24-b0bdb3dddcaf
