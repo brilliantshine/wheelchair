@@ -9,6 +9,12 @@ verified-by:
   - round: 1
     lane: heavy / gpt-6.2-sol
     checks: standard / gpt-6.1-terra (T1), standard / claude-sonnet-5-5 (T2, T3), light / gpt-6-luna (T4)
+  - round: 2
+    lane: heavy / claude-opus-5-5
+    checks: standard / claude-sonnet-5-5 (R1-1)
+  - round: 2
+    lane: heavy / gpt-6.2-sol
+    checks: standard / claude-sonnet-5-5 (R1-1)
 ---
 
 # Completion Report — Custom accent color and theme options
@@ -67,4 +73,14 @@ Addressed all three genuine Attempt 1 verification gaps:
 
 Validation after Remediation 1:
 - `npm --prefix viewer run test:browser -- test/theme-rendering.spec.js` — 24/24 pass across Chromium and Firefox (3 consecutive runs by worker + 1 independent re-run by sub-lead, all exit 0).
+- `node --test machine/test/name-guard.test.js` — 2/2 pass (exit 0).
+
+### Remediation 2 (`docs/plans/theme-options/REMEDIATION-2.md`, commit `88846294`, `standard / claude-sonnet-5-5`)
+
+Addressed the single Attempt 2 verification gap (`wc-11c53653de4e-verifier-3` passed; `wc-11c53653de4e-verifier-4` reported `.form-event` timeline connector contrast):
+1. **`viewer/pages/thread.css:335`:** Changed `.form-event` `border-left` from `var(--accent-line)` to `var(--accent-vis)` so the timeline connector matches `.form-event::before` (`:336`) and clears `>= 3.0:1` non-text contrast against `--panel` and its composited card surface with `#ffffff` / `#000000` accents.
+2. **`viewer/test/theme-rendering.spec.js:308-325`:** Added regression test verifying `.form-event` left border contrast clears `>= 3.0:1` against both `--panel` and the composited card background in Default Light with `#ffffff` accent (fails on `--accent-line` at 1.20:1).
+
+Validation after Remediation 2:
+- `npm --prefix viewer run test:browser -- test/theme-rendering.spec.js` — 26/26 pass across Chromium and Firefox (exit 0).
 - `node --test machine/test/name-guard.test.js` — 2/2 pass (exit 0).
