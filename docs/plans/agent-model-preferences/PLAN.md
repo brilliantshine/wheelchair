@@ -31,8 +31,8 @@ promoted to a Constraint or Accepted Risk, or waved off by the user.
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| 1 | 2026-11-27 | Backward compatibility for existing `~/.wheelchair/models` `lead`/`sub-lead` pins and `codex/model.sh` tests if Leads/Sub-leads move to tiers. | no | open |
-| 2 | 2026-11-27 | `viewer/app/API.md` omits `designer` and `project_leads` in preferences docs; update alongside any API changes. | no | open |
+| 1 | 2026-11-27 | Backward compatibility for existing `~/.wheelchair/models` `lead`/`sub-lead` pins and `codex/model.sh` tests if Leads/Sub-leads move to tiers. | no | settled — keep `lead`/`sub-lead` tolerated in `codex/model.sh` so existing `~/.wheelchair/models` files never read as malformed; hub placement reads tiers from `settings.json` |
+| 2 | 2026-11-27 | `viewer/app/API.md` omits `designer` and `project_leads` in preferences docs; update alongside any API changes. | no | settled — will update `viewer/app/API.md` as part of the Spec |
 
 ## Decision Log
 
