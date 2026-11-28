@@ -39,7 +39,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ### Non-goals
 - Do not change folder-tool discovery roots (`.wheelchair/tools/<name>`), project-over-shared precedence, or the Settings shared-repo pinning flow.
 - Do not change `TOOL_ROLES` (`machine/lib/project-mcp.js:9`) or enable folder tools for reviewers, mappers, or project leads.
-- Do not change the project/shared key store format or key-redaction algorithm (`machine/lib/project-keys.js`, `machine/lib/shared-keys.js`, `machine/lib/key-redact.js`).
+- Do not change the project/shared key store format or key-redaction algorithm (`machine/lib/shared-keys.js`, `machine/lib/key-redact.js`); the only `machine/lib/project-keys.js` change is adding `WSLENV` to `isReserved`.
 - Do not add a web editor on the Tools page for creating or editing folder tools.
 
 ---
@@ -93,7 +93,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
        - When `tool-bridge.js` runs a script flagged `--win`, it awaits `waitReady(winReadyFile, { timeoutMs: tool.timeout_seconds * 1000 })`, deducts elapsed wait time from the script's remaining `timeout_seconds` (failing with an MCP error if readiness fails or time runs out), sets `WHEELCHAIR_WINDOWS_PROJECT` from the ready file's Windows path, and appends `WHEELCHAIR_WINDOWS_PROJECT/p` plus each declared key name in `entry.keys` to `env.WSLENV` (colon-delimited, without duplicates) before calling `runScript`.
      - **Windows-marked HTTP folder servers:**
        - When `this.win?.detected?.kernel` and `row.tool.windows === true`, resolve `target = windowsTarget({ type: 'http', url: row.tool.url })`, acquire `port = await this.win.forwards.get(target.port)`, rewrite the URL with `rewriteUrl(row.tool.url, port)`, and pass the rewritten URL (for unkeyed HTTP entries directly; for keyed HTTP entries via `--url-override <rewrittenUrl>` to `http-tool-proxy.js`), marking `windows: true, wrapped: false` on the `extraServers` object. If forwarding fails, leave that server out and add a problem line (`tool <name>: couldn't reach Windows (<reason>); left out of this session`).
-3. **Connector `loaded` & Codex `WSLENV` propagation:**
+3. **Connector `loaded`, Windows Unity prompt, `WSLENV` reservation & Codex passthrough:**
+   - Add `WSLENV` to `isReserved` in `machine/lib/project-keys.js` so no folder tool can declare `WSLENV` as a key name and collide with WSL environment forwarding.
+   - Update `machine/lib/win-prompt.js` and `machine/service.js:1135` so the Windows Unity project-selection instruction is included when either `.mcp.json` or an `extraServers` folder server includes `mcp-for-unity` in its args.
    - Update `connectors/claude/machine.js:86`, `connectors/codex/machine.js` (where `loaded` is built), and `connectors/agy/machine.js` so `extraServers` items propagate `windows: !!extra.windows` and `wrapped: !!extra.wrapped` into `built.loaded`, triggering Windows project sync and ready-file creation in `machine/service.js:1072-1073`.
    - In `connectors/codex/machine.js`, when `wsl` is true and an `extraServers` entry has `extra.windows === true`, ensure `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` are included in its `env_vars` passthrough (same as wrapped `.mcp.json` entries at `connectors/codex/machine.js:83-88`).
 4. **Tests:**
@@ -151,7 +153,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - Sends HTTP `POST` via Node's `http`/`https` without following redirects (any `3xx` status returns an error `HTTP server returned redirect (<status>); redirects are not followed` so headers are never forwarded to another origin).
      - Attaches `Content-Type: application/json`, `Accept: application/json, text/event-stream`, plus `MCP-Protocol-Version` and `Mcp-Session-Id` when set.
      - Enforces a maximum response/event buffer size of `LINE_LIMIT` (32 MiB, imported from `machine/lib/server-lines.js`): if exceeded, destroys the response stream and reports an oversized error (`{ oversized: true, prefixBuf }`).
-     - Parses `202 Accepted` (no messages), `application/json` (single JSON message), and `text/event-stream` (full blank-line-delimited SSE events: buffers lines until `\n\n` or `\r\n\r\n`, joins all `data:` lines per event with `\n`, ignores `:` comments and non-`data` fields).
+     - Parses `202 Accepted` (no messages), `application/json` (single JSON message), and `text/event-stream` (full blank-line-delimited SSE events: buffers lines until `\n\n` or `\r\n\r\n`, joins all `data:` lines per event with `\n`, ignores `:` comments and non-`data` fields), delivering each parsed message **incrementally** via an `onMessage(msg)` callback as soon as its event delimiter arrives (never waiting for EOF so server-initiated requests on an open SSE stream can be answered immediately).
      - Exposes `deleteSession(url, headers, { timeoutMs: 1000 })` for best-effort bounded HTTP `DELETE` teardown when a `Mcp-Session-Id` was assigned (ignoring errors).
      - Exposes `httpHandshake({ url, headers, timeoutMs, signal })` performing `initialize` -> capture `Mcp-Session-Id` & negotiated `protocolVersion` -> `notifications/initialized` -> `tools/list` (if `capabilities.tools` is present) -> best-effort `deleteSession` on normal completion or timeout in `finally` (immediate signal termination in `tool-cli.js:111` stays unchanged).
    - For keyed HTTP folder servers (`tool.keys.length > 0`), `serverEntry` returns a stdio entry launching `process.execPath` with `[path.join(__dirname, 'http-tool-proxy.js'), '--project-dir', worktree, '--tool', row.dir, '--state-dir', stateDir, '--key-store', row.key_store, ...row.tool.keys.flatMap(k => ['--key', k]), ...(urlOverride ? ['--url-override', urlOverride] : [])]` (and `env: {}`).
@@ -159,12 +161,12 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - Validates `tool.json` at startup (same 32 KiB / regular-file / `validateToolJson` checks as `tool-launch.js`), confirms `kind === 'server'` and `transport === 'http'`, and checks that `--key` args match `tool.keys` (exiting non-zero with the same "its keys changed" message if not).
      - Rejects startup if any of `debuglog('child_process').enabled`, `debuglog('http').enabled`, `debuglog('https').enabled`, or `debuglog('net').enabled` is true.
      - Reads declared keys from `readSharedKeys(stateDir)` or `readKeyStore(stateDir, await projectIdentity(projectDir))` (failing with the standard missing-key error if any key is missing/unusable).
-     - Uses `machine/lib/mcp-http.js` to POST each newline-delimited JSON-RPC message from `process.stdin` to `urlOverride || tool.url` with `${KEY}` placeholders substituted in memory.
-     - Gates ordinary requests on initialization: track the in-flight promise for `initialize` and `notifications/initialized` (`initGate`), and await `initGate` (and any in-flight `recovering` promise) before POSTing any ordinary request (`tools/list`, `tools/call`, etc.) so `notifications/initialized` always completes before discovery or tool calls are sent.
+     - Uses `machine/lib/mcp-http.js` to POST each newline-delimited JSON-RPC message from `process.stdin` to `urlOverride || tool.url` with `${KEY}` placeholders substituted in memory, forwarding each incrementally delivered SSE or JSON message through `checker.line(buf)` as it arrives.
+     - Gates ordinary requests on initialization with a 30-second deadline: track the in-flight promise for `initialize` and `notifications/initialized` (`initGate`, bounded by a 30 s HTTP timeout per request), and await `initGate` (and any in-flight `recovering` promise) before POSTing any ordinary request (`tools/list`, `tools/call`, etc.). If `initGate` fails or times out, clear `initGate` (so later calls are not permanently blocked) and reply to queued requests with a JSON-RPC `-32603` error.
      - Remembers the client's original `initialize` request params. If a subsequent request that sent `sentSessionId` receives HTTP `404`:
        - First, if `recovering` is already in flight, await `recovering.promise` before checking `sessionId`.
        - Next, if the proxy's current `sessionId` has already changed (`sessionId !== sentSessionId`), skip starting a new recovery and retry the request once with the current `sessionId`.
-       - Otherwise, start a single shared recovery (`recovering = { expiredId: sentSessionId, promise }`) that leaves `sessionId` unchanged until the replacement succeeds (omitting `Mcp-Session-Id` on the recovery `initialize` POST itself), re-sends `initialize` + `notifications/initialized`, updates `sessionId` and `protocolVersion` once both complete, clears `recovering`, and then lets each affected request retry once with the new session ID.
+       - Otherwise, start a single shared recovery (`recovering = { expiredId: sentSessionId, promise }`, bounded by a 30 s timeout per HTTP request) that leaves `sessionId` and `protocolVersion` unchanged until recovery completes: POST `initialize` with no `Mcp-Session-Id` header, capture `newSessionId` and `newVersion` from its response, POST `notifications/initialized` using `Mcp-Session-Id: newSessionId` and `MCP-Protocol-Version: newVersion`, then publish `sessionId = newSessionId` and `protocolVersion = newVersion` and clear `recovering` so affected requests retry once with the new session ID. If recovery fails or times out, clear `recovering` and reply to waiting requests with a JSON-RPC `-32603` error.
      - Redaction uses `const checker = createLineChecker({ name: tool.name, values })` from `machine/lib/server-lines.js:160`:
        - For each response JSON message (compacted to one JSON line `buf`), call `const res = checker.line(buf)`; for an oversized body/event (`LINE_LIMIT` exceeded), call `const res = checker.oversized(prefixBuf)`.
        - If `res.out` is non-null, write `res.out` + `\n` to `process.stdout`; if `res.toServer` is non-null, POST `res.toServer` back to the HTTP server (ignoring its body) without forwarding to `process.stdout`; if `res.note` is non-null, log `res.note` to `process.stderr` (never raw keys).
@@ -192,18 +194,19 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
    - Keep `TOOL_ROLES` (`machine/lib/project-mcp.js:9`) and existing role gating in `machine/service.js:974-976,994` unchanged (reviewers, mappers, and project leads remain gated as today).
    - Update `viewer/pages/project-tools.js:314` from `"server tools don't work on Kimi, Pi or sandboxed Codex"` to `"server tools don't work on Kimi or Pi"`.
    - Update `machine/lib/project-tools.js:160` from `'uses keys: not available to sandboxed Codex, Kimi or Pi'` to `'uses keys: not available to Kimi or Pi'`.
-2. **Dedicated folder-tool sandbox wrapper (`connectors/codex/machine.js`, `machine/lib/folder-tools.js`, `machine/service.js`):**
+2. **Dedicated folder-tool sandbox wrapper (`connectors/codex/machine.js`, `connectors/README.md`, `machine/lib/folder-tools.js`, `machine/service.js`):**
    - Leave `sandboxWrap(command)` (`connectors/codex/machine.js:126`) completely unchanged so `machine/lib/screen.js:225` and `machine/test/screen.test.js:102-110` continue to work untouched.
-   - Add `sandboxWrapTool(command, { worktree, toolDir })` in `connectors/codex/machine.js`:
+   - Add `sandboxWrapTool(command, { worktree, toolDir })` on the connector machine contract (documented in `connectors/README.md` alongside `sandboxWrap`), implemented in `connectors/codex/machine.js`:
      - Filesystem TOML table: `permissions.wc.filesystem={"/"="read",${tomlString(worktree)}="write","/tmp"="write"}`.
      - Network TOML override: `permissions.wc.network.enabled=true`.
      - Trust TOML table: `projects={${tomlString(worktree)}={trust_level="trusted"}}`.
      - Returned argv:
        `['codex', 'sandbox', '-P', 'wc', '-C', worktree, '-c', fsOverride, '-c', 'permissions.wc.network.enabled=true', '-c', trustOverride, '--', '/bin/sh', '-c', 'cd "$1" && shift && exec "$@"', '--', toolDir, ...command]`.
    - When `adapter.sandboxed?.(session)` is true (sandboxed Codex session in `TOOL_ROLES`):
-     - `machine/service.js` passes `{ sandbox: { codexHome: session.account_dir ? loginEnv(session.account_dir).CODEX_HOME : null } }` when building `bridgeEntry` and stdio `serverEntry`.
-     - `bridgeEntry` and stdio `serverEntry` pass `--sandbox` (and set `CODEX_HOME` in the entry's `env` when `codexHome` is set) to `tool-bridge.js` and `tool-launch.js`.
-     - `tool-bridge.js` (via `tool-run.js`) and `tool-launch.js` run **outside** `codex sandbox` so they can read the machine key store (`stateDir`) and perform output redaction, and wrap only the spawned child tool command using `sandboxWrapTool([program, ...args], { worktree: projectDir, toolDir: dir })` with `cwd: projectDir` (the wrapper's `/bin/sh -c 'cd "$1" ...'` changes to `toolDir` inside the sandbox so the writable root is `projectDir`, not `toolDir`).
+     - Compute `codexHome = session.account_dir ? loginEnv(session.account_dir).CODEX_HOME : (process.env.CODEX_HOME || null)` (so default accounts inheriting `CODEX_HOME` also pass it explicitly, preventing Codex from filtering it out of MCP subprocesses).
+     - `machine/service.js` passes `{ sandbox: { cli: input.cli, codexHome } }` when building `bridgeEntry` and stdio `serverEntry`.
+     - `bridgeEntry` and stdio `serverEntry` pass `--sandbox-cli <cli>` (and set `CODEX_HOME` in the entry's `env` when `codexHome` is set) to `tool-bridge.js` and `tool-launch.js`.
+     - `tool-bridge.js` (via `tool-run.js`) and `tool-launch.js` dispatch through the connector registry (`require('../../connectors').machine(sandboxCli).sandboxWrapTool([program, ...args], { worktree: projectDir, toolDir: dir })`, never importing `connectors/codex/machine.js` directly, keeping `machine/test/name-guard.test.js` green). They run **outside** `codex sandbox` so they can read the machine key store (`stateDir`) and perform output redaction, and wrap only the spawned child tool command with `cwd: projectDir`.
      - HTTP folder servers (both direct unkeyed entries and `http-tool-proxy.js`) are registered normally for sandboxed Codex sessions, matching `.mcp.json` HTTP behavior.
 3. **Real Codex sandbox test (`machine/test/folder-tools-codex-sandbox.test.js`), `test-support/run-dir.js`, & router update (`machine/AGENTS.md`):**
    - Uses the real `codex` binary (skipped with a clear skip reason only when `codex` is not installed on the host; runs unconditionally when `codex` is present).
@@ -214,7 +217,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      3. Named account `CODEX_HOME`: verifies the sandboxed invocation receives the configured `CODEX_HOME`.
    - Update `machine/AGENTS.md` to note the real-Codex sandbox test exception (runs when `codex` is installed using isolated `run-dir.js` temp directories, skips otherwise).
 4. **Update existing tests & docs:**
-   - Update `machine/test/folder-tools-launch.test.js` and `machine/test/project-mcp-codex.test.js:145-160` to assert that sandboxed Codex sessions register folder MCP entries with `--sandbox` and `CODEX_HOME`, preserve ordering and `tool_timeout_sec=260`, retain the `PROJECT_OVERRIDE_BUDGET` check, and skip Windows executables on WSL.
+   - Update `machine/test/folder-tools-launch.test.js` and `machine/test/project-mcp-codex.test.js:145-160` to assert that sandboxed Codex sessions register folder MCP entries with `--sandbox-cli` and `CODEX_HOME`, preserve ordering and `tool_timeout_sec=260`, retain the `PROJECT_OVERRIDE_BUDGET` check, and skip Windows executables on WSL.
    - Update `machine/test/project-tools.test.js:478` and `viewer/test/app-project-tools.spec.js:1518` for the updated Tools page / API status strings, and add a Git-tree HTTP folder tool test in `machine/test/project-tools.test.js`.
    - Update `protocol/tools.md` to document that sandboxed Codex runs folder tools over MCP confined to the worktree and `/tmp` (noting that servers cannot write under `$HOME` and should place caches/state in `/tmp` or the worktree).
 
@@ -234,6 +237,7 @@ node --test machine/test/win-tool-service.test.js
 node --test machine/test/project-tools.test.js
 node --test machine/test/project-mcp-codex.test.js
 node --test machine/test/screen.test.js
+node --test machine/test/name-guard.test.js
 node --test test-support/test/*.test.js
 node --test viewer/test/wc-tool.test.js
 npm --prefix viewer run test:browser -- test/app-project-tools.spec.js
@@ -248,6 +252,7 @@ npm --prefix viewer run test:browser -- test/app-project-tools.spec.js
 
 | # | What to check | Round |
 |---|---------------|-------|
+| 1 | Start a keyed Windows stdio folder server against a slow ready file in Codex and Claude to verify whether holding `tools/list` without `--list-cache` exceeds client startup timeout | 5 |
 
 ## Review Rounds
 
@@ -338,11 +343,33 @@ npm --prefix viewer run test:browser -- test/app-project-tools.spec.js
 
 ### Round 5 — 2026-11-28
 
-**Lanes:** (pending)
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 4:**
 - S2.2 & S2.4: pass `--win` to `tool-launch.js` for all Windows stdio servers (wrapped and unwrapped) so `WSLENV` key forwarding applies to both; added unwrapped keyed server test case in `win-tool-service.test.js`.
 - S4.3: added `initGate` to wait for `initialize` + `notifications/initialized` before ordinary requests; kept `sessionId` unchanged until 404 recovery succeeds, awaiting `recovering` before comparing IDs and holding new requests; narrowed `httpHandshake` best-effort `DELETE` to normal completion or timeout (keeping `tool-cli.js:111` signal handler unchanged).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Check once built: keyed Windows stdio server holding `tools/list` against a slow ready file may hit Codex startup timeout | check-once-built | Added to Check Once Built row 1 |
+| mechanics | major | S4.3 `initGate` and `recovering` have no deadline or failure behavior for queued requests | upheld | S4.3 adds 30 s per-request timeout, clears gate on failure/timeout, and replies `-32603` to queued requests |
+| mechanics | major | S4.3 recovery `notifications/initialized` needs replacement `Mcp-Session-Id` and `MCP-Protocol-Version` before publishing state | upheld | S4.3 specifies passing `newSessionId` and `newVersion` on recovery `notifications/initialized` before publishing |
+| mechanics | major | S4.3 SSE parsing must deliver events incrementally while stream is open to avoid server-request deadlock | upheld | S4.3 specifies incremental `onMessage(msg)` delivery on blank-line event delimiters |
+| mechanics | major | S2.2 folder-based `mcp-for-unity` servers miss Windows Unity prompt instruction | upheld | S2.3 updates `win-prompt.js` and `service.js:1135` to include folder `mcp-for-unity` servers |
+| mechanics | major | S5.2 propagates `CODEX_HOME` only for named accounts, missing inherited `process.env.CODEX_HOME` on default account | upheld | S5.2 falls back to `process.env.CODEX_HOME || null` and passes it in entry `env` |
+| mechanics | minor | S2.2 `WSLENV` is not in `isReserved`, allowing key-name collision | upheld | S2.3 & Non-goals: add `WSLENV` to `isReserved` in `machine/lib/project-keys.js` |
+| mechanics | minor | S5.2 `sandboxWrapTool` lacks connector registry dispatch and `connectors/README.md` contract entry | upheld | S5.2 dispatches via `connectors.machine(sandboxCli).sandboxWrapTool` (`--sandbox-cli`) and documents it in `connectors/README.md` |
+| mechanics | minor | Validation omits `machine/test/name-guard.test.js` | upheld | Added `node --test machine/test/name-guard.test.js` to Validation |
+
+### Round 6 — 2026-11-28
+
+**Lanes:** (pending)
+
+**Changed since Round 5:**
+- S2.3 & Non-goals: reserved `WSLENV` in `machine/lib/project-keys.js`; included folder `mcp-for-unity` servers in `win-prompt.js` / `service.js:1135`.
+- S4.3: incremental `onMessage` SSE delivery; 30 s timeout + failure/clearing on `initGate` and `recovering`; recovery `notifications/initialized` uses `newSessionId` and `newVersion` before publishing.
+- S5.2 & Validation: `CODEX_HOME` fallback to `process.env.CODEX_HOME`; connector-registry dispatch (`--sandbox-cli` -> `connectors.machine(cli).sandboxWrapTool`) + `connectors/README.md` entry; added `node --test machine/test/name-guard.test.js` to Validation.
+- Check Once Built: added row 1 for keyed Windows stdio `tools/list` hold against slow ready file.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
