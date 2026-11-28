@@ -19,7 +19,7 @@ test.beforeAll(async () => {
   const models = path.join(state, 'models');
   const modelsCache = path.join(state, 'models-cache.json');
   await fs.writeFile(modelsCache, JSON.stringify({ models: [] }));
-  const server = await startServer({ stateDir: state, env: { WHEELCHAIR_MODELS: models, WHEELCHAIR_MODELS_CACHE: modelsCache } });
+  const server = await startServer({ stateDir: state, env: { WHEELCHAIR_AGY: '', WHEELCHAIR_MODELS: models, WHEELCHAIR_MODELS_CACHE: modelsCache } });
   context = { state, server, models };
 });
 test.afterAll(async () => { await context.server.stop(); });
@@ -1312,4 +1312,120 @@ test('capture shared keys with a chosen project at phone size', async ({ page })
   await expect(page.getByLabel('Shared tools project')).toHaveValue('owner/shared-tools');
   await expect(page.locator('[data-key="WEATHER_TOKEN"]')).toBeVisible();
   await page.screenshot({ path: '/tmp/t3b-shared-chosen-phone.png' });
+});
+
+// Antigravity's levels, from a fake `agy` and its own pins file.
+test.describe('Antigravity levels', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+  let agy;
+  const ALL = ['CLI default', 'low', 'medium', 'high', 'xhigh', 'max'];
+  const THREE = ['CLI default', 'low', 'medium', 'high'];
+  const FOUR = [...THREE, 'xhigh'];
+
+  test.beforeAll(async () => {
+    const state = await makeDir('app-settings-agy-');
+    const models = path.join(state, 'models');
+    const modelsCache = path.join(state, 'models-cache.json');
+    await fs.writeFile(modelsCache, JSON.stringify({ models: [] }));
+    const group = (base, name, levels) => levels.map((level) => [`${base}-${level.toLowerCase()}`, `${name} (${level})`]);
+    const listing = [
+      ...group('gemini-4-hydrogen', 'Gemini 4 Hydrogen', ['Low', 'Medium', 'High', 'XHigh']),
+      ...group('gemini-3.8-flash', 'Gemini 3.8 Flash', ['Low', 'Medium', 'High']),
+      ['orchestrator', 'Orchestrator'],
+    ];
+    const fake = path.join(state, 'agy');
+    await fs.writeFile(fake, `#!/bin/sh\nprintf '${listing.map(([id, name]) => `${id}\\t${name}\\n`).join('')}'\n`, { mode: 0o755 });
+    const server = await startServer({ stateDir: state, env: { WHEELCHAIR_AGY: fake, WHEELCHAIR_MODELS: models, WHEELCHAIR_MODELS_CACHE: modelsCache } });
+    agy = { state, server, models };
+  });
+  test.afterAll(async () => { await agy.server.stop(); });
+
+  const model = (page) => page.getByLabel('Antigravity light model', { exact: true });
+  const effort = (page) => page.getByLabel('Antigravity light effort', { exact: true });
+  const saved = async (page) => (await settings(page)).models.gemini.light;
+  async function open(page, pin) {
+    await fs.writeFile(agy.models, `gemini.light = ${pin}\n`);
+    await openPage(page, agy, '/app/settings#models');
+    await expect(model(page)).toBeVisible();
+  }
+  async function other(page, value) {
+    await model(page).selectOption('__other');
+    await page.getByLabel('Antigravity light model, other').fill(value);
+    await page.getByRole('button', { name: 'Use', exact: true }).click();
+  }
+
+  test('effort choices are the chosen model\'s levels, and a level it has is kept', async ({ page }) => {
+    await open(page, 'gemini-3.8-flash @medium');
+    await expect(model(page).locator('option:checked')).toHaveText('Gemini 3.8 Flash · gemini-3.8-flash');
+    await expect(effort(page).locator('option')).toHaveText(THREE);
+    await model(page).selectOption('gemini-4-hydrogen');
+    await expect(effort(page).locator('option')).toHaveText(FOUR);
+    await expect(effort(page)).toHaveValue('medium');
+    await expect.poll(() => saved(page)).toEqual({ model: 'gemini-4-hydrogen', effort: 'medium' });
+  });
+
+  test('effort resets to CLI default when the new model lacks the level', async ({ page }) => {
+    await open(page, 'gemini-4-hydrogen @xhigh');
+    await expect(effort(page)).toHaveValue('xhigh');
+    await model(page).selectOption('gemini-3.8-flash');
+    await expect(effort(page).locator('option')).toHaveText(THREE);
+    await expect(effort(page)).toHaveValue('');
+    await expect.poll(() => saved(page)).toEqual({ model: 'gemini-3.8-flash', effort: null });
+    await expect(page.locator('.inline-err')).toHaveCount(0);
+  });
+
+  test('effort is disabled at CLI default for a model with no levels', async ({ page }) => {
+    await open(page, 'gemini-3.8-flash @high');
+    await expect(effort(page)).toBeEnabled();
+    await model(page).selectOption('orchestrator');
+    await expect(effort(page)).toBeDisabled();
+    await expect(effort(page).locator('option')).toHaveText(['CLI default']);
+    await expect.poll(() => saved(page)).toEqual({ model: 'orchestrator', effort: null });
+    await expect(page.locator('.inline-err')).toHaveCount(0);
+  });
+
+  test('effort offers every level for a typed model with unknown levels', async ({ page }) => {
+    await open(page, 'gemini-3.8-flash @high');
+    await other(page, 'gemini-9');
+    await expect(effort(page).locator('option')).toHaveText(ALL);
+    await expect(effort(page)).toHaveValue('high');
+    await expect(effort(page)).toBeEnabled();
+    await expect.poll(() => saved(page)).toEqual({ model: 'gemini-9', effort: 'high' });
+  });
+
+  test('effort comes from a member id typed through Other', async ({ page }) => {
+    await open(page, 'gemini-4-hydrogen @high');
+    await other(page, 'gemini-3.8-flash-low');
+    await expect(model(page)).toHaveValue('gemini-3.8-flash');
+    await expect(effort(page)).toHaveValue('low');
+    await expect(effort(page).locator('option')).toHaveText(THREE);
+    await expect.poll(() => saved(page)).toEqual({ model: 'gemini-3.8-flash', effort: 'low' });
+  });
+
+  test('effort save redraws the model cells from a fresh read of the settings', async ({ page }) => {
+    await open(page, 'gemini-3.8-flash @low');
+    await expect(model(page).locator('option[value="gemini-new"]')).toHaveCount(0);
+    await page.route('**/api/settings', async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.model_options.gemini.push({ value: 'gemini-new', label: 'Newly listed', efforts: ['low'] });
+      await route.fulfill({ response, json: body });
+    });
+    await effort(page).selectOption('high');
+    await expect(model(page).locator('option[value="gemini-new"]')).toHaveCount(1);
+    await expect(page.getByLabel('Antigravity lead model', { exact: true }).locator('option[value="gemini-new"]')).toHaveCount(1);
+    await expect(page.getByText('Saved; the list could not be refreshed')).toHaveCount(0);
+  });
+
+  test('effort stays saved, and says so, when the list cannot be re-read after a save', async ({ page }) => {
+    await open(page, 'gemini-3.8-flash @low');
+    await page.route('**/api/settings', (route) => route.abort());
+    await effort(page).selectOption('high');
+    await expect(page.locator('[data-cell="tiers:gemini:light"]').getByText('Saved; the list could not be refreshed', { exact: true })).toBeVisible();
+    await expect(effort(page)).toHaveValue('high');
+    await expect(page.locator('.inline-err')).toHaveCount(0);
+    await expect(page.locator('.note').first()).toHaveText('Saved, applies to new sessions');
+    await page.unroute('**/api/settings');
+    expect((await saved(page)).effort).toBe('high');
+  });
 });

@@ -6,6 +6,7 @@ const http = require('node:http');
 const path = require('node:path');
 const test = require('node:test');
 const { api, close, event, machinePost, setup, thread } = require('./helpers/app.js');
+const { makeTemp } = require('../../test-support/run-dir');
 const { transcriptItems } = require('../app/chat.js');
 const settings = require('../app/settings.js');
 const { State } = require('../app/state.js');
@@ -480,5 +481,133 @@ test('shared tools project choice saves and clears', async () => {
     assert.equal((await api(context, '/settings')).body.shared_tools_repo, 'owner/tools');
     await api(context, '/settings/preferences', { method: 'PUT', body: { shared_tools_repo: null } });
     assert.equal((await api(context, '/settings')).body.shared_tools_repo, null);
+  });
+});
+
+// Antigravity levels. The server's `agy` is a fake that logs each run; the saved list sits
+// beside the temporary pins file.
+const AGY_LISTING = [
+  ['gemini-3.8-flash-low', 'Gemini 3.8 Flash (Low)'], ['gemini-3.8-flash-medium', 'Gemini 3.8 Flash (Medium)'], ['gemini-3.8-flash-high', 'Gemini 3.8 Flash (High)'],
+  ['orchestrator', 'Orchestrator'], ['gpt-oss-120b-medium', 'GPT-OSS 120B (Medium)'],
+];
+const AGY_SAVED = [
+  { value: 'gemini-3.8-flash', label: 'Flash', efforts: ['low', 'medium', 'high'] },
+  { value: 'orchestrator', label: 'Orchestrator', efforts: [] },
+  { value: 'gpt-oss-120b-medium', label: 'GPT-OSS', efforts: [] },
+];
+
+async function withAgy({ age = 0, saved = AGY_SAVED } = {}, work) {
+  const dir = await makeTemp('app-agy-');
+  const fake = path.join(dir, 'agy');
+  const log = path.join(dir, 'runs');
+  await fs.writeFile(fake, `#!/bin/sh\necho run >> '${log}'\nprintf '${AGY_LISTING.map(([id, name]) => `${id}\\t${name}\\n`).join('')}'\n`, { mode: 0o755 });
+  const hook = path.join(dir, 'hook.js');
+  await fs.writeFile(hook, `process.env.WHEELCHAIR_AGY = ${JSON.stringify(fake)};\n`);
+  const context = await setup({ env: { NODE_OPTIONS: `--require=${hook}` } });
+  try {
+    if (saved) await fs.writeFile(path.join(context.state, 'agy-models.json'), JSON.stringify({ at: Date.now() / 1000 - age, models: saved }));
+    context.agyRuns = () => fs.readFile(log, 'utf8').then((text) => text.split('\n').filter(Boolean).length, () => 0);
+    await work(context);
+  } finally { await close(context); }
+}
+
+const putGemini = (context, slot, model, effort) => api(context, '/settings/models', { method: 'PUT', body: { provider: 'gemini', slot, model, ...(effort ? { effort } : {}) } });
+
+test('a Google model save normalizes level suffixes and refuses levels the model lacks', async () => {
+  // Over 30 seconds old: a save must check the saved list without refreshing it.
+  await withAgy({ age: 100 }, async (context) => {
+    const before = await fs.readFile(context.models, 'utf8').catch(() => '');
+    for (const [model, effort, detail] of [
+      ['gemini-3.8-flash-high', 'max', 'gemini-3.8-flash has no max level; it has low, medium, high'],
+      ['gemini-3.8-flash', 'xhigh', 'gemini-3.8-flash has no xhigh level; it has low, medium, high'],
+      ['orchestrator', 'high', 'orchestrator takes no effort'],
+    ]) {
+      const refused = await putGemini(context, 'heavy', model, effort);
+      assert.equal(refused.status, 400);
+      assert.equal(refused.body.detail, detail);
+    }
+    assert.equal(await fs.readFile(context.models, 'utf8').catch(() => ''), before);
+    assert.equal(await context.agyRuns(), 0);
+    const pinned = async (slot) => (await fs.readFile(context.models, 'utf8')).split('\n').find((line) => line.startsWith(`gemini.${slot} =`));
+    for (const [model, effort, line] of [
+      ['gemini-3.8-flash-low', undefined, 'gemini-3.8-flash @low'],
+      ['gemini-3.8-flash-low', 'high', 'gemini-3.8-flash @high'],
+      ['orchestrator', undefined, 'orchestrator'],
+      ['gpt-oss-120b-medium', undefined, 'gpt-oss-120b-medium'],
+      ['gemini-9-high', 'max', 'gemini-9-high @max'],
+    ]) {
+      assert.equal((await putGemini(context, 'heavy', model, effort)).status, 200, model);
+      assert.equal(await pinned('heavy'), `gemini.heavy = ${line}`);
+    }
+  });
+});
+
+async function subLeadLayers(context, attempt) {
+  const made = await thread(context, { cli: 'codex', project: `/tmp/levels-${attempt}` });
+  const sub = await machinePost(context, '/machine/session', { calling_session: made.sessions[0].name, action: 'start', role: 'sub-lead', cli: 'codex', attempt_id: attempt });
+  assert.equal(sub.status, 200, JSON.stringify(sub.body));
+  return { lead: context.machine.sessions.get(made.sessions[0].name).role_layers, sub: context.machine.sessions.get(sub.body.session.name).role_layers };
+}
+
+const TOP_LEVEL = "On Antigravity, a tier's highest listed level is its highest effort: once a worker ran there, or the model takes no effort, the next step moves tier if a higher tier is allowed; otherwise report the task blocked.";
+
+test('a sub-lead is told each Antigravity tier’s levels only when Antigravity can take workers', async () => {
+  await withAgy({ age: 100 }, async (context) => {
+    await fs.writeFile(context.models, 'gemini.light = none\ngemini.standard = gemini-3.8-flash-medium\ngemini.heavy = orchestrator\ngemini.critical = gemini-9 @high\n');
+    const layers = await subLeadLayers(context, 'on');
+    const expected = [
+      'Antigravity Standard: gemini-3.8-flash, levels low, medium, high, set to medium',
+      'Antigravity Heavy: orchestrator, takes no effort, set to CLI default',
+      'Antigravity Critical: gemini-9, levels unknown, set to high',
+      TOP_LEVEL,
+    ].join('\n');
+    const escalation = settings.escalationSentences(settings.defaults().escalation).join('\n');
+    assert.ok(layers.sub.includes(`Escalation rules from Settings:\n${escalation}\n${expected}`), layers.sub);
+    assert.doesNotMatch(layers.sub, /Antigravity Light:/);
+    assert.doesNotMatch(layers.lead, /Antigravity/);
+    assert.equal(await context.agyRuns(), 0, 'a list under an hour old is not refreshed');
+
+    await api(context, '/settings/harnesses/gemini', { method: 'PUT', body: { enabled: false } });
+    assert.doesNotMatch((await subLeadLayers(context, 'off')).sub, /Antigravity/);
+    await api(context, '/settings/harnesses/gemini', { method: 'PUT', body: { enabled: true } });
+    assert.match((await subLeadLayers(context, 'back')).sub, /Antigravity Standard:/);
+    await api(context, '/settings/balancing', { method: 'PUT', body: { worker_order: ['gpt', 'claude'] } });
+    assert.doesNotMatch((await subLeadLayers(context, 'unordered')).sub, /Antigravity/);
+    assert.equal((await api(context, '/settings')).body.escalation_text, escalation);
+  });
+});
+
+test('a sub-lead start refreshes an Antigravity list over an hour old', async () => {
+  const stale = [{ value: 'gemini-3.8-flash', label: 'Flash', efforts: ['low', 'medium'] }];
+  await withAgy({ age: 4000, saved: stale }, async (context) => {
+    const layers = await subLeadLayers(context, 'stale');
+    assert.match(layers.sub, /Antigravity Light: gemini-3\.8-flash, levels low, medium, high, set to low/);
+    assert.equal(await context.agyRuns(), 1);
+  });
+});
+
+test('an Antigravity scout is named by its member id only when the list has it', async () => {
+  await withAgy({}, async (context) => {
+    context.machine.status.agy = { installed: true, logged_in: true };
+    context.machine.status.accounts.push({ id: 'default-gemini', cli: 'agy', logged_in: true });
+    const start = async (attempt, light) => {
+      await fs.writeFile(context.models, `gemini.light = ${light}\ngemini.standard = gemini-3.8-flash @medium\n`);
+      await api(context, '/settings/balancing', { method: 'PUT', body: { lead_order: ['gemini'] } });
+      const made = await api(context, '/threads', { method: 'POST', body: { project: `/tmp/scout-${attempt}`, cli: 'agy' } });
+      const lead = made.body.sessions[0];
+      assert.equal(lead.provider, 'gemini', JSON.stringify(made.body));
+      const sub = await machinePost(context, '/machine/session', { calling_session: lead.name, action: 'start', role: 'sub-lead', cli: 'agy', attempt_id: attempt });
+      assert.equal(sub.status, 200, JSON.stringify(sub.body));
+      return { lead: context.machine.sessions.get(lead.name).role_layers, sub: context.machine.sessions.get(sub.body.session.name).role_layers };
+    };
+    const listed = await start('listed', 'gemini-3.8-flash @low');
+    assert.match(listed.lead, /Scout model for code reading: gemini-3\.8-flash-low\./);
+    assert.match(listed.sub, /Scout for bigger worker changes \(200 to 800 lines\): gemini-3\.8-flash-medium\./);
+    for (const [attempt, pin, named] of [
+      ['unlisted-level', 'gemini-3.8-flash @xhigh', 'gemini-3\\.8-flash'],
+      ['no-effort', 'gemini-3.8-flash', 'gemini-3\\.8-flash'],
+      ['unlisted-model', 'gemini-9 @low', 'gemini-9'],
+      ['single', 'orchestrator @low', 'orchestrator'],
+    ]) assert.match((await start(attempt, pin)).lead, new RegExp(`Scout model for code reading: ${named}\\.`), attempt);
   });
 });

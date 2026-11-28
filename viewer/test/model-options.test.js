@@ -18,3 +18,7 @@ test('model choices include a sixth manifest', () => {
   connectors.list = () => [...original(), extra];
   try { assert.deepEqual(options(models).extra, [{ value: 'new', label: 'New' }]); } finally { connectors.list = original; }
 });
+test('model choices pass listed levels through and leave appended pins unknown', () => {
+  const listed = [{ value: 'g-a', label: 'A', efforts: ['low', 'high'] }, { value: 'g-s', label: 'S', efforts: [] }, { value: 'g-old', label: 'Old' }];
+  assert.deepStrictEqual(options({ agy_visible: listed, gemini: { light: { model: 'g-a' }, heavy: { model: 'g-b' } } }).gemini, [...listed, { value: 'g-b', label: 'g-b' }]);
+});
