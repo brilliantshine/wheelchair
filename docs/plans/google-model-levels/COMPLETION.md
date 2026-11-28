@@ -117,3 +117,22 @@ bash install/test/run.sh                       RESULT 217 passed, 0 failed
 ```
 
 Known residual (superseded by Remediation 2): viewer tests outside the Spec list still reached the PATH agy through in-process hubs; see REMEDIATION-2.md.
+
+### Remediation 2 — 2026-11-27
+
+Verification attempt 2 (commit 732be642; claude-opus-5-5 and gpt-6.2-sol) failed; see `REMEDIATION-2.md`. One gap was a rare path (overlapping saves, Accepted Risks), one was judged not a gap (PLAN Log), and one went to remediation: viewer tests outside the Spec list still reached the PATH agy.
+
+| Gap | Fix | Lane | At | Validated by |
+|-----|-----|------|----|--------------|
+| G4 (second fix): viewer tests reaching codex/model.sh through in-process hubs or direct spawns ran the PATH agy; app-usage wrote under $HOME/.wheelchair | `viewer/test/helpers/isolate-models.js` sets `WHEELCHAIR_AGY=''` and a temp `WHEELCHAIR_MODELS`; loaded by `helpers/server.js` and required by 26 test files; `app-uploads-archive.test.js` stubs `agy` for its real machine service | R3, standard / claude-sonnet-5-5 | `viewer/test/helpers/isolate-models.js:1`–`10` | R3 report: whole viewer Node and browser suites under a scratch HOME with a logging fake agy, 16 agy calls and one agy-models.json before, zero after |
+
+Task checks on the merged tip, run by the sub-lead:
+
+```text
+bash codex/test/run.sh                         RESULT 217 passed, 0 failed
+node --test machine/test/{name-guard,project-mcp-agy,agy-launch-service,connectors-model-roundtrip-real}.test.js   # pass 9 # fail 0
+node --test viewer/test/{model-options,app-settings,app-hub,worker-effort-membership,app-usage,app-balancer,app-project-tools-card}.test.js   # pass 243 # fail 0
+npm --prefix viewer run test:browser -- --grep 'effort'                                                            12 passed
+```
+
+Residual: five files that load viewer/app/ have no direct require of the isolation helper (app-lessons, app-lessons-history, app-shared-tools-setting, char-hub-dispatch, background-completion); none called agy in the proof run.
