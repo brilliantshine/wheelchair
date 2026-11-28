@@ -15,6 +15,12 @@ verified-by:
   - round: 2
     lane: gpt / gpt-6.2-sol
     checks: standard (gpt-6.1-terra, gpt-6.1-terra --effort high, claude-sonnet-5-5)
+  - round: 3
+    lane: claude / claude-opus-5-5
+    checks: standard (gpt-6.1-terra, gpt-6.1-terra --effort high, claude-sonnet-5-5)
+  - round: 3
+    lane: gpt / gpt-6.2-sol
+    checks: standard (gpt-6.1-terra, gpt-6.1-terra --effort high, claude-sonnet-5-5)
 ---
 
 # Completion Report — Better agent model preferences in Settings
@@ -105,3 +111,19 @@ Claude verifier (`wc-c29d9fe6f697-verifier-3`) returned `PASS`. Fixed the one ge
   - Updated `POST /settings/models/heads-up` (`viewer/app/routes.js:386-396`) so `action === 'switch'` runs inside `settings.update` using the same pre-check + post-success dismissal pattern as `PUT /settings/models`, preventing a fresh install from getting a retroactive legacy pin notice after clicking Switch.
   - Added unit test `heads-up switch dismisses only an empty legacy notice` in `viewer/test/app-settings.test.js:678-695`.
   - Validation: `node --test viewer/test/app-settings.test.js` — **28 passed, 0 failed** (exit 0); `node --test machine/test/name-guard.test.js` — **2 passed, 0 failed** (exit 0).
+
+### Full verification run (`test-support/full-run.sh` on `3d5c3a77d473cea0dd695d35b5a058a2cc33cb6e`)
+
+```text
+commit 3d5c3a77d473cea0dd695d35b5a058a2cc33cb6e
+suite viewer-browser exit 0 seconds 607
+suite viewer-node exit 0 seconds 211
+suite machine exit 0 seconds 147
+suite test-support exit 0 seconds 27
+suite sensitivity exit 0 seconds 8
+suite codex exit 0 seconds 30
+suite install exit 0 seconds 81
+suite sudo-helper exit 0 seconds 9
+```
+
+Verification Attempt 3 passed: Claude verifier (`wc-c29d9fe6f697-verifier-5`) reported `PASS` with zero gaps; GPT verifier (`wc-c29d9fe6f697-verifier-6`) passed all Spec and picked validations (exit 0) and raised 3 rare-path/by-design observations recorded in `PLAN.md` Accepted Risks (`verification-3`).
