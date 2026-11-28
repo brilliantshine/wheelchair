@@ -116,7 +116,7 @@
 .agents-sidebar { border-right: 1px solid var(--line); padding: 24px 14px; background: var(--panel-3); min-width: 0; }
 .agents-sidebar h1 { padding: 0 10px 18px; }
 .agents-entry { display: block; text-align: left; width: 100%; padding: 12px !important; margin-bottom: 4px; border-color: transparent; overflow-wrap: anywhere; }
-.agents-entry.selected { background: var(--accent-soft); border-color: var(--accent-line); }
+.agents-entry.selected { background: var(--accent-soft); border-color: var(--accent-vis); }
 .agents-entry-top, .agents-heading { display: flex; align-items: center; gap: 8px; }
 .agents-entry-top { justify-content: space-between; }
 .agents-tag { font-size: 11px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink-2); border-radius: 5px; padding: 2px 6px; overflow-wrap: anywhere; }

@@ -20,7 +20,9 @@ test.beforeEach(async ({ page }) => {
   await signIn(page, ctx);
 });
 test.afterEach(async ({ page }) => {
-  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  // Firefox throws NS_BINDING_ABORTED when a polled route is mid-flight, so the page stops polling first.
+  await page.goto('about:blank').catch(() => {});
+  await page.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => {});
   await ctx.close();
 });
 
@@ -51,11 +53,20 @@ function installColorHelpers() {
   window.__color = { parse, over, ratio, behind, luminance };
 }
 
-const textContrast = (locator) => locator.evaluate((n) => {
-  const { parse, over, ratio, behind } = window.__color;
-  const bg = behind(n);
-  return ratio(over(parse(getComputedStyle(n).color), bg), bg);
-});
+// A polled re-render can detach the element mid-read (empty computed colour), so such a read is retried.
+async function textContrast(locator) {
+  let contrast;
+  await expect.poll(async () => {
+    contrast = await locator.evaluate((n) => {
+      if (!n.isConnected) return null;
+      const { parse, over, ratio, behind } = window.__color;
+      const bg = behind(n);
+      return ratio(over(parse(getComputedStyle(n).color), bg), bg);
+    });
+    return Number.isFinite(contrast);
+  }).toBe(true);
+  return contrast;
+}
 const cssVar = (page, name) => page.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
 const rgbOf = (page, color) => page.evaluate((c) => { const [r, g, b] = window.__color.parse(c); return `rgb(${r}, ${g}, ${b})`; }, color);
 
@@ -269,6 +280,14 @@ test('the working dot, activity outline and trail stay visible with white and bl
 
     await openAgents(page, saved);
     const panel = await cssVar(page, '--panel-3');
+    for (const surface of ['--panel-3', '--accent-soft']) {
+      const under = await cssVar(page, surface);
+      await expect.poll(() => page.locator('.agents-entry.selected').evaluate((n, color) => {
+        if (!n.isConnected) return null;
+        const { parse, ratio } = window.__color;
+        return ratio(parse(getComputedStyle(n).borderTopColor), parse(color));
+      }, under), `selected entry border on ${surface} ${accent}`).toBeGreaterThanOrEqual(3);
+    }
     const outline = await page.locator('.activity-spot.current').evaluate((n, under) => {
       const { parse, ratio } = window.__color;
       const style = getComputedStyle(n);
