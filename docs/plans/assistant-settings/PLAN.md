@@ -15,14 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: Which settings should the personal assistant be allowed to change?
-- **Context:** The Settings page has nine categories. Most controls are hub-stored preferences (You, Usage and balancing, Models, Assistant and project leads, Threads, Agent behavior, AI provider toggles/account metadata, Shared tools repo). Others involve browser-only storage ("Enter to send"), interactive machine actions (CLI installs, sign-in codes), machine-local secrets (Project/Shared keys), or opening PRs in project repos (Project tools).
-- **Options:**
-  1. Hub settings only (all hub-stored settings, excluding logins, installs, secrets, and Project tools PR edits).
-  2. Core preferences only (You, Models, Usage & balancing, and non-destructive Threads settings).
-  3. Everything the hub can reach (adds CLI installs and Project tools PR edits; still excludes secrets, sign-in codes, and browser-only settings).
-- **Recommendation:** Option 1 (Hub settings only).
-
 ### Q2: When should the assistant ask for confirmation before applying a change?
 - **Context:** Some settings are harmless preferences (writing style, tool steps, model choices), while others change safety boundaries or remove data (turning the assistant itself off, loosening session permissions or aside access, enabling auto-merge or branch deletion, removing an account/template/lesson, resetting model pins).
 - **Options:**
@@ -60,10 +52,27 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 2 | Include read-only inspection of current settings (excluding secret values) | The assistant needs to check current values to answer questions and report accurate before/after summaries | defaulted |
 | 3 | Route all assistant setting reads and writes through the hub's existing validation and write handlers via `wc.js assistant`, with no automatic retry on writes | Preserves every Settings page invariant and matches existing assistant action transport and safety rules | defaulted |
 | 4 | Keep browser-only "Enter to send" out of assistant writes; assistant tells Collin where to toggle it | Stored only in browser `localStorage`; hub cannot change another browser's local preference | defaulted |
+| 5 | Allow assistant to change hub-stored settings only (You except browser-only "Enter to send", Models, Usage & balancing, Threads, Agent behavior templates & lessons, Assistant & project leads, AI provider enable/disable & account metadata, Shared tools repo); keep logins, CLI installs, API keys/secrets, and Project tools PR edits manual | Gives chat control over normal settings without putting secrets, interactive sign-ins, or surprise repo PRs into assistant chat | user |
 
 ## Spec
 
-To be filled as Open Questions are settled.
+### Scope & Boundaries
+
+- **Included (read and write via `wc.js assistant`):**
+  - **You**: user name, writing style, diagram sensitivity (with per-machine fanout result), background opacity and background removal (not browser-only "Enter to send", not raw image upload from chat unless an attachment path is supported — to be finalized in Spec pass).
+  - **AI providers (metadata only)**: enable/disable harness, add/rename/plan/weight/pause/resume/remove accounts, restore default account.
+  - **Usage and balancing**: within-provider mode, leave-for-user %, warning %, save provider for leads, lead margin, held-back roles.
+  - **Models**: role tiers, review family, per-role provider preferences, assistant/project-lead tiers, lead/worker provider ladders, per-provider model & effort cells, heads-up switch/reset, escalation settings.
+  - **Assistant and project leads**: personal assistant on/off, project leads on/off.
+  - **Threads**: show/hide tool steps, auto-merge, delete-branch, default project folder, session permission modes, aside access, lead name list.
+  - **Agent behavior**: templates (create, edit, duplicate, delete) and lessons (edit, remove, restore).
+  - **Shared tools (repo only)**: shared tools repository (`owner/repo` or null).
+- **Excluded (manual on the Settings page; refused by hub / explained by assistant):**
+  - Browser-local "Enter to send" (`localStorage` only).
+  - AI provider machine sign-ins / login codes and CLI installations.
+  - Project tools (adding/editing/removing tools opens PRs, Windows switch, Unity prep) and Project keys.
+  - Shared tools keys (machine-local secrets).
+- **Read-only inspection:** The assistant can read current hub settings (and diagram sensitivity / harness status / account metadata, never secret values) to answer questions and show before/after changes.
 
 ## Accepted Risks
 
