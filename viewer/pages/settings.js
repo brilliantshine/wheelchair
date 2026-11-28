@@ -69,6 +69,13 @@
   let diagramShown = false;
   let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
   let nameDraft = null; // the typed Your name, kept across re-renders until saved
+  // What each editor was built from, so a newer `data` alone never reads as an unsaved edit.
+  let nameBaseline = '';
+  let folderBaseline = '';
+  let styleBaseline = null;
+  let balBaseline = null;
+  let draftBaseline = null;
+  let renderedTiers = null; // the models, notices and switches Tier models was drawn from
   let tierTab = null; // the provider tab open in Tier models
   const openLadders = new Set(); // roles whose provider ladder disclosure is open
   const saves = {}; // per setting: { queue, ticket, pending, saved } for saves made one after another
@@ -92,7 +99,14 @@
     return node;
   }
 
-  async function api(route, options = {}) {
+  // Only Settings and shared-key writes count as local writes; sign-ins and read-only POSTs do not.
+  const isSettingsWrite = (route, options) => Boolean(options.method && options.method !== 'GET')
+    && ((route.startsWith('/settings') && route !== '/settings/style/preview') || route === '/shared-keys/save' || route === '/shared-keys/remove');
+  function api(route, options = {}) {
+    return isSettingsWrite(route, options) ? withMutationRequest(() => request(route, options)) : request(route, options);
+  }
+
+  async function request(route, options) {
     const init = { method: options.method || 'GET', headers: {} };
     if (options.body !== undefined) { init.headers['content-type'] = 'application/json'; init.body = JSON.stringify(options.body); }
     let res;
@@ -105,6 +119,329 @@
       throw failure;
     }
     return body;
+  }
+
+  // ---------------------------------------------------------------- Live refresh: ordering
+  // localWriteGen moves only when a write request starts and ends, so a read that spans one is
+  // dropped. inFlightWrites covers a whole save-and-reread handler and pauses polling.
+  let localWriteGen = 0;
+  let inFlightWrites = 0;
+  async function withLocalWrite(fn) {
+    inFlightWrites += 1;
+    try { return await fn(); } finally { inFlightWrites -= 1; }
+  }
+  function withMutationRequest(fn) {
+    return withLocalWrite(async () => {
+      localWriteGen += 1;
+      try { return await fn(); } finally { localWriteGen += 1; }
+    });
+  }
+
+  const lastRev = { settings: null, diagram: null, shared_keys: null };
+  let startupRev = null; // the revisions read as the page opened
+  let revRunning = false;
+  const domainRunning = { settings: false, diagram: false, shared_keys: false };
+  const acknowledgeStart = (domain) => { if (lastRev[domain] === null && startupRev) lastRev[domain] = startupRev[domain]; };
+
+  const renderedSlice = new Map(); // block -> what of `data` it was last painted from
+  const deferredBlocks = new Set(); // changed elsewhere while a field in them held focus
+  const quietDeferred = new Set(); // deferred for a late first read: never an "Updated elsewhere"
+  const staleBlocks = new Set(); // changed elsewhere while holding an unsaved draft
+
+  // Equality that ignores object key order.
+  const stable = (value) => JSON.stringify(value, (key, v) => (v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v));
+
+  const parseRev = (token) => {
+    const found = /^([^:]+):(\d+)$/.exec(token || '');
+    return found ? { boot: found[1], seq: Number(found[2]) } : null;
+  };
+  const isOlderRev = (incoming, current) => {
+    const a = parseRev(incoming), b = parseRev(current);
+    return Boolean(a && b && a.boot === b.boot && a.seq < b.seq);
+  };
+
+  // The one way a whole /settings read replaces `data`. False when it is out of date.
+  function applySettingsSnapshot(next, { reconcile = true, startGen, skipBlocks = [], source = 'poll' } = {}) {
+    if (startGen !== undefined && localWriteGen !== startGen) return false;
+    if (isOlderRev(next?.settings_revision, data?.settings_revision)) return false;
+    const prev = data;
+    data = next;
+    if (next.settings_revision) lastRev.settings = next.settings_revision;
+    const changed = (key) => Boolean(prev) && stable(prev[key]) !== stable(next[key]);
+    if (changed('saved_dirs')) { sharedProjectsGen += 1; sharedProjects = null; }
+    if (reconcile) reconcileVisibleBlocks(skipBlocks);
+    if (!prev) return true;
+    if (section === 'providers' && source !== 'account-reload' && (changed('harnesses') || changed('accounts'))) refreshStatus();
+    if (section === 'usage') {
+      if (['accounts', 'harnesses', 'within', 'leave', 'notify_below'].some(changed)) refreshUsage();
+      if (source !== 'reserved' && [...BALANCE_KEYS, 'provider_orders', 'lead_order', 'worker_order'].some(changed)) readReserved();
+    }
+    if (section === 'shared-tools') {
+      if (sharedProjects === null) loadSharedProjects({ fromRefresh: true });
+      if (changed('shared_tools_repo') || changed('saved_dirs')) refreshSharedKeys(null);
+    }
+    return true;
+  }
+
+  // A save's own follow-up read: one overtaken by another write is read again, so it does hold
+  // this save.
+  async function readSettingsAfterWrite() {
+    for (let tries = 0; ; tries += 1) {
+      const startGen = localWriteGen;
+      const fresh = await api('/settings');
+      if (localWriteGen === startGen || tries >= 2) return { fresh, startGen };
+    }
+  }
+
+  async function pollSettings() {
+    if (!data || revRunning || inFlightWrites > 0) return;
+    revRunning = true;
+    const tickGen = localWriteGen;
+    let rev;
+    try { rev = await api('/settings/revision'); } catch { return; } finally { revRunning = false; }
+    if (inFlightWrites > 0 || localWriteGen !== tickGen) return;
+    // Each domain runs on its own, so a slow machine read never holds up the others.
+    const run = async (domain, work) => {
+      if (rev[domain] === lastRev[domain] || domainRunning[domain]) return;
+      domainRunning[domain] = true;
+      try { await work(); } catch { /* the next tick tries again */ } finally { domainRunning[domain] = false; }
+    };
+    run('settings', async () => {
+      const startGen = localWriteGen;
+      const next = await api('/settings');
+      if (inFlightWrites > 0 || localWriteGen !== startGen) return;
+      applySettingsSnapshot(next, { startGen, source: 'poll' });
+    });
+    run('diagram', async () => {
+      if (!youShown()) { diagram = null; lastRev.diagram = rev.diagram; return; }
+      if (await loadDiagram({ fromRefresh: true })) lastRev.diagram = rev.diagram;
+    });
+    run('shared_keys', async () => {
+      if (section !== 'shared-tools') { lastRev.shared_keys = rev.shared_keys; return; }
+      await refreshSharedKeys(rev.shared_keys);
+    });
+  }
+
+  // ---------------------------------------------------------------- Live refresh: blocks
+
+  const BALANCE_KEYS = ['within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'];
+  // Their state does not live in `data`.
+  const UNTRACKED = new Set(['enter', 'tools', 'diagrams', 'background']);
+  const stripVolatileTemplate = (t) => ({ id: t.id, name: t.name, role: t.role, scope: t.scope, switches: t.switches, text: t.text, in_use: t.in_use });
+
+  function blockSlice(name, d) {
+    switch (name) {
+      case 'name': return d.user_name;
+      case 'writing': return [d.style, d.style_version];
+      case 'harnesses': return d.harnesses;
+      case 'accounts': case 'usage': return [d.accounts, d.harnesses];
+      case 'balancing': return [d.within, d.leave, d.notify_below, d.save_for_leads, d.margin, d.held_back, d.reserved_provider];
+      case 'agents': return [d.models, d.provider_orders, d.lead_order, d.worker_order, d.other_agents, d.review_families, d.harnesses, d.legacy_lead_diffs, d.lead_tier_notice_dismissed];
+      case 'ladders': return [d.lead_order, d.worker_order, d.harnesses];
+      case 'tiers': return [d.models, d.model_options, d.heads_up, d.harnesses];
+      case 'escalation': return [d.escalation, d.escalation_text];
+      case 'assistants': return [d.models, d.provider_orders, d.lead_order, d.worker_order, d.other_agents, d.harnesses];
+      case 'conversations': return [d.assistant, d.project_leads];
+      case 'thread-view': return [d.tool_steps, d.auto_merge, d.auto_merge_delete_branch, d.default_project_folder];
+      case 'permission': return [d.permission_mode, d.codex_mode, d.aside_access];
+      case 'lead-names': return [d.lead_name_list, d.lead_names];
+      case 'templates': return [(d.templates || []).map(stripVolatileTemplate), d.lessons, d.lesson_history, d.lesson_waiting];
+      case 'shared-tools': return [d.shared_tools_repo, d.saved_dirs];
+      default: return d;
+    }
+  }
+  const sliceKey = (name, d = data) => stable(blockSlice(name, d));
+  // A save that updated `data` and its own controls without a repaint.
+  function markRendered(name) {
+    if (renderedSlice.has(name) && !staleBlocks.has(name) && !deferredBlocks.has(name)) renderedSlice.set(name, sliceKey(name));
+  }
+
+  // A field being typed or picked in; buttons, checkboxes, disclosures and links do not count.
+  const FIELD = 'input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]), textarea, select, [contenteditable]';
+  function blockFocused(name, focused = document.activeElement) {
+    return Boolean(focused && blockHost(name)?.contains(focused) && focused.matches(FIELD));
+  }
+
+  const editable = (t) => stable([t.name, t.role, t.scope, t.switches || {}, t.text]);
+  const templateEdited = () => Boolean(draft && draftBaseline && editable(draft) !== editable(draftBaseline));
+  function templatesDirty() {
+    if (isLessons(selected)) return lessonDirty() || Boolean(lessonEdit?.confirming) || Boolean(lessonEdit?.saving);
+    return confirming || templateEdited();
+  }
+  const styleFields = (s) => stable([s.length, s.lists, s.terms, s.never_say, s.text]);
+
+  function accountsDirty() {
+    return Boolean(editing || adding || (signCard && signCard.waiting && signCard.el.isConnected && blockHost('accounts')?.contains(signCard.el)));
+  }
+
+  // Whether a block holds something unsaved, compared with what its editor was built from.
+  function blockDirty(name) {
+    switch (name) {
+      case 'name': return nameDraft !== null && nameDraft !== nameBaseline;
+      case 'thread-view': return folderDraft !== null && folderDraft !== folderBaseline;
+      case 'writing': return styleDraft !== null && styleFields(currentStyle()) !== styleFields(styleBaseline);
+      case 'balancing': return balDraft !== null && BALANCE_KEYS.some((k) => stable(balDraft[k]) !== stable(balBaseline[k]));
+      case 'templates': return templatesDirty();
+      case 'tiers': return Boolean(blockHost('tiers')?.querySelector('.other input'));
+      case 'accounts': return accountsDirty();
+      case 'harnesses': return Boolean(hz.confirmOff);
+      case 'background': return Boolean(backgroundVisit && (backgroundVisit.dirty || backgroundVisit.pending || backgroundVisit.saving));
+      case 'shared-tools': return [...(blockHost('shared-tools')?.querySelectorAll('input') || [])].some((i) => i.value !== '');
+      default: return false;
+    }
+  }
+
+  const staleBanner = (name) => h('div', { class: 'stale-banner', role: 'status' },
+    h('span', { text: 'Updated elsewhere.' }),
+    h('button', { type: 'button', class: 'small', text: 'Load latest', onclick: () => loadLatest(name) }));
+  function showBanner(name) {
+    const host = blockHost(name);
+    if (host && !host.querySelector(':scope > .stale-banner')) host.prepend(staleBanner(name));
+  }
+  function markStale(name) {
+    deferredBlocks.delete(name);
+    quietDeferred.delete(name);
+    staleBlocks.add(name);
+    showBanner(name);
+  }
+  function deferBlock(name, quiet = false) {
+    if (!quiet) quietDeferred.delete(name);
+    else if (!deferredBlocks.has(name)) quietDeferred.add(name);
+    deferredBlocks.add(name);
+  }
+  function clearStale(name) {
+    staleBlocks.delete(name);
+    deferredBlocks.delete(name);
+    quietDeferred.delete(name);
+    blockHost(name)?.querySelector(':scope > .stale-banner')?.remove();
+  }
+
+  // Take a clean editor's copy of the values again from `data`.
+  function resetCleanDraft(name) {
+    if (name === 'writing') { styleDraft = null; pending = null; }
+    else if (name === 'balancing') balDraft = null;
+    else if (name === 'name') nameDraft = null;
+    else if (name === 'thread-view') folderDraft = null;
+    else if (name === 'templates' && selected !== null) {
+      if (isLessons(selected)) {
+        if (!lessonEdit) return;
+        lessonEdit.texts = {};
+        lessonEdit.removals = new Set();
+        lessonEdit.baseList = structuredClone(lessonList(lessonEdit.role));
+      } else if (selected !== 'new') {
+        const found = data.templates.find((t) => t.id === selected);
+        // An unchanged template keeps its open full prompt.
+        if (!found || !draftBaseline || editable(found) !== editable(draftBaseline) || found.in_use !== draft.in_use || found.live_sessions !== draft.live_sessions) {
+          select(found ? selected : (data.templates[0]?.id || 'new'));
+        }
+      }
+    }
+  }
+
+  function refreshClean(name) {
+    clearStale(name);
+    if (name === 'diagrams') { drawDiagram(); return; }
+    if (name !== 'background' && name !== 'harnesses') resetCleanDraft(name);
+    repaint(name);
+  }
+
+  // The reserved provider's name is only words in Balancing: changed in place, never a conflict.
+  function onlyReserveChanged() {
+    const was = JSON.parse(renderedSlice.get('balancing'));
+    const now = JSON.parse(sliceKey('balancing'));
+    return stable(was.slice(0, -1)) === stable(now.slice(0, -1));
+  }
+
+  function reconcileVisibleBlocks(skipBlocks = []) {
+    for (const name of categoryOf(section)?.blocks || []) {
+      if (UNTRACKED.has(name) || skipBlocks.includes(name) || !blockHost(name) || !renderedSlice.has(name)) continue;
+      if (renderedSlice.get(name) === sliceKey(name)) continue;
+      if (name === 'balancing' && onlyReserveChanged()) {
+        paintReserveWords();
+        renderedSlice.set(name, sliceKey(name));
+      } else if (blockDirty(name)) markStale(name);
+      else if (blockFocused(name)) deferBlock(name);
+      else refreshClean(name);
+    }
+  }
+
+  // After focus moves or a button has run: apply what was held back and is now safe.
+  function settleBlocks(focused) {
+    for (const name of [...deferredBlocks]) {
+      if (blockFocused(name, focused)) continue;
+      if (!blockDirty(name)) refreshClean(name);
+      else if (!quietDeferred.has(name)) markStale(name);
+    }
+    settleStale(focused);
+  }
+  function settleStale(focused) {
+    for (const name of [...staleBlocks]) if (!blockDirty(name) && !blockFocused(name, focused)) refreshClean(name);
+  }
+
+  function loadLatest(name) {
+    clearStale(name);
+    if (name === 'name') nameDraft = null;
+    else if (name === 'thread-view') folderDraft = null;
+    else if (name === 'writing') { styleDraft = null; pending = null; styleNote = ''; }
+    else if (name === 'balancing') { balDraft = null; balNote = ''; }
+    else if (name === 'accounts') {
+      if (signCard) {
+        clearInterval(signCard.poll); clearTimeout(signCard.close);
+        signCard.el.remove();
+        signCard = null;
+      }
+      editing = null;
+      adding = null;
+      refreshUsage();
+    } else if (name === 'harnesses') hz.confirmOff = null;
+    else if (name === 'templates') {
+      if (isLessons(selected)) {
+        const role = lessonEdit.role;
+        lessonEdit = { role, texts: {}, removals: new Set(), confirming: null, history: lessonEdit.history, baseList: structuredClone(lessonList(role)) };
+      } else if (selected === 'new') select('new');
+      else select(data.templates.some((t) => t.id === selected) ? selected : (data.templates[0]?.id || 'new'));
+    } else if (name === 'background') { discardBackground(); bg.refresh(); ensureBackground(); }
+    else if (name === 'tiers') blockHost('tiers')?.querySelector('.other')?.remove();
+    else if (name === 'shared-tools') {
+      for (const input of blockHost('shared-tools')?.querySelectorAll('input') || []) input.value = '';
+      sharedKeysSeen = null; // read them afresh
+      acknowledgeKeys(() => { repaint(name); return sharedKeysView?.first; });
+      return;
+    }
+    repaint(name);
+  }
+
+  // Run a key read and, when it succeeds, count the revision from before it as seen.
+  async function acknowledgeKeys(read) {
+    const rev = await api('/settings/revision').catch(() => null);
+    if (await read() && rev) lastRev.shared_keys = rev.shared_keys;
+  }
+
+  // A category opening: clean editors take the current values, dirty ones keep their draft and
+  // say so when the saved value has moved on.
+  function enterBlocks(names) {
+    pending = null; // the Never say input is gone with the old page
+    for (const name of names) {
+      if (!blockDirty(name)) {
+        clearStale(name);
+        resetCleanDraft(name);
+        continue;
+      }
+      let moved = false;
+      if (name === 'name') moved = nameBaseline !== (data.user_name || '');
+      else if (name === 'thread-view') moved = folderBaseline !== (data.default_project_folder || '');
+      else if (name === 'writing') moved = styleFields(styleBaseline) !== styleFields(data.style);
+      else if (name === 'balancing') moved = BALANCE_KEYS.some((k) => stable(balBaseline[k]) !== stable(data[k]));
+      else if (name === 'templates' && isLessons(selected)) {
+        const texts = (list) => stable(list.map((l) => [l.id, l.text]));
+        moved = Boolean(lessonEdit.baseList) && texts(lessonEdit.baseList) !== texts(lessonList(lessonEdit.role));
+      } else if (name === 'templates' && draftBaseline?.id) {
+        const found = data.templates.find((t) => t.id === draftBaseline.id);
+        moved = !found || editable(found) !== editable(draftBaseline);
+      }
+      if (moved) staleBlocks.add(name);
+    }
   }
 
   function setNote(text, bad) {
@@ -155,26 +492,35 @@
   function drawDiagram() {
     const box = document.getElementById('diagram-choices');
     if (!box || !youShown()) return;
+    swapKeepingFocus(box, () => paintDiagram(box));
+  }
+
+  function paintDiagram(box) {
     if (!diagram) { box.replaceChildren(h('span', { class: 'hint', text: 'Reading each machine\u2026' })); return; }
     const { agreed, lines } = diagramView();
     box.replaceChildren(
       h('div', { class: 'diagram-radios', role: 'radiogroup', 'aria-label': 'Diagram sensitivity' },
         DIAGRAM_CHOICES.map(([value, name, line]) => h('button', {
-          type: 'button', class: 'choice', role: 'radio', 'aria-checked': String(agreed === value),
+          type: 'button', class: 'choice', role: 'radio', 'aria-checked': String(agreed === value), 'data-focus': `diagram:${value}`,
           onclick: () => saveDiagram(value),
         }, h('span', { class: 'choice-name', text: name }), h('span', { class: 'hint', text: line })))),
       ...(agreed ? [] : [h('p', { class: 'note diagram-lines', role: 'status' }, lines.map((line, i) => [i ? h('br') : null, line]))]));
   }
 
-  async function loadDiagram() {
-    if (!youShown()) return; // a save can finish after You was left
+  // True when the hub answered, whatever each machine said.
+  async function loadDiagram({ fromRefresh = false } = {}) {
+    if (!youShown()) return false; // a save can finish after You was left
     const read = ++diagramReads;
     let next;
+    let ok = true;
     try { next = await api('/settings/diagram-sensitivity'); }
-    catch (e) { next = { machines: { hub: { error: e.message } } }; }
-    if (read !== diagramReads) return;
+    catch (e) { ok = false; next = { machines: { hub: { error: e.message } } }; }
+    if (read !== diagramReads) return false;
     diagram = next;
-    drawDiagram();
+    if (ok) acknowledgeStart('diagram');
+    if (fromRefresh && blockFocused('diagrams')) deferBlock('diagrams');
+    else drawDiagram();
+    return ok;
   }
 
   // Diagrams is read each time You comes on screen: opened, or uncovered when a phone's list
@@ -228,15 +574,30 @@
   // Redraw one model cell in place: every other cell keeps what is typed or open in it.
   function redrawCell(provider, slot) {
     const host = document.querySelector(`[data-cell="tiers:${provider}:${slot}"]`);
-    if (host) swapKeepingFocus(host, () => host.replaceWith(modelPicker(provider, slot)));
+    if (!host) return;
+    swapKeepingFocus(host, () => host.replaceWith(modelPicker(provider, slot)));
+    // Only this cell: the same reply can carry another tab's change to a cell still drawn old.
+    if (renderedTiers) {
+      renderedTiers.models[provider] = { ...renderedTiers.models[provider], [slot]: structuredClone(data.models[provider]?.[slot] ?? null) };
+    }
   }
 
-  // A repaint replaces what had the keyboard focus; give it back to the same control.
+  // A repaint replaces what had the keyboard focus; give it back to the same control, and only
+  // to one that is certainly the same: never a neighbouring row.
   function swapKeepingFocus(host, swap) {
     const focused = document.activeElement;
-    const key = focused && host.contains(focused) ? focused.closest('[data-focus]')?.dataset.focus : null;
+    let selector = null;
+    if (focused && focused !== host && host.contains(focused)) {
+      const keyed = focused.closest('[data-focus]');
+      const label = focused.getAttribute('aria-label');
+      if (keyed) selector = `[data-focus="${CSS.escape(keyed.dataset.focus)}"]`;
+      else if (focused.id) selector = `#${CSS.escape(focused.id)}`;
+      else if (label) selector = `${focused.tagName.toLowerCase()}[aria-label="${CSS.escape(label)}"]`;
+    }
     swap();
-    if (key && !focused.isConnected) panel.querySelector(`[data-focus="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+    if (!selector || focused.isConnected) return;
+    const found = (host.isConnected ? host : panel).querySelectorAll(selector);
+    if (found.length === 1) found[0].focus({ preventScroll: true });
   }
   function repaint(...names) {
     for (const name of names) {
@@ -250,8 +611,8 @@
   async function refreshModels(provider, slot) {
     const ticket = ++modelSaves;
     unreadCells.set(`${provider}:${slot}`, [provider, slot]);
-    let fresh;
-    try { fresh = await api('/settings'); } catch {
+    let fresh, startGen;
+    try { ({ fresh, startGen } = await readSettingsAfterWrite()); } catch {
       if (ticket !== modelSaves) return;
       unreadCells.clear();
       const host = document.querySelector(`[data-cell="tiers:${provider}:${slot}"]`);
@@ -259,12 +620,19 @@
       return;
     }
     if (ticket !== modelSaves) return;
-    data.models = fresh.models;
-    data.model_options = fresh.model_options;
-    data.legacy_lead_diffs = fresh.legacy_lead_diffs;
+    // Tiers is left as drawn, but for the saved cells, when nothing else it shows has changed.
+    const others = (d) => {
+      const models = structuredClone(d.models);
+      for (const [p, s] of unreadCells.values()) if (models[p]) delete models[p][s];
+      return stable([models, d.heads_up, d.harnesses]);
+    };
+    const keepTiers = Boolean(renderedTiers && renderedSlice.has('tiers') && blockHost('tiers')) && others(renderedTiers) === others(fresh);
+    const drawnOptions = keepTiers ? JSON.parse(renderedSlice.get('tiers'))[1] : null;
+    if (!applySettingsSnapshot(fresh, { startGen, skipBlocks: keepTiers ? ['tiers'] : [], source: 'models' })) return;
     // A save overtaken by a later one is drawn here too, by the later save's read.
     for (const saved of unreadCells.values()) redrawCell(...saved);
     unreadCells.clear();
+    if (keepTiers) renderedSlice.set('tiers', sliceKey('tiers', { ...data, model_options: drawnOptions }));
     repaintPreviews();
   }
 
@@ -288,7 +656,8 @@
       for (const b of pills?.children || []) b.setAttribute('aria-checked', String(b.dataset.value === value));
     };
 
-    async function commit(model, newEffort) {
+    const commit = (model, newEffort) => withLocalWrite(() => saveCell(model, newEffort));
+    async function saveCell(model, newEffort) {
       const body = { provider, slot, model };
       if (model && newEffort) body.effort = newEffort;
       let res;
@@ -307,6 +676,7 @@
       repaintPreviews();
       setNote(SAVED, false);
       await refreshModels(provider, slot);
+      if (staleBlocks.has('tiers') && !blockDirty('tiers')) refreshClean('tiers');
     }
 
     select.addEventListener('change', () => {
@@ -357,6 +727,7 @@
       const res = await api('/settings/models/heads-up', { method: 'POST', body });
       data.models = res.models;
       data.heads_up = res.heads_up;
+      clearStale('tiers');
       repaint('tiers');
       repaintPreviews();
       // A switched tier can change the notice, or bring one where nothing differed before.
@@ -365,22 +736,23 @@
   }
 
   function headsUpLine(item, tier) {
+    const key = (action) => `headsup:${item.kind}:${item.tier || ''}:${item.model || ''}:${action}`;
     const line = h('div', { class: 'hu', 'data-kind': item.kind });
     const actions = h('div', { class: 'hu-actions' });
     let text;
     let title = null;
     if (item.kind === 'malformed') {
       text = "The models file couldn't be read, so the shipped defaults are showing.";
-      actions.append(h('button', { type: 'button', class: 'small', text: 'Reset to defaults', onclick: () => headsUpAction({ action: 'reset' }, line) }));
+      actions.append(h('button', { type: 'button', class: 'small', text: 'Reset to defaults', 'data-focus': key('reset'), onclick: () => headsUpAction({ action: 'reset' }, line) }));
     } else if (item.kind === 'tierless') {
       text = `${item.model} is available but fits no tier.`;
-      actions.append(h('button', { type: 'button', class: 'small', text: 'Skip', onclick: () => headsUpAction({ action: 'skip', model: item.model }, line) }));
+      actions.append(h('button', { type: 'button', class: 'small', text: 'Skip', 'data-focus': key('skip'), onclick: () => headsUpAction({ action: 'skip', model: item.model }, line) }));
     } else {
       title = item.kind === 'newer' ? 'Newer model' : 'New model';
       text = ` · ${item.model} is available for ${tier}.`;
       actions.append(
-        h('button', { type: 'button', class: 'small primary', text: 'Switch', onclick: () => headsUpAction({ action: 'switch', tier: item.tier, model: item.model }, line) }),
-        h('button', { type: 'button', class: 'small', text: 'Skip', onclick: () => headsUpAction({ action: 'skip', model: item.model }, line) }));
+        h('button', { type: 'button', class: 'small primary', text: 'Switch', 'data-focus': key('switch'), onclick: () => headsUpAction({ action: 'switch', tier: item.tier, model: item.model }, line) }),
+        h('button', { type: 'button', class: 'small', text: 'Skip', 'data-focus': key('skip'), onclick: () => headsUpAction({ action: 'skip', model: item.model }, line) }));
     }
     line.append(h('span', { class: 'msg' }, title && h('strong', { text: title }), text), actions);
     return line;
@@ -469,6 +841,7 @@
       try {
         const result = await api('/settings/preferences', { method: 'PUT', body });
         data.lead_name_list = result.lead_name_list; data.lead_names = result.lead_names;
+        markRendered('lead-names');
       } catch (error) {
         ok = false;
         if (ticket === leadSaves.latest) leadNamesError(error.message);
@@ -520,8 +893,9 @@
   // input and the typed value stays.
   function folderRow() {
     const saved = data.default_project_folder || '';
+    if (folderDraft === null) folderBaseline = saved;
     const input = h('input', { type: 'text', id: 'default-folder', 'aria-label': 'Default project folder', placeholder: '~/projects', autocomplete: 'off', spellcheck: false, value: folderDraft === null ? saved : folderDraft });
-    const save = h('button', { type: 'button', text: 'Save' });
+    const save = h('button', { type: 'button', text: 'Save', 'data-focus': 'folder:save' });
     const status = h('p', { class: 'note', role: 'status' });
     const host = h('div', { class: 'ctl wide' }, h('div', { class: 'folder' }, input, save), status);
     input.addEventListener('input', () => { folderDraft = input.value; status.textContent = ''; inlineErr(host, ''); });
@@ -533,8 +907,16 @@
         const res = await api('/settings/preferences', { method: 'PUT', body: { default_project_folder: input.value.trim() } });
         data.default_project_folder = res.default_project_folder || '';
         folderDraft = null;
+        folderBaseline = data.default_project_folder;
         input.value = data.default_project_folder;
         status.textContent = 'Saved';
+        if (staleBlocks.has('thread-view')) {
+          // The rest of the block was held back too: draw it all as it is now.
+          clearStale('thread-view');
+          repaint('thread-view');
+          const drawn = document.getElementById('default-folder')?.closest('.ctl')?.querySelector('.note');
+          if (drawn) drawn.textContent = 'Saved';
+        } else markRendered('thread-view');
       } catch (e) { inlineErr(host, e.message); }
       save.disabled = false;
     };
@@ -548,8 +930,9 @@
   // Your name: typed, then saved with the button. Blank means agents say "the user".
   function nameRow() {
     const saved = data.user_name || '';
+    if (nameDraft === null) nameBaseline = saved;
     const input = h('input', { type: 'text', id: 'user-name', 'aria-label': 'Your name', placeholder: 'the user', autocomplete: 'off', maxLength: 80, value: nameDraft === null ? saved : nameDraft });
-    const save = h('button', { type: 'button', text: 'Save' });
+    const save = h('button', { type: 'button', text: 'Save', 'data-focus': 'name:save' });
     const status = h('p', { class: 'note', role: 'status' });
     const host = h('div', { class: 'ctl wide' }, h('div', { class: 'folder' }, input, save), status);
     input.addEventListener('input', () => { nameDraft = input.value; status.textContent = ''; inlineErr(host, ''); });
@@ -561,8 +944,11 @@
         const res = await api('/settings/preferences', { method: 'PUT', body: { user_name: input.value.trim() } });
         data.user_name = res.user_name || '';
         nameDraft = null;
+        nameBaseline = data.user_name;
         input.value = data.user_name;
         status.textContent = 'Saved';
+        clearStale('name');
+        markRendered('name');
       } catch (e) { inlineErr(host, e.message); }
       save.disabled = false;
     };
@@ -679,11 +1065,9 @@
   // The notice's rows follow the tiers; read them again while it is showing, or when forced.
   async function refreshDiffs(force) {
     if (!force && !data.legacy_lead_diffs?.length) return;
-    try {
-      const fresh = await api('/settings');
-      data.legacy_lead_diffs = fresh.legacy_lead_diffs;
-      repaint('agents');
-    } catch { /* the notice stays as drawn */ }
+    const startGen = localWriteGen;
+    try { applySettingsSnapshot(await api('/settings'), { startGen, source: 'diffs' }); }
+    catch { /* the notice stays as drawn */ }
   }
 
   function saveTier(role, tier) {
@@ -859,17 +1243,16 @@
       button.disabled = true;
       try { await run(); } catch (e) { button.disabled = false; inlineErr(box, e.message); }
     };
-    const use = (d) => async () => {
+    const use = (d) => () => withLocalWrite(async () => {
       const body = { provider: d.provider, slot: d.tier, model: d.legacy_model };
       if (d.legacy_effort) body.effort = d.legacy_effort;
       data.models = (await api('/settings/models', { method: 'PUT', body })).models;
-      const fresh = await api('/settings');
-      data.models = fresh.models;
-      data.model_options = fresh.model_options;
-      data.legacy_lead_diffs = fresh.legacy_lead_diffs;
+      const { fresh, startGen } = await readSettingsAfterWrite();
+      applySettingsSnapshot(fresh, { startGen, source: 'legacy' });
+      for (const name of ['agents', 'tiers', 'assistants']) clearStale(name);
       repaint('agents', 'tiers', 'assistants');
       setNote(SAVED, false);
-    };
+    });
     const dismiss = async () => {
       await api('/settings/preferences', { method: 'PUT', body: { lead_tier_notice_dismissed: true } });
       data.legacy_lead_diffs = [];
@@ -881,10 +1264,10 @@
       h('ul', {}, diffs.map((d) => h('li', { 'data-provider': d.provider, 'data-role': d.role },
         h('span', { text: `${d.label} ${d.role} was ${modelText(d.legacy_model, d.legacy_effort)}; ${TIER_NAME[d.tier]} is ${modelText(d.tier_model, d.tier_effort)}` }),
         d.tier_model === null && d.legacy_model !== null && h('button', {
-          type: 'button', class: 'small', text: `Use ${d.legacy_model} for ${TIER_NAME[d.tier]}`,
+          type: 'button', class: 'small', text: `Use ${d.legacy_model} for ${TIER_NAME[d.tier]}`, 'data-focus': `legacy:${d.provider}:${d.role}`,
           onclick: (ev) => send(ev.currentTarget, use(d)),
         })))),
-      h('button', { type: 'button', class: 'small m-dismiss', text: 'Dismiss', onclick: (ev) => send(ev.currentTarget, dismiss) }));
+      h('button', { type: 'button', class: 'small m-dismiss', text: 'Dismiss', 'data-focus': 'legacy:dismiss', onclick: (ev) => send(ev.currentTarget, dismiss) }));
     return box;
   }
 
@@ -910,6 +1293,7 @@
   }
 
   function renderTiers() {
+    renderedTiers = structuredClone({ models: data.models, heads_up: data.heads_up, harnesses: data.harnesses });
     const items = (data.heads_up || []).slice();
     if (data.models.malformed && !items.some((i) => i.kind === 'malformed')) items.unshift({ kind: 'malformed' });
     const lines = items.filter((i) => i.kind === 'malformed' || i.kind === 'tierless').map((i) => headsUpLine(i));
@@ -1029,10 +1413,18 @@
     selected = id;
     confirming = false;
     fullPrompt = null;
-    if (isLessons(id)) { lessonEdit = { role: id.slice(8), texts: {}, removals: new Set(), confirming: null, history: new Set() }; draft = null; loadLessonThreads(); return; }
+    if (isLessons(id)) {
+      const role = id.slice(8);
+      // `data` is not read yet when the address opens an editor; the first paint fills baseList.
+      lessonEdit = { role, texts: {}, removals: new Set(), confirming: null, history: new Set(), baseList: data ? structuredClone(lessonList(role)) : null };
+      draft = null; draftBaseline = null;
+      loadLessonThreads();
+      return;
+    }
     const found = data.templates.find((t) => t.id === id);
     draft = found ? structuredClone(found) : blankDraft();
     if (found && !draft.switches) draft.switches = {};
+    draftBaseline = structuredClone(draft);
   }
 
   function templateBody() {
@@ -1046,25 +1438,37 @@
     return { name: draft.name.trim(), role: draft.role, scope: draft.scope, switches, text: draft.text };
   }
 
-  async function reload(keep) {
-    data = await api('/settings');
+  // skipBlocks names the caller's own block, which it repaints itself.
+  async function reload(keep, { skipBlocks = [], source = 'reload' } = {}) {
+    const { fresh, startGen } = await readSettingsAfterWrite();
+    applySettingsSnapshot(fresh, { startGen, skipBlocks, source });
     if (keep) {
-      const fresh = data.templates.find((t) => t.id === selected);
-      if (fresh && draft) { draft.in_use = fresh.in_use; draft.live_sessions = fresh.live_sessions; }
+      const found = data.templates.find((t) => t.id === selected);
+      if (!found || !draft) return;
+      if (templateEdited()) { draft.in_use = found.in_use; draft.live_sessions = found.live_sessions; }
+      else {
+        draft = structuredClone(found);
+        if (!draft.switches) draft.switches = {};
+        draftBaseline = structuredClone(draft);
+      }
     }
   }
+  const OWN_TEMPLATES = { skipBlocks: ['templates'] };
 
   async function saveTemplate(errHost) {
     const body = templateBody();
     if (!body.name) { inlineErr(errHost, 'Give the template a name.'); return; }
     try {
-      let saved;
-      if (draft.id) saved = await api('/settings/templates/' + encodeURIComponent(draft.id), { method: 'PUT', body });
-      else saved = await api('/settings/templates', { method: 'POST', body });
-      await reload(false);
-      select(saved.id);
-      paint('templates');
-      setNote('Saved. Changes apply to agents started after you save.', false);
+      await withLocalWrite(async () => {
+        let saved;
+        if (draft.id) saved = await api('/settings/templates/' + encodeURIComponent(draft.id), { method: 'PUT', body });
+        else saved = await api('/settings/templates', { method: 'POST', body });
+        await reload(false, OWN_TEMPLATES);
+        clearStale('templates');
+        select(saved.id);
+        paint('templates');
+        setNote('Saved. Changes apply to agents started after you save.', false);
+      });
     } catch (e) { inlineErr(errHost, e.message); setNote('', false); }
   }
 
@@ -1072,30 +1476,40 @@
     const body = templateBody();
     body.name = (body.name || 'Untitled') + ' copy';
     try {
-      const saved = await api('/settings/templates', { method: 'POST', body });
-      await reload(false);
-      select(saved.id);
-      paint('templates');
-      setNote('Duplicated.', false);
+      await withLocalWrite(async () => {
+        const saved = await api('/settings/templates', { method: 'POST', body });
+        await reload(false, OWN_TEMPLATES);
+        clearStale('templates');
+        select(saved.id);
+        paint('templates');
+        setNote('Duplicated.', false);
+      });
     } catch (e) { inlineErr(errHost, e.message); }
   }
 
   async function deleteTemplate(errHost) {
     try {
-      await api('/settings/templates/' + encodeURIComponent(draft.id), { method: 'DELETE' });
-      await reload(false);
-      select(data.templates[0] ? data.templates[0].id : 'new');
-      paint('templates');
-      setNote('Deleted.', false);
+      await withLocalWrite(async () => {
+        await api('/settings/templates/' + encodeURIComponent(draft.id), { method: 'DELETE' });
+        await reload(false, OWN_TEMPLATES);
+        clearStale('templates');
+        select(data.templates[0] ? data.templates[0].id : 'new');
+        paint('templates');
+        setNote('Deleted.', false);
+      });
     } catch (e) { inlineErr(errHost, e.message); }
   }
 
   async function toggleInUse(errHost) {
     try {
-      await api('/settings/templates/' + encodeURIComponent(draft.id), { method: 'PUT', body: { in_use: !draft.in_use } });
-      await reload(true);
-      paint('templates');
-      setNote(draft.in_use ? 'In use for new sessions.' : 'No longer in use.', false);
+      await withLocalWrite(async () => {
+        await api('/settings/templates/' + encodeURIComponent(draft.id), { method: 'PUT', body: { in_use: !draft.in_use } });
+        await reload(true, OWN_TEMPLATES);
+        // A banner already up stays: the draft it protects is still here.
+        deferredBlocks.delete('templates');
+        repaint('templates');
+        setNote(draft.in_use ? 'In use for new sessions.' : 'No longer in use.', false);
+      });
     } catch (e) { inlineErr(errHost, e.message); }
   }
 
@@ -1249,7 +1663,7 @@
     try {
       const res = await api('/threads?view=list');
       lessonThreads = Object.fromEntries((res.threads || []).map((t) => [t.id, t.title || t.slug || String(t.project || '').split('/').filter(Boolean).pop() || t.id]));
-      if (lessonEdit) paint('templates');
+      if (lessonEdit) repaint('templates');
     } catch { lessonThreads = lessonThreads || {}; }
   }
 
@@ -1262,8 +1676,9 @@
   }
 
   async function saveLessons(errHost) {
-    const role = lessonEdit.role;
-    const list = lessonList(role);
+    const edit = lessonEdit;
+    const role = edit.role;
+    const list = edit.baseList || []; // what was edited, so a removed lesson still gets its 409
     const edits = [];
     for (const item of list) {
       if (lessonEdit.removals.has(item.id)) continue;
@@ -1276,11 +1691,14 @@
     lessonEdit.saving = true;
     setLessonsBusy(true);
     try {
-      await api('/settings/lessons/' + encodeURIComponent(role), { method: 'PUT', body: { edits, removals } });
-      await reload(false);
-      lessonEdit = { role, texts: {}, removals: new Set(), confirming: null, history: lessonEdit.history };
-      setNote(SAVED, false);
-      paint('templates');
+      await withLocalWrite(async () => {
+        await api('/settings/lessons/' + encodeURIComponent(role), { method: 'PUT', body: { edits, removals } });
+        await reload(false, OWN_TEMPLATES);
+        clearStale('templates');
+        if (lessonEdit === edit) lessonEdit = { role, texts: {}, removals: new Set(), confirming: null, history: edit.history, baseList: structuredClone(lessonList(role)) };
+        setNote(SAVED, false);
+        paint('templates');
+      });
     } catch (e) {
       lessonEdit.saving = false;
       setLessonsBusy(false);
@@ -1306,7 +1724,7 @@
   const lessonRemoved = (role) => lessonHistory(role).filter(([, e]) => e.removed && e.versions.length).sort((a, b) => Date.parse(b[1].removed.at) - Date.parse(a[1].removed.at));
   const lessonWaiting = (role) => (data.lesson_waiting || []).filter((w) => w.role === role);
   const lessonFull = (role) => lessonList(role).length >= 12;
-  const lessonDirty = () => !!lessonEdit && (lessonEdit.removals.size > 0 || lessonList(lessonEdit.role).some((item) => lessonEdit.texts[item.id] !== undefined && lessonEdit.texts[item.id] !== item.text));
+  const lessonDirty = () => !!lessonEdit && (lessonEdit.removals.size > 0 || (lessonEdit.baseList || []).some((item) => lessonEdit.texts[item.id] !== undefined && lessonEdit.texts[item.id] !== item.text));
 
   // Every lessons route answers { lessons, history, waiting } for the role; take them in as they are.
   function applyLessonReply(role, res) {
@@ -1315,7 +1733,8 @@
     data.lesson_waiting = [...(data.lesson_waiting || []).filter((w) => w.role !== role), ...(res.waiting || [])];
   }
 
-  async function lessonAction(route, body, errHost) {
+  const lessonAction = (route, body, errHost) => withLocalWrite(() => runLessonAction(route, body, errHost));
+  async function runLessonAction(route, body, errHost) {
     const role = lessonEdit.role;
     inlineErr(errHost, '');
     const before = Object.fromEntries(lessonList(role).map((i) => [i.id, i.text]));
@@ -1323,6 +1742,7 @@
       const res = await api('/settings/lessons/' + encodeURIComponent(role) + '/' + route, { method: 'POST', body });
       applyLessonReply(role, res);
       const lost = keepLessonEdits(before);
+      if (!blockDirty('templates')) clearStale('templates');
       if (lost.length) {
         setNote('', false);
         paint('templates');
@@ -1333,8 +1753,9 @@
       paint('templates');
     } catch (e) {
       if (e.status === 409) {
-        await reload(false);
+        await reload(false, OWN_TEMPLATES);
         const lost = keepLessonEdits(before);
+        if (!blockDirty('templates')) clearStale('templates');
         paint('templates');
         if (showLessonLost(lost, [e.message])) return;
       }
@@ -1359,6 +1780,7 @@
     const lost = Object.entries(lessonEdit.texts).filter(([id, t]) => !ids.has(id) && t !== before[id] && typeof t === 'string' && t !== '').map(([, t]) => t);
     lessonEdit.texts = Object.fromEntries(Object.entries(lessonEdit.texts).filter(([id, t]) => ids.has(id) && t !== before[id]));
     lessonEdit.removals = new Set([...lessonEdit.removals].filter((id) => ids.has(id)));
+    lessonEdit.baseList = structuredClone(lessonList(lessonEdit.role));
     return lost;
   }
 
@@ -1385,13 +1807,13 @@
         h('span', { class: 'lesson-marks' },
           lessonMarkers({ ...v, saved_by: 'agent' }).map((m) => h('span', { class: 'lesson-mark', text: m })),
           h('span', { class: 'lesson-mark', text: `replaced by ${v.changed_by === 'user' ? 'you' : 'an agent'} ${shortDate(v.changed_at)}` })),
-        h('button', { type: 'button', class: 'restore-lesson', text: 'Restore', disabled: dirty || !!lessonEdit.saving, onclick: () => lessonAction('restore', { id, vid: v.vid }, errHost) })))));
+        h('button', { type: 'button', class: 'restore-lesson', text: 'Restore', 'data-focus': `lesson:${id}:restore:${v.vid}`, disabled: dirty || !!lessonEdit.saving, onclick: () => lessonAction('restore', { id, vid: v.vid }, errHost) })))));
   }
 
   function historyToggle(id, n) {
     if (!n) return null;
     const open = lessonEdit.history && lessonEdit.history.has(id);
-    return h('button', { type: 'button', class: 'history-toggle', 'aria-expanded': String(!!open), text: `History (${n})`, onclick: () => {
+    return h('button', { type: 'button', class: 'history-toggle', 'aria-expanded': String(!!open), text: `History (${n})`, 'data-focus': `lesson:${id}:history`, onclick: () => {
       lessonEdit.history = lessonEdit.history || new Set();
       if (open) lessonEdit.history.delete(id); else lessonEdit.history.add(id);
       paint('templates');
@@ -1413,7 +1835,7 @@
               h('span', { class: 'lesson-mark', text: `removed by ${entry.removed.by === 'user' ? 'you' : 'an agent'} ${shortDate(entry.removed.at)}` })),
             h('span', { class: 'lesson-buttons' },
               historyToggle(id, entry.versions.length),
-              h('button', { type: 'button', class: 'restore-lesson', text: 'Restore', disabled: dirty || !!lessonEdit.saving, onclick: () => lessonAction('restore', { id, vid: last.vid }, errHost) }))),
+              h('button', { type: 'button', class: 'restore-lesson', text: 'Restore', 'data-focus': `lesson:${id}:restore`, disabled: dirty || !!lessonEdit.saving, onclick: () => lessonAction('restore', { id, vid: last.vid }, errHost) }))),
           versionRows(id, entry, errHost, dirty));
       })));
   }
@@ -1432,8 +1854,8 @@
             lessonMarkers({ ...w, saved_by: 'agent' }).map((m) => h('span', { class: 'lesson-mark', text: m })),
             h('span', { class: 'lesson-mark', text: w.source === 'handoff' ? 'from a handoff' : 'from a file' })),
           h('span', { class: 'lesson-buttons' },
-            h('button', { type: 'button', class: 'add-waiting', text: 'Add', title: full ? 'Remove one first' : '', disabled: full || !!lessonEdit.saving, onclick: () => lessonAction('waiting', { wid: w.wid, action: 'add' }, errHost) }),
-            h('button', { type: 'button', class: 'discard-waiting', text: 'Discard', disabled: !!lessonEdit.saving, onclick: () => lessonAction('waiting', { wid: w.wid, action: 'discard' }, errHost) })))))));
+            h('button', { type: 'button', class: 'add-waiting', text: 'Add', 'data-focus': `waiting:${w.wid}:add`, title: full ? 'Remove one first' : '', disabled: full || !!lessonEdit.saving, onclick: () => lessonAction('waiting', { wid: w.wid, action: 'add' }, errHost) }),
+            h('button', { type: 'button', class: 'discard-waiting', text: 'Discard', 'data-focus': `waiting:${w.wid}:discard`, disabled: !!lessonEdit.saving, onclick: () => lessonAction('waiting', { wid: w.wid, action: 'discard' }, errHost) })))))));
   }
 
   async function exportLessons() {
@@ -1449,21 +1871,27 @@
 
   async function importLessons(file) {
     let lost = [];
-    try {
-      let res;
-      try { res = await fetch(API + '/settings/lessons/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: await file.arrayBuffer() }); } catch { throw new Error('Could not reach the hub.'); }
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.detail || body.error || body.message || ('http ' + res.status));
-      let text = `Added ${body.added}, skipped ${body.skipped} already here or removed or changed here, ${body.waiting} waiting for room`;
-      if (body.invalid > 0) text += `, ${body.invalid} unreadable`;
-      if (body.unknown_project > 0) text += `, ${body.unknown_project} for projects not on this machine (add the project, then import the file again)`;
-      const before = shownLessonTexts();
-      await reload(false);
-      setNote(text, false);
-      lost = before ? keepLessonEdits(before) : [];
-    } catch (e) { setNote(e.message, true); }
-    paint('templates');
-    showLessonLost(lost);
+    await withLocalWrite(async () => {
+      try {
+        let res;
+        try {
+          const bytes = await file.arrayBuffer();
+          res = await withMutationRequest(() => fetch(API + '/settings/lessons/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: bytes }));
+        } catch { throw new Error('Could not reach the hub.'); }
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.detail || body.error || body.message || ('http ' + res.status));
+        let text = `Added ${body.added}, skipped ${body.skipped} already here or removed or changed here, ${body.waiting} waiting for room`;
+        if (body.invalid > 0) text += `, ${body.invalid} unreadable`;
+        if (body.unknown_project > 0) text += `, ${body.unknown_project} for projects not on this machine (add the project, then import the file again)`;
+        const before = shownLessonTexts();
+        await reload(false, OWN_TEMPLATES);
+        clearStale('templates');
+        setNote(text, false);
+        lost = before ? keepLessonEdits(before) : [];
+      } catch (e) { setNote(e.message, true); }
+      paint('templates');
+      showLessonLost(lost);
+    });
   }
 
   function lessonsTools() {
@@ -1478,32 +1906,35 @@
   function renderLessonEditor() {
     const role = lessonEdit.role;
     const plural = LESSON_PLURAL[role] || role + 's';
-    const list = lessonList(role);
-    const errHost = h('div', { class: 'lesson-err' });
+    if (!lessonEdit.baseList) lessonEdit.baseList = structuredClone(lessonList(role));
     const dirty = lessonDirty();
+    // Unsaved edits keep their own rows; a clean editor shows, and starts from, what is saved.
+    if (!dirty) { lessonEdit.texts = {}; lessonEdit.baseList = structuredClone(lessonList(role)); }
+    const list = dirty ? lessonEdit.baseList : lessonList(role);
+    const errHost = h('div', { class: 'lesson-err' });
     const rows = list.map((item) => {
       const entry = (data.lesson_history || {})[item.id];
       const removed = lessonEdit.removals.has(item.id);
       const value = lessonEdit.texts[item.id] !== undefined ? lessonEdit.texts[item.id] : item.text;
-      const field = h('textarea', { class: 'lesson-text', rows: 2, maxLength: 300, value, disabled: removed || !!lessonEdit.saving, 'aria-label': 'Lesson text' });
+      const field = h('textarea', { class: 'lesson-text', rows: 2, maxLength: 300, value, disabled: removed || !!lessonEdit.saving, 'aria-label': 'Lesson text', 'data-focus': `lesson:${item.id}:text` });
       field.addEventListener('input', () => { lessonEdit.texts[item.id] = field.value; refreshRestore(); });
       const marks = lessonMarkers(item);
       const title = item.thread && lessonThreads && lessonThreads[item.thread];
       let remove;
-      if (removed) remove = h('button', { type: 'button', class: 'undo-remove', text: 'Undo', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.delete(item.id); paint('templates'); } });
-      else if (lessonEdit.confirming === item.id) remove = h('button', { type: 'button', class: 'danger confirm-remove', text: 'Really remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.add(item.id); lessonEdit.confirming = null; paint('templates'); } });
-      else remove = h('button', { type: 'button', class: 'danger remove-lesson', text: 'Remove', disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.confirming = item.id; paint('templates'); } });
+      if (removed) remove = h('button', { type: 'button', class: 'undo-remove', text: 'Undo', 'data-focus': `lesson:${item.id}:remove`, disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.delete(item.id); paint('templates'); } });
+      else if (lessonEdit.confirming === item.id) remove = h('button', { type: 'button', class: 'danger confirm-remove', text: 'Really remove', 'data-focus': `lesson:${item.id}:remove`, disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.removals.add(item.id); lessonEdit.confirming = null; paint('templates'); } });
+      else remove = h('button', { type: 'button', class: 'danger remove-lesson', text: 'Remove', 'data-focus': `lesson:${item.id}:remove`, disabled: !!lessonEdit.saving, onclick: () => { lessonEdit.confirming = item.id; paint('templates'); } });
       return h('li', { class: 'lesson-row' + (removed ? ' removed' : ''), 'data-id': item.id },
         field,
         h('div', { class: 'lesson-foot' },
           h('span', { class: 'lesson-marks' },
             marks.map((m) => h('span', { class: 'lesson-mark', text: m })),
-            title ? h('a', { class: 'lesson-from', href: '/wheelchair/app/thread?id=' + encodeURIComponent(item.thread), text: 'saved from ' + title }) : null,
+            title ? h('a', { class: 'lesson-from', 'data-focus': `lesson:${item.id}:from`, href: '/wheelchair/app/thread?id=' + encodeURIComponent(item.thread), text: 'saved from ' + title }) : null,
             removed ? h('span', { class: 'lesson-mark', text: 'will be removed when you save' }) : null),
           h('span', { class: 'lesson-buttons' }, entry ? historyToggle(item.id, entry.versions.length) : null, remove)),
         lessonStale(item) ? h('div', { class: 'lesson-stale' },
           h('span', { class: 'lesson-mark', text: 'Possibly out of date: not changed or kept since ' + shortDate(new Date(lessonStaleSince(item)).toISOString()) }),
-          h('button', { type: 'button', class: 'keep-lesson', text: 'Keep', disabled: !!lessonEdit.saving, onclick: () => lessonAction('keep', { id: item.id }, errHost) })) : null,
+          h('button', { type: 'button', class: 'keep-lesson', text: 'Keep', 'data-focus': `lesson:${item.id}:keep`, disabled: !!lessonEdit.saving, onclick: () => lessonAction('keep', { id: item.id }, errHost) })) : null,
         entry ? versionRows(item.id, entry, errHost, dirty) : null);
     });
     return h('div', { class: 'tpl-edit lessons-edit' },
@@ -1538,7 +1969,7 @@
         const staleN = lessons.filter(lessonStale).length;
         const id = 'lessons:' + role;
         list.append(h('button', {
-          type: 'button', class: 'tpl-item tpl-lessons', 'data-lessons': role, 'aria-current': String(selected === id),
+          type: 'button', class: 'tpl-item tpl-lessons', 'data-lessons': role, 'data-focus': `tpl:${id}`, 'aria-current': String(selected === id),
           onclick: () => { select(id); paint('templates'); },
         }, h('span', { class: 'nm', text: 'Lessons learned' }), h('span', { class: 'tag agent-tag', text: 'Written by agents · ' + lessons.length + (staleN ? ` · ${staleN} may be out of date` : '') + (waitingN ? ` · ${waitingN} waiting to add` : '') })));
       }
@@ -1547,7 +1978,7 @@
         if (t.in_use) tags.push(t.scope === 'all' ? 'in use' : 'in use here');
         if (t.scope_missing) tags.push('project no longer listed');
         list.append(h('button', {
-          type: 'button', class: 'tpl-item', 'data-id': t.id, 'aria-current': String(selected === t.id),
+          type: 'button', class: 'tpl-item', 'data-id': t.id, 'data-focus': `tpl:${t.id}`, 'aria-current': String(selected === t.id),
           onclick: () => { select(t.id); paint('templates'); },
         }, h('span', { class: 'nm', text: t.name }), h('span', { class: 'tag', text: tags.join(' · ') })));
       }
@@ -1604,7 +2035,7 @@
   function radios(label, options, key) {
     const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
       options.map(([value, text]) => h('button', {
-        type: 'button', role: 'radio', 'aria-checked': String(styleDraft[key] === value), text,
+        type: 'button', role: 'radio', 'aria-checked': String(styleDraft[key] === value), text, 'data-focus': `style:${key}:${value}`,
         onclick: () => {
           styleDraft[key] = value;
           for (const b of group.children) b.setAttribute('aria-checked', String(b.textContent === text));
@@ -1614,7 +2045,7 @@
   }
 
   function renderWriting() {
-    if (!styleDraft) styleDraft = structuredClone(data.style);
+    if (!styleDraft) { styleDraft = structuredClone(data.style); styleBaseline = structuredClone(data.style); }
     const errHost = h('div', {});
     const terms = h('select', { 'aria-label': 'Technical terms' }, TERMS.map(([v, l]) => h('option', { value: v, text: l })));
     terms.value = styleDraft.terms;
@@ -1686,6 +2117,9 @@
             data.style = res.style;
             data.style_version = res.style_version;
             styleDraft = structuredClone(res.style);
+            styleBaseline = structuredClone(res.style);
+            pending = null;
+            clearStale('writing');
             styleNote = 'Saved';
             inlineErr(errHost, '');
             paint('writing');
@@ -1748,9 +2182,7 @@
 
   // A repaint of Accounts would drop what is being typed, so it waits while a form is open.
   function accountsBusy() {
-    const focused = document.activeElement;
-    const typing = focused && blockHost('accounts')?.contains(focused) && /^(INPUT|SELECT|TEXTAREA)$/.test(focused.tagName);
-    return Boolean(editing || adding || typing);
+    return Boolean(editing || adding || blockFocused('accounts'));
   }
 
   async function refreshUsage() {
@@ -1760,8 +2192,8 @@
     if (ask !== usageAsks) return;
     if (next) usage = next;
     usageError = failure;
-    paint('usage');
-    if (!accountsBusy() && !(signCard && signCard.waiting && signCard.el.isConnected && blockHost('accounts')?.contains(signCard.el))) paint('accounts');
+    repaint('usage');
+    if (!accountsDirty() && !blockFocused('accounts')) repaint('accounts');
   }
 
   // After a sign-in or an account change. The hub keeps each machine's answer for 15 seconds;
@@ -1920,13 +2352,24 @@
     return [...parts, reading.at && 'as of ' + when(reading.at)].filter(Boolean).join(' · ');
   }
 
+  // The read after an account change; the caller repaints Accounts once usage is read too.
+  async function reloadAccounts() {
+    await reload(false, { skipBlocks: ['accounts'], source: 'account-reload' });
+    clearStale('accounts');
+    markRendered('accounts');
+  }
+
   async function mutate(host, fn) {
-    try { await fn(); } catch (e) { inlineErr(host, e.message); return false; }
-    inlineErr(host, '');
-    editing = null;
-    data = await api('/settings');
+    const ok = await withLocalWrite(async () => {
+      try { await fn(); } catch (e) { inlineErr(host, e.message); return false; }
+      inlineErr(host, '');
+      editing = null;
+      await reloadAccounts();
+      return true;
+    });
+    if (!ok) return false;
     await refreshUsage();
-    paint('accounts');
+    repaint('accounts');
     refreshStatus();
     return true;
   }
@@ -1947,6 +2390,7 @@
   function accountCard(a) {
     const isDefault = a.id === `default-${a.provider}`;
     const card = h('div', { class: 'acct', 'data-account': a.id });
+    const key = (action) => `account:${a.id}:${action}`;
     const machines = Object.entries(a.machines || {});
     const states = { signed_in: 'signed in', signed_out: 'signed out', unknown: 'unknown' };
     const stateName = (st) => (st && typeof st === 'object' ? st.state : st);
@@ -1959,40 +2403,40 @@
       machines.length && h('ul', { class: 'machines' }, machines.map(([m, st]) => h('li', { 'data-machine': m, 'data-state': stateName(st) },
         h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + stateName(st), text: st && st.state === 'problem' ? st.text : (states[stateName(st)] || stateName(st)) }),
         st && st.warning && h('span', { class: 'mstate note', text: st.warning }),
-        stateName(st) !== 'signed_in' && h('button', { type: 'button', class: 'small', text: 'Sign in', 'aria-label': `Sign in ${a.name} on ${m}`, onclick: () => openSignin(a, m) })))),
+        stateName(st) !== 'signed_in' && h('button', { type: 'button', class: 'small', text: 'Sign in', 'aria-label': `Sign in ${a.name} on ${m}`, 'data-focus': key('signin:' + m), onclick: () => openSignin(a, m) })))),
       h('p', { class: 'hint acct-usage', text: usageLine(a.reading) }));
 
     const edit = editing && editing.id === a.id ? editing.kind : null;
     if (edit === 'rename') {
-      const name = h('input', { value: a.name, 'aria-label': 'Account name' });
+      const name = h('input', { value: a.name, 'aria-label': 'Account name', 'data-focus': key('name') });
       card.append(h('div', { class: 'actions' }, name,
-        h('button', { type: 'button', class: 'primary small', text: 'Save', onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body: { name: name.value } })) }),
-        h('button', { type: 'button', class: 'small', text: 'Cancel', onclick: () => { editing = null; paint('accounts'); } })));
+        h('button', { type: 'button', class: 'primary small', text: 'Save', 'data-focus': key('save'), onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body: { name: name.value } })) }),
+        h('button', { type: 'button', class: 'small', text: 'Cancel', 'data-focus': key('cancel'), onclick: () => { editing = null; paint('accounts'); } })));
     } else if (edit === 'plan') {
       const plan = planSelect(a.provider, a.plan);
       const weight = h('input', { type: 'number', min: '0.1', step: 'any', placeholder: 'weight (optional)', 'aria-label': 'Weight override' });
       card.append(h('div', { class: 'actions' }, plan, weight,
-        h('button', { type: 'button', class: 'primary small', text: 'Save', onclick: () => {
+        h('button', { type: 'button', class: 'primary small', text: 'Save', 'data-focus': key('save'), onclick: () => {
           const body = { plan: plan.value };
           if (weight.value.trim() !== '') body.weight = Number(weight.value);
           return mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body }));
         } }),
-        h('button', { type: 'button', class: 'small', text: 'Cancel', onclick: () => { editing = null; paint('accounts'); } })),
+        h('button', { type: 'button', class: 'small', text: 'Cancel', 'data-focus': key('cancel'), onclick: () => { editing = null; paint('accounts'); } })),
       h('span', { class: 'hint', text: 'Weight is how big this account is next to the others. Leave it blank to use the plan\'s.' }));
     } else if (edit === 'remove') {
       card.append(h('div', { class: 'actions' }, h('span', { text: isDefault ? `Remove the default login? Agents stop using this machine's own ${PROVIDER_NAME[a.provider]} login.` : `Remove ${a.name}?` }),
-        h('button', { type: 'button', class: 'danger small', text: 'Remove', onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'DELETE' })) }),
-        h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { editing = null; paint('accounts'); } })));
+        h('button', { type: 'button', class: 'danger small', text: 'Remove', 'data-focus': key('confirm-remove'), onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'DELETE' })) }),
+        h('button', { type: 'button', class: 'small', text: 'Keep', 'data-focus': key('keep'), onclick: () => { editing = null; paint('accounts'); } })));
     } else {
       card.append(h('div', { class: 'actions' },
-        h('button', { type: 'button', class: 'small', text: a.paused ? 'Resume' : 'Pause', onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body: { paused: !a.paused } })) }),
-        h('button', { type: 'button', class: 'small', text: 'Rename', onclick: () => { editing = { id: a.id, kind: 'rename' }; paint('accounts'); } }),
-        h('button', { type: 'button', class: 'small', text: 'Change plan', onclick: () => { editing = { id: a.id, kind: 'plan' }; paint('accounts'); } }),
-        h('button', { type: 'button', class: 'small', text: 'Remove', onclick: () => { editing = { id: a.id, kind: 'remove' }; paint('accounts'); } })));
+        h('button', { type: 'button', class: 'small', text: a.paused ? 'Resume' : 'Pause', 'data-focus': key('pause'), onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body: { paused: !a.paused } })) }),
+        h('button', { type: 'button', class: 'small', text: 'Rename', 'data-focus': key('rename'), onclick: () => { editing = { id: a.id, kind: 'rename' }; paint('accounts'); } }),
+        h('button', { type: 'button', class: 'small', text: 'Change plan', 'data-focus': key('plan'), onclick: () => { editing = { id: a.id, kind: 'plan' }; paint('accounts'); } }),
+        h('button', { type: 'button', class: 'small', text: 'Remove', 'data-focus': key('remove'), onclick: () => { editing = { id: a.id, kind: 'remove' }; paint('accounts'); } })));
     }
     if (justAdded === a.id) {
       card.append(h('div', { class: 'actions just-added' }, h('span', { text: 'Added. Sign in on:' }),
-        machineNames().map((m) => h('button', { type: 'button', class: 'primary small', text: m, 'aria-label': `Sign in ${a.name} on ${m}`, onclick: () => openSignin(a, m) }))));
+        machineNames().map((m) => h('button', { type: 'button', class: 'primary small', text: m, 'aria-label': `Sign in ${a.name} on ${m}`, 'data-focus': key('added:' + m), onclick: () => openSignin(a, m) }))));
     }
     return card;
   }
@@ -2001,12 +2445,14 @@
     const draft = adding;
     if (!draft) return;
     try {
-      const made = await api('/settings/accounts', { method: 'POST', body: { provider: draft.provider, name: draft.name.trim(), plan: draft.plan } });
-      justAdded = made.id;
-      if (adding === draft) adding = null;
-      data = await api('/settings');
+      await withLocalWrite(async () => {
+        const made = await api('/settings/accounts', { method: 'POST', body: { provider: draft.provider, name: draft.name.trim(), plan: draft.plan } });
+        justAdded = made.id;
+        if (adding === draft) adding = null;
+        await reloadAccounts();
+      });
       await refreshUsage();
-      paint('accounts');
+      repaint('accounts');
       refreshStatus();
     } catch (e) {
       if (adding === draft) {
@@ -2021,7 +2467,7 @@
 
   function addButton(provider) {
     return h('div', { class: 'actions' }, h('button', {
-      type: 'button', class: 'small add-account', text: 'Add account',
+      type: 'button', class: 'small add-account', text: 'Add account', 'data-focus': `account:add:${provider}`,
       onclick: () => { adding = { provider, name: '', plan: 'unknown', warn: false }; paint('accounts'); },
     }));
   }
@@ -2063,7 +2509,7 @@
   // A removed default account can be brought back; it is the CLI's own login on each machine.
   function restoreDefault(provider) {
     const row = h('div', { class: 'actions restore-default' });
-    row.append(h('button', { type: 'button', class: 'small', text: 'Add back the default login', onclick: () => mutate(row, () => api(`/settings/accounts/default-${provider}/restore`, { method: 'POST' })) }));
+    row.append(h('button', { type: 'button', class: 'small', text: 'Add back the default login', 'data-focus': `account:restore:${provider}`, onclick: () => mutate(row, () => api(`/settings/accounts/default-${provider}/restore`, { method: 'POST' })) }));
     return row;
   }
 
@@ -2098,7 +2544,8 @@
   function ensureDraft() {
     if (balDraft) return;
     balDraft = {};
-    for (const k of ['within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back']) balDraft[k] = structuredClone(data[k]);
+    for (const k of BALANCE_KEYS) balDraft[k] = structuredClone(data[k]);
+    balBaseline = structuredClone(balDraft);
   }
 
   // A Save sends only the balancing box's own keys (the provider orders live on Models) and
@@ -2109,7 +2556,9 @@
       for (const k of keys) {
         data[k] = res[k] !== undefined ? res[k] : balDraft[k];
         balDraft[k] = structuredClone(data[k]);
+        balBaseline[k] = structuredClone(data[k]);
       }
+      clearStale('balancing');
       reserveReads++;
       data.reserved_provider = res.reserved_provider;
       inlineErr(host, '');
@@ -2137,10 +2586,14 @@
   // switched elsewhere). Only the words change, in place, so nothing typed or focused moves.
   async function readReserved() {
     const read = ++reserveReads;
+    const startGen = localWriteGen;
     let res;
     try { res = await api('/settings'); } catch { return; }
     if (read !== reserveReads) return;
-    data.reserved_provider = res.reserved_provider;
+    if (applySettingsSnapshot(res, { startGen, source: 'reserved' })) paintReserveWords();
+  }
+
+  function paintReserveWords() {
     const box = document.getElementById('bal-save-lead');
     if (!box) return;
     const texts = reserveTexts();
@@ -2173,7 +2626,7 @@
           h('span', { class: 'usage-spend-text', text: spendText(f.spend) })));
     }
     return h('div', { class: 'usage-prov' + (f.amber ? ' amber' : ''), 'data-provider': provider },
-      h('button', { type: 'button', class: 'usage-toggle', 'aria-expanded': String(open), onclick: () => { openProvider = open ? null : provider; paint('usage'); } },
+      h('button', { type: 'button', class: 'usage-toggle', 'aria-expanded': String(open), 'data-focus': `usage:provider:${provider}`, onclick: () => { openProvider = open ? null : provider; paint('usage'); } },
         h('span', { class: 'usage-name', text: f.label }),
         h('span', { class: 'bar', role: 'img', 'aria-label': left === null ? 'no reading' : pct(left * 100) + ' of the week left' },
           h('span', { style: `width:${left === null ? 0 : Math.round(Math.min(1, Math.max(0, left)) * 100)}%` })),
@@ -2222,7 +2675,7 @@
     const reserveLabel = texts.save;
     const within = h('select', { id: 'bal-within', 'aria-label': 'Within a provider', onchange: (ev) => { balDraft.within = ev.target.value; } },
       WITHIN.map(([v, l]) => h('option', { value: v, text: l, selected: v === balDraft.within })));
-    const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing(['within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'], settingsBox) });
+    const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing(BALANCE_KEYS, settingsBox) });
     settingsBox.append(
       h('h2', { id: 'bal', text: 'Balancing' }),
       h('div', { class: 'box rows' },
@@ -2266,13 +2719,14 @@
   }
   function beginBackground(v) {
     if (v.dirty) return;
-    const m = bg.current().metadata;
+    // What the controls show, which a held-back change elsewhere may have left behind.
+    const m = v.renderedMeta || bg.current().metadata;
     if (!m) return;
     v.dirty = true; v.revision = m.revision; v.imageId = m.image_id;
     v.opacity = m.opacity; v.image = null; v.token = bg.acquire();
   }
   function repaintBackground(v) {
-    if (youShown() && backgroundVisit === v) paint('background');
+    if (youShown() && backgroundVisit === v) repaint('background');
   }
   function backgroundStateKey(state) {
     const m = state.metadata;
@@ -2282,6 +2736,7 @@
   async function selectBackground(v, file) {
     if (!file || v.saving) return;
     cancelBackgroundCandidate(v);
+    v.baseRevision = bg.current().metadata?.revision ?? null;
     const op = ++v.op; v.pending = true; v.error = ''; repaintBackground(v);
     let url;
     try {
@@ -2312,21 +2767,24 @@
       if (backgroundVisit === v && op === v.op) { v.pendingUrl = null; v.pendingImage = null; v.pending = false; repaintBackground(v); }
     }
   }
-  async function saveBackground(v) {
+  const saveBackground = (v) => withLocalWrite(() => commitBackground(v));
+  async function commitBackground(v) {
     if (!v.dirty || v.pending || v.saving) return;
     v.saving = true; v.error = ''; v.status = ''; repaintBackground(v);
     try {
       let response;
-      if (v.file) response = await fetch(API + '/settings/background/upload?revision=' + v.revision + '&opacity=' + v.opacity, { method: 'POST', headers: { 'content-type': v.mediaType }, body: v.file });
-      else response = await fetch(API + '/settings/background', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision: v.revision, image_id: v.imageId, opacity: v.opacity }) });
+      response = await withMutationRequest(() => (v.file
+        ? fetch(API + '/settings/background/upload?revision=' + v.revision + '&opacity=' + v.opacity, { method: 'POST', headers: { 'content-type': v.mediaType }, body: v.file })
+        : fetch(API + '/settings/background', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision: v.revision, image_id: v.imageId, opacity: v.opacity }) })));
       const body = await response.json().catch(() => ({}));
       if (response.status === 409) void bg.accept(body);
       if (!response.ok) { const e = new Error(response.status === 409 ? 'The background changed elsewhere. Choose Cancel to load the saved version.' : 'Could not save the background. Please try again.'); throw e; }
       void bg.accept(body);
       if (backgroundVisit !== v) return;
       discardBackground();
+      clearStale('background');
       const next = ensureBackground(); next.status = 'Saved'; repaintBackground(next);
-    } catch (error) { if (backgroundVisit === v) { v.error = error.message || 'Could not save background.'; v.saving = false; repaintBackground(v); } }
+    } catch (error) { if (backgroundVisit === v) { v.error = error.message || 'Could not save background.'; v.saving = false; repaintBackground(v); syncBackground(); } }
   }
   // A draft differs from what is saved: a new file, another image, or another visibility.
   function backgroundChanged(v) {
@@ -2340,6 +2798,7 @@
     const v = ensureBackground();
     const state = bg.current(), m = state.metadata;
     v.renderedState = backgroundStateKey(state);
+    if (!v.dirty && m) v.renderedMeta = m;
     const opacity = v.dirty ? v.opacity : (m?.opacity ?? 35);
     const hasImage = v.dirty ? !!(v.image || v.imageId) : state.available;
     const input = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', disabled: v.saving || !m, 'aria-label': 'Choose background image', onchange: e => selectBackground(v, e.target.files[0]) });
@@ -2377,9 +2836,18 @@
   function syncBackground(state) {
     if (!bg || !data || !youShown()) return;
     const v = backgroundVisit;
+    const current = state || bg.current();
+    if (v && (v.dirty || v.pending || v.saving)) {
+      // Our own save's answer arrives while saving; a refused one is checked again after.
+      const incoming = current.metadata?.revision;
+      const base = v.dirty ? v.revision : v.baseRevision;
+      if (!v.saving && incoming != null && base != null && incoming !== base) markStale('background');
+      return;
+    }
     // The phone list can uncover an existing editor that missed a saved change or restore.
-    if (!v || (!v.dirty && !v.pending && v.renderedState !== backgroundStateKey(state || bg.current()))) {
-      paint('background');
+    if (!v || v.renderedState !== backgroundStateKey(current)) {
+      if (v && blockFocused('background')) deferBlock('background');
+      else repaint('background');
     }
   }
   if (bg) {
@@ -2418,7 +2886,15 @@
     clearTimeout(hz.reachTimer); hz.reachTimer = null;
     hz.checked = null;
   }
-  function paintHarnesses() { paint('harnesses'); }
+  function paintHarnesses() { repaint('harnesses'); }
+  // A status read's repaint waits for a field in use or a question left open, unless the user
+  // is waiting on it (they just picked the machine).
+  function showHarnesses(awaited) {
+    if (awaited) paintHarnesses();
+    else if (blockDirty('harnesses')) markStale('harnesses');
+    else if (blockFocused('harnesses')) deferBlock('harnesses');
+    else paintHarnesses();
+  }
 
   function enterHarnesses() {
     stopHarnesses();
@@ -2428,22 +2904,27 @@
 
   async function loadHarnesses(fresh) {
     const seq = ++hz.seq;
+    const startRev = data?.settings_revision;
+    const startGen = localWriteGen;
     let res;
     try { res = await api('/harnesses' + (fresh ? '?fresh=1' : '')); } catch (e) {
       if (seq !== hz.seq) return;
+      const awaited = hz.pending !== null;
       hz.pending = null;
-      hz.error = e.message; paintHarnesses();
+      hz.error = e.message; showHarnesses(awaited);
       if (hz.active) { clearTimeout(hz.reachTimer); hz.reachTimer = setTimeout(() => loadHarnesses(true), 5000); }
       return;
     }
     if (seq !== hz.seq) return;
+    const awaited = hz.pending !== null;
     hz.pending = null;
     hz.data = res; hz.error = '';
-    if (data && res.switches) data.harnesses = { ...(data.harnesses || {}), ...res.switches };
+    // Switches read before a newer save or snapshot never roll it back.
+    if (data && res.switches && data.settings_revision === startRev && localWriteGen === startGen) data.harnesses = { ...(data.harnesses || {}), ...res.switches };
     const machine = harnessMachine();
     clearTimeout(hz.reachTimer); hz.reachTimer = null;
     if (!hz.active) return;
-    paintHarnesses();
+    showHarnesses(awaited);
     if (machine && !machine.reachable) {
       hz.checked = null;
       hz.reachTimer = setTimeout(() => loadHarnesses(true), 5000);
@@ -2532,6 +3013,7 @@
 
   async function setHarness(provider, enabled) {
     hz.confirmOff = null; delete hz.rowErr[provider];
+    clearStale('harnesses');
     try {
       const res = await api('/settings/harnesses/' + encodeURIComponent(provider), { method: 'PUT', body: { enabled } });
       if (data && res && res.harnesses) data.harnesses = res.harnesses;
@@ -2543,7 +3025,7 @@
     const chosen = adding && adding.provider;
     if (adding) { const first = addProviders()[0]; if (!first) adding = null; else if (!addProviders().some(([v]) => v === adding.provider)) { adding.provider = first[0]; adding.plan = 'unknown'; adding.warn = false; } }
     const moved = Boolean(chosen) && (!adding || adding.provider !== chosen);
-    if (!editing && (moved || !accountsBusy())) paint('accounts');
+    if (!editing && (moved || !accountsBusy())) repaint('accounts');
     paintHarnesses();
     await loadHarnesses(true);
     const machine = harnessMachine();
@@ -2631,8 +3113,8 @@
       actions,
       confirming && h('div', { class: 'actions h-confirm' },
         h('span', { text: `${count} ${count === 1 ? 'thread uses' : 'threads use'} ${name}. Their running agents keep going, but no new agent starts on it. Leave it out?` }),
-        h('button', { type: 'button', class: 'danger small', text: 'Leave it out', onclick: () => setHarness(provider, false) }),
-        h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { hz.confirmOff = null; paintHarnesses(); } })),
+        h('button', { type: 'button', class: 'danger small', text: 'Leave it out', 'data-focus': `harness:${provider}:leave`, onclick: () => setHarness(provider, false) }),
+        h('button', { type: 'button', class: 'small', text: 'Keep', 'data-focus': `harness:${provider}:keep`, onclick: () => { hz.confirmOff = null; paintHarnesses(); } })),
       (hz.rowErr[provider] || (job && job.state === 'running' && job.cancelErr)) && h('p', { class: 'inline-err', role: 'alert', text: hz.rowErr[provider] || job.cancelErr }),
       extra);
     return row;
@@ -2688,25 +3170,50 @@
 
   let sharedProjects = null;
   let sharedLoading = false;
-  async function loadSharedProjects() {
+  let sharedProjectsGen = 0; // moves when the saved folders do
+  let sharedMachine = null; // the picked machine, kept across repaints
+  let sharedMachineList = null;
+  let sharedKeysSeen = null; // the keys last drawn: { machine, revision, keys, notes }
+  let sharedKeysView = null; // the block now drawn: { read, first }
+  async function loadSharedProjects({ fromRefresh = false } = {}) {
     if (sharedLoading || sharedProjects) return;
     sharedLoading = true;
+    const gen = sharedProjectsGen;
+    let projects;
     try {
       const entries = (data.saved_dirs || []).filter(entry => entry.path && entry.machine);
       const machines = new Set(entries.map(entry => entry.machine));
-      sharedProjects = await Promise.all(entries.map(async entry => {
+      projects = await Promise.all(entries.map(async entry => {
         const name = (entry.name || entry.path) + (machines.size > 1 ? ` (${entry.machine})` : '');
         try {
           const result = await api('/project-tools/read', { method: 'POST', body: { machine: entry.machine, path: entry.path, repo_only: true } });
           return { name, repo: result.repo };
         } catch { return { name, repo: null }; }
       }));
-    } catch { sharedProjects = []; }
+    } catch { projects = []; }
     sharedLoading = false;
-    paint('shared-tools');
+    if (gen !== sharedProjectsGen) {
+      if (section === 'shared-tools') loadSharedProjects({ fromRefresh });
+      return;
+    }
+    sharedProjects = projects;
+    if (blockDirty('shared-tools')) {
+      if (fromRefresh) markStale('shared-tools');
+      else deferBlock('shared-tools', true);
+    } else if (blockFocused('shared-tools')) deferBlock('shared-tools', !fromRefresh);
+    else repaint('shared-tools');
+  }
+  // Keys changed on the machine; `rev` is counted as seen only once they are read.
+  async function refreshSharedKeys(rev) {
+    if (section !== 'shared-tools' || !sharedKeysView) return;
+    if (blockDirty('shared-tools')) markStale('shared-tools');
+    else if (blockFocused('shared-tools')) deferBlock('shared-tools');
+    else if (await sharedKeysView.read({ fromRefresh: true }) && rev) lastRev.shared_keys = rev;
   }
   function renderSharedTools() {
     if (!sharedProjects) loadSharedProjects();
+    const view = {};
+    sharedKeysView = view;
     const select = h('select', { id: 'shared-tools-project', 'aria-label': 'Shared tools project', disabled: !sharedProjects });
     select.append(h('option', { value: '', text: 'None' }));
     const seen = new Set();
@@ -2719,40 +3226,68 @@
     const message = h('p', { class: 'hint', role: 'status' });
     select.addEventListener('change', async () => {
       select.disabled = true;
-      try { const result = await api('/settings/preferences', { method: 'PUT', body: { shared_tools_repo: select.value || null } }); data.shared_tools_repo = result.shared_tools_repo; message.textContent = 'Saved'; readKeys(); }
+      try { const result = await api('/settings/preferences', { method: 'PUT', body: { shared_tools_repo: select.value || null } }); data.shared_tools_repo = result.shared_tools_repo; markRendered('shared-tools'); message.textContent = 'Saved'; readKeys(); }
       catch (error) { select.value = data.shared_tools_repo || ''; message.textContent = error.message; }
       finally { select.disabled = false; }
     });
     const machine = h('select', { id: 'shared-keys-machine', 'aria-label': 'Machine' });
     const keyHost = h('section', { class: 'pt-keys' });
     let revision = null, sequence = 0;
-    async function readKeys() {
+    // A refresh never draws over typed values or the field in use. `revision`, which a write
+    // sends, stays with the list the editor shows.
+    const heldBack = (fromRefresh) => {
+      if (!fromRefresh) return false;
+      if (blockDirty('shared-tools')) markStale('shared-tools');
+      else if (blockFocused('shared-tools')) deferBlock('shared-tools');
+      else return false;
+      return true;
+    };
+    const superseded = (seq) => seq !== sequence || sharedKeysView !== view;
+    // True when the keys were read and the block shows them.
+    async function readKeys({ fromRefresh = false } = {}) {
       const seq = ++sequence, selected = machine.value || 'hub';
       try {
         const result = await api('/shared-keys/read', { method: 'POST', body: { machine: selected } });
-        if (seq !== sequence) return;
-        revision = result.revision;
-        paintKeys(result.keys || [], result.notes || []);
-      } catch (error) { if (seq === sequence) keyHost.replaceChildren(h('p', { class: 'pt-warn', text: error.body?.reason || error.message })); }
+        if (superseded(seq)) return false;
+        const read = { machine: selected, revision: result.revision, keys: result.keys || [], notes: result.notes || [] };
+        if (!(fromRefresh && sharedKeysSeen && stable(read) === stable(sharedKeysSeen))) {
+          if (heldBack(fromRefresh)) return false;
+          drawKeys(read);
+        }
+        acknowledgeStart('shared_keys');
+        return true;
+      } catch (error) {
+        if (superseded(seq) || heldBack(fromRefresh)) return false;
+        sharedKeysSeen = null;
+        keyHost.replaceChildren(h('p', { class: 'pt-warn', text: error.body?.reason || error.message }));
+        return false;
+      }
     }
-    async function change(action, payload, errorEl) {
+    function drawKeys(read) {
+      sharedKeysSeen = read;
+      revision = read.revision;
+      paintKeys(read.keys, read.notes);
+    }
+    view.read = readKeys;
+    const change = (action, payload, errorEl) => withLocalWrite(async () => {
       errorEl.textContent = '';
       try {
         const result = await api('/shared-keys/' + action, { method: 'POST', body: { machine: machine.value || 'hub', revision, ...payload } });
         revision = result.revision;
-        await readKeys();
+        clearStale('shared-tools');
+        await acknowledgeKeys(readKeys);
       } catch (error) {
         const reason = error.body?.reason || error.body?.error || error.message;
-        if (error.status === 409) { await readKeys(); keyHost.prepend(h('p', { class: 'pt-warn', role: 'alert', text: reason })); }
+        if (error.status === 409) { clearStale('shared-tools'); await acknowledgeKeys(readKeys); keyHost.prepend(h('p', { class: 'pt-warn', role: 'alert', text: reason })); }
         else errorEl.textContent = reason;
       }
-    }
+    });
     function paintKeys(keys, notes) {
       const rows = keys.map(key => {
         const value = h('input', { type: 'password', autocomplete: 'off', 'aria-label': 'Value for ' + key.name, placeholder: key.stored ? 'New value' : 'Value' });
         const error = h('p', { class: 'inline-err', role: 'alert' });
-        const set = h('button', { type: 'button', text: key.stored ? 'Replace' : 'Set', onclick: () => { if (!value.value) { error.textContent = 'Enter a value.'; return; } change('save', { keys: { [key.name]: value.value } }, error); } });
-        const remove = key.stored && h('button', { type: 'button', text: 'Remove', onclick: () => change('remove', { name: key.name }, error) });
+        const set = h('button', { type: 'button', text: key.stored ? 'Replace' : 'Set', 'data-focus': `shared-key:${key.name}:set`, onclick: () => { if (!value.value) { error.textContent = 'Enter a value.'; return; } change('save', { keys: { [key.name]: value.value } }, error); } });
+        const remove = key.stored && h('button', { type: 'button', text: 'Remove', 'data-focus': `shared-key:${key.name}:remove`, onclick: () => change('remove', { name: key.name }, error) });
         return h('div', { class: 'pt-key', 'data-key': key.name },
           h('div', { class: 'pt-key-head' }, h('span', { class: 'mono', text: key.name }), h('span', { class: 'pt-chip ' + (key.stored ? 'set' : 'unset'), text: key.stored ? 'set' : 'not set' }), key.tools?.length && h('span', { class: 'hint', text: 'used by ' + key.tools.join(', ') })),
           key.stored && key.folder_usable === false && h('p', { class: 'pt-warn', text: "can't be used by folder tools: " + key.reason }),
@@ -2761,18 +3296,30 @@
       const name = h('input', { type: 'text', autocomplete: 'off', 'aria-label': 'New key name', placeholder: 'Key name' });
       const value = h('input', { type: 'password', autocomplete: 'off', 'aria-label': 'New key value', placeholder: 'Value' });
       const error = h('p', { class: 'inline-err', role: 'alert' });
-      keyHost.replaceChildren(h('h2', { text: 'Shared keys on this machine' }),
+      swapKeepingFocus(keyHost, () => keyHost.replaceChildren(h('h2', { text: 'Shared keys on this machine' }),
         h('p', { class: 'hint', text: 'Key values are stored on this machine and never shown again. Other machines need their own keys entered.' }),
         h('div', { class: 'pt-keylist' }, rows),
-        h('div', { class: 'pt-addkey' }, name, value, h('button', { type: 'button', text: 'Add a key', onclick: () => change('save', { keys: { [name.value]: value.value } }, error) })), error,
-        ...notes.map(text => h('p', { class: 'hint', text })));
+        h('div', { class: 'pt-addkey' }, name, value, h('button', { type: 'button', text: 'Add a key', 'data-focus': 'shared-key:add', onclick: () => change('save', { keys: { [name.value]: value.value } }, error) })), error,
+        ...notes.map(text => h('p', { class: 'hint', text }))));
     }
-    machine.addEventListener('change', readKeys);
-    api('/new-thread?machine=hub').then(result => {
-      machine.replaceChildren(...(result.machines || ['hub']).map(name => h('option', { value: name, text: name })));
-      machine.value = result.machine || 'hub';
-      return readKeys();
-    }).catch(error => { keyHost.textContent = error.message; });
+    machine.addEventListener('change', () => { sharedMachine = machine.value; readKeys(); });
+    const offer = (names, picked) => {
+      machine.replaceChildren(...names.map(name => h('option', { value: name, text: name })));
+      machine.value = picked;
+    };
+    // Draw what was last read at once, so a repaint keeps the controls (and focus) in place.
+    let cached = false;
+    if (sharedMachineList) {
+      offer(sharedMachineList.names, sharedMachine || sharedMachineList.picked);
+      if (sharedKeysSeen && sharedKeysSeen.machine === machine.value) { drawKeys(sharedKeysSeen); cached = true; }
+    }
+    view.first = api('/new-thread?machine=hub').then(result => {
+      const names = result.machines || ['hub'];
+      sharedMachineList = { names, picked: result.machine || 'hub' };
+      const picked = names.includes(sharedMachine) ? sharedMachine : sharedMachineList.picked;
+      if (stable([...machine.options].map(o => o.value)) !== stable(names) || machine.value !== picked) offer(names, picked);
+      return readKeys({ fromRefresh: cached });
+    }).catch(error => { keyHost.textContent = error.message; return false; });
     return h('div', { class: 'pt pt-shared' },
       h('div', { class: 'pt-picker' }, h('label', {}, h('span', { text: 'Shared tools project' }), select)),
       h('p', { class: 'hint', text: 'To add or change a shared tool, ask in a thread in the shared tools project.' }), message,
@@ -2797,6 +3344,28 @@
   window.addEventListener('pointercancel', () => { pressed = null; });
   panel.addEventListener('pointermove', (e) => { lastMouse = e.pointerType === 'mouse' ? { x: e.clientX, y: e.clientY } : null; });
   panel.addEventListener('pointerleave', () => { lastMouse = null; });
+
+  const blockOf = (el) => el?.closest?.('.block[data-block]')?.dataset.block;
+  // Selects and checkboxes update their drafts on `change`, which follows `input`.
+  const typed = (event) => {
+    const name = blockOf(event.target);
+    if (!name) return;
+    if (deferredBlocks.has(name) && !quietDeferred.has(name) && blockDirty(name)) markStale(name);
+    else if (staleBlocks.has(name) && !blockDirty(name) && !blockFocused(name)) refreshClean(name);
+  };
+  panel.addEventListener('input', typed);
+  panel.addEventListener('change', typed);
+  // After the button's own handler, which may have removed the button.
+  panel.addEventListener('click', () => queueMicrotask(() => settleStale()));
+  panel.addEventListener('focusout', (event) => {
+    const next = event.relatedTarget;
+    const settle = () => settleBlocks(next?.isConnected ? next : document.activeElement);
+    queueMicrotask(() => {
+      // Mid-press, wait: a repaint now would take the button from under the click.
+      if (pressed) window.addEventListener('pointerup', () => setTimeout(() => settleBlocks(document.activeElement)), { once: true });
+      else settle();
+    });
+  });
 
   // Hold the pressed, focused, hovered or sign-in element in that order when it is
   // visible below the repainted host; otherwise use the next-block fallback.
@@ -2830,6 +3399,10 @@
       const view = BLOCKS[name]();
       host.replaceChildren(...(view ? [view] : []));
       if (name === 'diagrams') drawDiagram();
+      if (!UNTRACKED.has(name)) renderedSlice.set(name, sliceKey(name));
+      // These two keep no copy of the values, so a clean repaint is up to date.
+      if (staleBlocks.has(name) && (name === 'accounts' || name === 'harnesses') && !blockDirty(name)) staleBlocks.delete(name);
+      if (staleBlocks.has(name)) showBanner(name);
       hold();
     }
   }
@@ -2839,6 +3412,9 @@
     if (!data) return;
     const cat = categoryOf(section);
     panel.querySelector(':scope > .catview')?.remove();
+    deferredBlocks.clear();
+    quietDeferred.clear();
+    enterBlocks(cat.blocks);
     panel.append(h('div', { class: 'catview', 'data-category': cat.key },
       cat.lede && h('div', { class: 'cat-head' }, h('h1', { text: cat.title }), h('p', { class: 'lede', text: cat.lede }), cat.note && noteEl()),
       cat.blocks.map((name) => h('div', { class: 'block', 'data-block': name }))));
@@ -2886,6 +3462,9 @@
     document.querySelector('.settings').classList.toggle('at-root', root);
     if (leaving) {
       if (section === 'you') discardBackground();
+      deferredBlocks.clear();
+      quietDeferred.clear();
+      for (const name of [...staleBlocks]) if (!blockDirty(name)) staleBlocks.delete(name);
       section = next;
       setNote('', false); styleNote = ''; balNote = '';
     }
@@ -2904,7 +3483,7 @@
     const { leaving, lessons } = readHash();
     renderSections();
     if (leaving) { renderCategory(); syncSection(); }
-    else if (lessons) paint('templates');
+    else if (lessons) { clearStale('templates'); paint('templates'); }
     syncYou();
   });
   phone.addEventListener('change', syncYou);
@@ -2914,12 +3493,16 @@
   (async () => {
     const error = document.getElementById('error');
     try {
-      data = await api('/settings');
+      const [first, revisions] = await Promise.all([api('/settings'), api('/settings/revision').catch(() => null)]);
+      data = first;
+      startupRev = revisions;
+      lastRev.settings = data.settings_revision || null;
       document.getElementById('loading')?.remove();
       renderPhoneNav();
       renderCategory();
       syncSection();
       syncYou();
+      window.wcPoller(pollSettings, 5000);
     } catch (e) {
       error.hidden = false;
       error.textContent = 'Could not load settings: ' + e.message;

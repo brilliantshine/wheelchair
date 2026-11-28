@@ -1742,3 +1742,425 @@ test.describe('Models: tiers, ladders and notices', () => {
     }
   });
 });
+
+// A change made elsewhere reaches an open Settings page. Writes here go straight to the hub
+// from the test, so the page learns of them only through its own polling.
+test.describe('live refresh', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+  test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'ignoreErrors' }); });
+  let own;
+  test.beforeEach(async () => {
+    const state = await makeDir('app-settings-live-');
+    const models = path.join(state, 'models');
+    const modelsCache = path.join(state, 'models-cache.json');
+    await fs.writeFile(modelsCache, JSON.stringify({ models: [] }));
+    const server = await startServer({ stateDir: state, env: { WHEELCHAIR_AGY: '', WHEELCHAIR_MODELS: models, WHEELCHAIR_MODELS_CACHE: modelsCache } });
+    own = { state, server };
+  });
+  test.afterEach(async () => { await own.server.stop(); });
+
+  const open = (page, hash) => openPage(page, own, '/app/settings#' + hash);
+  const send = (page, route, body, method = 'PUT') => page.evaluate(async ([route, body, method]) => {
+    const response = await fetch('/wheelchair/api' + route, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    return response.json();
+  }, [route, body, method]);
+  const prefs = (page, body) => send(page, '/settings/preferences', body);
+  // The poller also ticks when the tab becomes visible, which saves waiting out the interval.
+  const tick = (page) => page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  const isSettingsRead = (request) => request.method() === 'GET' && new URL(request.url()).pathname === '/wheelchair/api/settings';
+  // Poll once and wait until the page has taken the new snapshot in.
+  const refreshed = async (page) => {
+    const answered = page.waitForResponse((r) => isSettingsRead(r.request()), { timeout: 15000 });
+    await tick(page);
+    await (await answered).finished();
+    await page.waitForTimeout(200);
+  };
+  const block = (page, name) => page.locator(`.block[data-block="${name}"]`);
+  const banner = (page, name) => block(page, name).locator('.stale-banner');
+  const loadLatest = (page, name) => banner(page, name).getByRole('button', { name: 'Load latest' }).click();
+  const userName = (page) => page.getByLabel('Your name', { exact: true });
+  const style = async (page, patch) => {
+    const { style: current } = await settings(page);
+    await send(page, '/settings/style', { ...current, ...patch });
+  };
+  const template = (page, name, extra = {}) => send(page, '/settings/templates', { name, role: 'worker', scope: 'all', switches: {}, text: '', ...extra }, 'POST');
+
+  // Holds the next GET /settings after the hub has answered it, so it arrives out of date.
+  const holdNextRead = async (page) => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    let taken = false, seen = false, delivered = false;
+    await page.route('**/api/settings', async (route) => {
+      if (!isSettingsRead(route.request()) || taken) return route.fallback();
+      taken = true;
+      const response = await route.fetch();
+      seen = true;
+      await gate;
+      await route.fulfill({ response });
+      delivered = true;
+    });
+    return {
+      held: () => expect.poll(() => seen, { timeout: 15000 }).toBe(true),
+      release: async () => { release(); await expect.poll(() => delivered).toBe(true); await page.waitForTimeout(400); },
+    };
+  };
+
+  test('an outside change repaints a clean block within one poll, without a reload', async ({ page }) => {
+    await open(page, 'you');
+    await expect(userName(page)).toHaveValue('');
+    await page.evaluate(() => { window.sameDocument = true; });
+    await prefs(page, { user_name: 'Robin' });
+    await expect(userName(page)).toHaveValue('Robin', { timeout: 12000 });
+    await style(page, { terms: 'avoid', text: 'Outside words' });
+    await expect(page.locator('#style-text')).toHaveValue('Outside words', { timeout: 12000 });
+    await expect(page.getByLabel('Technical terms')).toHaveValue('avoid');
+    expect(await page.evaluate(() => window.sameDocument)).toBe(true);
+    await expect(page.locator('.stale-banner')).toHaveCount(0);
+  });
+
+  test('balancing, models, threads and the open template follow outside changes', async ({ page }) => {
+    await open(page, 'usage');
+    await template(page, 'First template');
+    await expect(page.locator('#bal-leave')).toHaveValue('10');
+    await send(page, '/settings/balancing', { leave: 33 });
+    await refreshed(page);
+    await expect(page.locator('#bal-leave')).toHaveValue('33');
+
+    await page.locator('#sections a[data-section="models"]').click();
+    await expect(tier(page, 'Checker', 'Heavy')).toHaveAttribute('aria-checked', 'true');
+    const ladder = page.locator('[data-order="lead_order"] li');
+    const before = await ladder.evaluateAll((items) => items.map((i) => i.dataset.provider));
+    const { lead_order: order, worker_order: workers } = await settings(page);
+    await send(page, '/settings/balancing', { lead_order: [...order].filter((p) => p !== 'any').reverse().concat('any'), worker_order: [...workers].reverse() });
+    await prefs(page, { other_agents: { verifier: 'light' }, review_families: 'claude' });
+    await refreshed(page);
+    await expect(tier(page, 'Checker', 'Light')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('radiogroup', { name: 'Reviewers and checkers' }).getByRole('radio', { name: 'Claude', exact: true })).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => ladder.evaluateAll((items) => items.map((i) => i.dataset.provider))).toEqual([...before].reverse());
+
+    await page.locator('#sections a[data-section="threads"]').click();
+    await prefs(page, { tool_steps: 'hide' });
+    await refreshed(page);
+    await expect(page.getByRole('radiogroup', { name: 'Tool steps' }).getByRole('radio', { name: 'Hide' })).toHaveAttribute('aria-checked', 'true');
+
+    await page.locator('#sections a[data-section="behavior"]').click();
+    await expect(page.locator('#tname')).toHaveValue('First template');
+    const [first] = (await settings(page)).templates;
+    await send(page, '/settings/templates/' + first.id, { name: 'Renamed elsewhere', role: 'worker', scope: 'all', switches: {}, text: 'new words' });
+    await refreshed(page);
+    await expect(page.locator('#tname')).toHaveValue('Renamed elsewhere');
+    await expect(page.locator('#textra')).toHaveValue('new words');
+    await expect(page.locator('.stale-banner')).toHaveCount(0);
+  });
+
+  test('a focused field holds the repaint until focus leaves', async ({ page }) => {
+    await open(page, 'you');
+    await userName(page).focus();
+    await prefs(page, { user_name: 'Robin' });
+    await refreshed(page);
+    await expect(userName(page)).toHaveValue('');
+    await expect(userName(page)).toBeFocused();
+    await expect(banner(page, 'name')).toHaveCount(0);
+    await userName(page).blur();
+    await expect(userName(page)).toHaveValue('Robin');
+
+    const terms = page.getByLabel('Technical terms');
+    await terms.focus();
+    await style(page, { terms: 'freely' });
+    await refreshed(page);
+    await expect(terms).toHaveValue('build-up');
+    await expect(terms).toBeFocused();
+    await terms.blur();
+    await expect(terms).toHaveValue('freely');
+  });
+
+  test('typing into a field that held an outside change back shows the banner', async ({ page }) => {
+    await open(page, 'you');
+    await userName(page).focus();
+    await prefs(page, { user_name: 'Robin' });
+    await refreshed(page);
+    await userName(page).pressSequentially('Mine');
+    await expect(banner(page, 'name')).toContainText('Updated elsewhere.');
+    await expect(userName(page)).toHaveValue('Mine');
+    await userName(page).blur();
+    await expect(userName(page)).toHaveValue('Mine');
+    await loadLatest(page, 'name');
+    await expect(userName(page)).toHaveValue('Robin');
+    await expect(banner(page, 'name')).toHaveCount(0);
+  });
+
+  test('a focused checkbox, button or summary does not hold the repaint and keeps focus', async ({ page }) => {
+    await open(page, 'models');
+    const ladder = () => page.locator('[data-order="lead_order"] li').evaluateAll((items) => items.map((i) => i.dataset.provider));
+    const reverse = async () => {
+      const order = (await settings(page)).lead_order.filter((p) => p !== 'any');
+      await send(page, '/settings/balancing', { lead_order: [...order].reverse().concat('any') });
+    };
+    const any = page.locator('[data-focus="lead_order:any"]');
+    await any.focus();
+    const first = await ladder();
+    await reverse();
+    await refreshed(page);
+    expect(await ladder()).toEqual([...first].reverse());
+    await expect(any).toBeFocused();
+
+    const radio = tier(page, 'Checker', 'Heavy');
+    await radio.focus();
+    await prefs(page, { other_agents: { verifier: 'light' } });
+    await refreshed(page);
+    await expect(tier(page, 'Checker', 'Light')).toHaveAttribute('aria-checked', 'true');
+    await expect(tier(page, 'Checker', 'Heavy')).toBeFocused();
+
+    const summary = page.locator('[data-focus="summary:verifier"]');
+    await summary.focus();
+    await prefs(page, { other_agents: { verifier: 'standard' } });
+    await refreshed(page);
+    await expect(tier(page, 'Checker', 'Standard')).toHaveAttribute('aria-checked', 'true');
+    await expect(summary).toBeFocused();
+    await expect(page.locator('.stale-banner')).toHaveCount(0);
+  });
+
+  test('typed name: the banner keeps it, Save still saves it', async ({ page }) => {
+    await open(page, 'you');
+    await userName(page).fill('Mine');
+    await prefs(page, { user_name: 'Robin' });
+    await refreshed(page);
+    await expect(banner(page, 'name')).toContainText('Updated elsewhere.');
+    await expect(userName(page)).toHaveValue('Mine');
+    await block(page, 'name').getByRole('button', { name: 'Save' }).click();
+    await expect(banner(page, 'name')).toHaveCount(0);
+    await expect.poll(async () => (await settings(page)).user_name).toBe('Mine');
+    await expect(userName(page)).toHaveValue('Mine');
+  });
+
+  test('a draft typed back to what it started from takes the newer value', async ({ page }) => {
+    await open(page, 'you');
+    await userName(page).fill('Mine');
+    await prefs(page, { user_name: 'Robin' });
+    await refreshed(page);
+    await expect(banner(page, 'name')).toHaveCount(1);
+    await userName(page).fill('');
+    await userName(page).blur();
+    await expect(userName(page)).toHaveValue('Robin');
+    await expect(banner(page, 'name')).toHaveCount(0);
+  });
+
+  test('writing style keeps a phrase typed but not added until Load latest', async ({ page }) => {
+    await open(page, 'you');
+    const phrase = page.getByLabel('Add a phrase');
+    const ownWords = await page.locator('#style-text').inputValue();
+    await phrase.fill('synergy');
+    await phrase.blur();
+    await style(page, { text: 'Outside words' });
+    await refreshed(page);
+    await expect(banner(page, 'writing')).toContainText('Updated elsewhere.');
+    await expect(phrase).toHaveValue('synergy');
+    await expect(page.locator('#style-text')).toHaveValue(ownWords);
+    await loadLatest(page, 'writing');
+    await expect(page.locator('#style-text')).toHaveValue('Outside words');
+    await expect(page.getByLabel('Add a phrase')).toHaveValue('');
+    await expect(banner(page, 'writing')).toHaveCount(0);
+  });
+
+  test('a balancing draft keeps its values until Load latest, and survives leaving the category', async ({ page }) => {
+    await open(page, 'usage');
+    await page.locator('#bal-margin').fill('42');
+    await page.locator('#sections a[data-section="models"]').click();
+    await send(page, '/settings/balancing', { leave: 33 });
+    await page.locator('#sections a[data-section="usage"]').click();
+    await refreshed(page).catch(() => {}); // the revision may already be taken in
+    await expect(banner(page, 'balancing')).toContainText('Updated elsewhere.');
+    await expect(page.locator('#bal-margin')).toHaveValue('42');
+    await loadLatest(page, 'balancing');
+    await expect(page.locator('#bal-leave')).toHaveValue('33');
+    await expect(page.locator('#bal-margin')).toHaveValue('5');
+    await expect(banner(page, 'balancing')).toHaveCount(0);
+  });
+
+  test('an edited template keeps its words until Load latest; saving it raises no banner', async ({ page }) => {
+    await open(page, 'you');
+    const made = await template(page, 'Mine');
+    await open(page, 'behavior');
+    await page.reload();
+    await page.locator('#textra').fill('my own words');
+    await send(page, '/settings/templates/' + made.id, { name: 'Theirs', role: 'worker', scope: 'all', switches: {}, text: 'their words' });
+    await refreshed(page);
+    await expect(banner(page, 'templates')).toContainText('Updated elsewhere.');
+    await expect(page.locator('#textra')).toHaveValue('my own words');
+    await loadLatest(page, 'templates');
+    await expect(page.locator('#textra')).toHaveValue('their words');
+    await expect(page.locator('#tname')).toHaveValue('Theirs');
+    await expect(banner(page, 'templates')).toHaveCount(0);
+
+    await page.locator('#textra').fill('saved words');
+    await page.locator('#save-template').click();
+    await expect(page.locator('.tpl-edit .note')).toContainText('Saved.');
+    await page.locator('#toggle-use').click();
+    await expect(page.locator('#toggle-use')).toHaveText('Stop using');
+    await prefs(page, { user_name: 'unrelated' });
+    await refreshed(page);
+    await expect(page.locator('.stale-banner')).toHaveCount(0);
+    await expect(page.locator('#textra')).toHaveValue('saved words');
+  });
+
+  test('a new custom model being typed is kept when the tiers change elsewhere', async ({ page }) => {
+    await open(page, 'models');
+    await page.getByLabel('Claude standard model', { exact: true }).selectOption('__other');
+    await page.getByLabel('Claude standard model, other').fill('my-model');
+    await send(page, '/settings/models', { provider: 'claude', slot: 'heavy', model: null });
+    await refreshed(page);
+    await expect(banner(page, 'tiers')).toContainText('Updated elsewhere.');
+    await expect(page.getByLabel('Claude standard model, other')).toHaveValue('my-model');
+    await loadLatest(page, 'tiers');
+    await expect(page.getByLabel('Claude heavy model', { exact: true })).toHaveValue('__none');
+    await expect(page.getByLabel('Claude standard model, other')).toHaveCount(0);
+  });
+
+  test('a refresh read that lands after a save never undoes it', async ({ page }) => {
+    await open(page, 'you');
+    await prefs(page, { tool_steps: 'hide' });
+    const read = await holdNextRead(page);
+    await tick(page);
+    await read.held();
+    await userName(page).fill('Mine');
+    await block(page, 'name').getByRole('button', { name: 'Save' }).click();
+    await expect(block(page, 'name').locator('.note')).toHaveText('Saved');
+    await userName(page).blur();
+    await read.release();
+    // Read once, not retried here and below: the next poll would repair a rollback and hide it.
+    expect(await userName(page).inputValue()).toBe('Mine');
+    await expect(banner(page, 'name')).toHaveCount(0);
+  });
+
+  test('a late reserved-provider read never undoes a balancing save', async ({ page }) => {
+    await open(page, 'models');
+    const read = await holdNextRead(page);
+    await page.locator('#sections a[data-section="usage"]').click();
+    await read.held();
+    await page.locator('#bal-leave').fill('44');
+    await page.locator('#bal-save').click();
+    await expect(block(page, 'balancing').locator('.note')).toHaveText('Saved, applies to new sessions');
+    await page.locator('#bal-save').blur();
+    await read.release();
+    expect(await page.locator('#bal-leave').inputValue()).toBe('44');
+    await expect(banner(page, 'balancing')).toHaveCount(0);
+  });
+
+  test('a late model re-read never undoes a newer save', async ({ page }) => {
+    await open(page, 'models');
+    const read = await holdNextRead(page);
+    await page.getByLabel('Claude standard model', { exact: true }).selectOption('__none');
+    await read.held();
+    await tier(page, 'Checker', 'Light').click();
+    await expect(page.locator('.cat-head .note')).toHaveText('Saved, applies to new sessions');
+    await expect.poll(async () => (await settings(page)).other_agents.verifier).toBe('light');
+    await read.release();
+    expect(await tier(page, 'Checker', 'Light').getAttribute('aria-checked')).toBe('true');
+    expect(await page.getByLabel('Claude standard model', { exact: true }).inputValue()).toBe('__none');
+    await expect(page.locator('.stale-banner')).toHaveCount(0);
+  });
+
+  test('a late harness status never rolls back newer switches', async ({ page }) => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    let asked = 0;
+    const names = ['claude', 'gpt', 'gemini', 'kimi', 'openrouter'];
+    const rows = Object.fromEntries(names.map((n) => [n, { installed: true, version: '1', signed_in: true, recipe: true }]));
+    await page.route('**/api/harnesses**', async (route) => {
+      asked += 1;
+      await gate;
+      await route.fulfill({ json: { switches: Object.fromEntries(names.map((n) => [n, n !== 'kimi'])), threads_using: {}, machines: [{ name: 'hub', reachable: true, harnesses: rows }], can_start: { machine: 'hub', lead: { ok: true }, worker: { ok: true } } } });
+    });
+    await page.route('**/api/machines/*/harnesses/*/install', (r) => r.fulfill({ json: { state: 'idle' } }));
+    await open(page, 'providers');
+    await expect.poll(() => asked).toBeGreaterThan(0);
+    await prefs(page, { user_name: 'newer snapshot' }); // moves the revision, not the switches
+    await refreshed(page);
+    release();
+    // The rows are drawn from the held answer, so it has been taken in by now.
+    await expect(page.locator('.h-row[data-provider="kimi"]')).toBeVisible();
+    await expect(page.getByRole('switch', { name: /Use Kimi/ })).toBeChecked();
+  });
+
+  test('an idle page reads only the revision', async ({ page }) => {
+    const seen = { settings: 0, revision: 0 };
+    page.on('request', (request) => {
+      if (isSettingsRead(request)) seen.settings += 1;
+      if (new URL(request.url()).pathname === '/wheelchair/api/settings/revision') seen.revision += 1;
+    });
+    await open(page, 'you');
+    await expect(userName(page)).toBeVisible();
+    for (let i = 0; i < 3; i += 1) {
+      const before = seen.revision;
+      await tick(page);
+      await expect.poll(() => seen.revision).toBeGreaterThan(before);
+      await page.waitForTimeout(100);
+    }
+    expect(seen.settings).toBe(1);
+  });
+
+  // Shared keys are stubbed, as no machine service runs here; so is the key store's revision.
+  const sharedStubs = async (page, state) => {
+    await page.route('**/api/new-thread*', (r) => r.fulfill({ json: { machine: 'hub', machines: ['hub'] } }));
+    await page.route('**/api/shared-keys/read', (r) => { state.reads += 1; return r.fulfill({ json: { revision: state.revision, keys: state.keys, notes: [] } }); });
+    await page.route('**/api/settings/revision', async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ json: { ...await response.json(), shared_keys: 'stub:' + state.revision } });
+    });
+    await page.route('**/api/project-tools/read', (r) => r.fulfill({ json: { repo: 'owner/' + r.request().postDataJSON().path.split('/').pop() } }));
+  };
+  const key = (name) => ({ name, stored: true, tools: [] });
+
+  test('shared keys follow the machine, keep focus, and keep typed values until Load latest', async ({ page }) => {
+    const state = { revision: 1, reads: 0, keys: [key('ONE')] };
+    await sharedStubs(page, state);
+    await open(page, 'shared-tools');
+    await expect(page.locator('[data-key="ONE"]')).toBeVisible();
+    const replace = page.locator('[data-focus="shared-key:ONE:set"]');
+    await replace.focus();
+    state.keys = [key('ONE'), key('TWO')];
+    state.revision = 2;
+    await tick(page);
+    await expect(page.locator('[data-key="TWO"]')).toBeVisible();
+    await expect(replace).toBeFocused();
+
+    const value = page.getByLabel('Value for ONE');
+    await value.fill('typed-secret');
+    await value.blur();
+    state.keys = [key('ONE'), key('THREE')];
+    state.revision = 3;
+    await tick(page);
+    await expect(banner(page, 'shared-tools')).toContainText('Updated elsewhere.');
+    await expect(value).toHaveValue('typed-secret');
+    await expect(page.locator('[data-key="THREE"]')).toHaveCount(0);
+    await loadLatest(page, 'shared-tools');
+    await expect(page.locator('[data-key="THREE"]')).toBeVisible();
+    await expect(page.getByLabel('Value for ONE')).toHaveValue('');
+    await expect(banner(page, 'shared-tools')).toHaveCount(0);
+  });
+
+  test('the shared tools project and saved folders follow outside changes, even made while away', async ({ page }) => {
+    const state = { revision: 1, reads: 0, keys: [] };
+    await sharedStubs(page, state);
+    let dirs = [{ name: 'alpha', path: '/p/alpha', machine: 'hub' }];
+    await page.route('**/api/settings', async (route) => {
+      if (!isSettingsRead(route.request())) return route.fallback();
+      const response = await route.fetch();
+      await route.fulfill({ json: { ...await response.json(), saved_dirs: dirs } });
+    });
+    await open(page, 'shared-tools');
+    const project = page.getByLabel('Shared tools project');
+    await expect(project.locator('option')).toHaveText(['None', 'alpha']);
+    await prefs(page, { shared_tools_repo: 'owner/alpha' });
+    await refreshed(page);
+    await expect(project).toHaveValue('owner/alpha');
+
+    await page.locator('#sections a[data-section="you"]').click();
+    dirs = [...dirs, { name: 'beta', path: '/p/beta', machine: 'hub' }];
+    await prefs(page, { user_name: 'bump' });
+    await refreshed(page);
+    await page.locator('#sections a[data-section="shared-tools"]').click();
+    await expect(project.locator('option')).toHaveText(['None', 'alpha', 'beta']);
+  });
+});
