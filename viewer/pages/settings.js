@@ -1998,23 +1998,36 @@
   }
 
   async function saveAdd(form) {
+    const draft = adding;
+    if (!draft) return;
     try {
-      const made = await api('/settings/accounts', { method: 'POST', body: { provider: adding.provider, name: adding.name.trim(), plan: adding.plan } });
+      const made = await api('/settings/accounts', { method: 'POST', body: { provider: draft.provider, name: draft.name.trim(), plan: draft.plan } });
       justAdded = made.id;
-      adding = null;
+      if (adding === draft) adding = null;
       data = await api('/settings');
       await refreshUsage();
       paint('accounts');
       refreshStatus();
-    } catch (e) { adding.warn = false; paint('accounts'); inlineErr(document.querySelector('.add-form') || form, e.message); }
+    } catch (e) {
+      if (adding === draft) {
+        adding.warn = false;
+        paint('accounts');
+        inlineErr(document.querySelector('.add-form') || form, e.message);
+      }
+    }
   }
 
   function addProviders() { return Object.entries(PROVIDER_NAME).filter(([v]) => !toolOf(v).singleAccount && harnessOn(v)); }
 
-  function addForm() {
-    const offered = addProviders();
-    if (!offered.length) return null;
-    if (!adding) return h('button', { type: 'button', id: 'add-account', class: 'small', text: 'Add account', onclick: () => { adding = { provider: offered[0][0], name: '', plan: 'unknown', warn: false }; paint('accounts'); } });
+  function addButton(provider) {
+    return h('div', { class: 'actions' }, h('button', {
+      type: 'button', class: 'small add-account', text: 'Add account',
+      onclick: () => { adding = { provider, name: '', plan: 'unknown', warn: false }; paint('accounts'); },
+    }));
+  }
+
+  function addForm(offered) {
+    if (!offered.length || !adding) return null;
     const form = h('form', { class: 'box add-form', onsubmit: (ev) => {
       ev.preventDefault();
       if (!adding.name.trim()) { inlineErr(form, 'Give the account a name.'); return; }
@@ -2022,7 +2035,13 @@
       if (toolOf(adding.provider).settings.accountWarning && same >= 1 && !adding.warn) { adding.warn = true; paint('accounts'); return; }
       saveAdd(form);
     } });
-    const provider = h('select', { id: 'add-provider', 'aria-label': 'Provider', onchange: () => { adding.provider = provider.value; adding.plan = 'unknown'; adding.warn = false; paint('accounts'); } },
+    const provider = h('select', { id: 'add-provider', 'aria-label': 'Provider', onchange: () => {
+      adding.provider = provider.value; adding.plan = 'unknown'; adding.warn = false;
+      paint('accounts');
+      const next = document.querySelector('.add-form');
+      if (next) next.scrollIntoView({ block: 'nearest' });
+      document.getElementById('add-provider')?.focus({ preventScroll: true });
+    } },
       offered.map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
     const name = h('input', { id: 'add-name', value: adding.name, 'aria-label': 'Account name', placeholder: 'Name, e.g. Work', required: true, oninput: () => { adding.name = name.value; } });
     const plan = planSelect(adding.provider, adding.plan);
@@ -2049,6 +2068,12 @@
   }
 
   function renderAccounts() {
+    const offered = addProviders();
+    const canAdd = new Set(offered.map(([v]) => v));
+    if (adding && !canAdd.has(adding.provider)) {
+      if (offered.length) { adding.provider = offered[0][0]; adding.plan = 'unknown'; adding.warn = false; }
+      else adding = null;
+    }
     return h('div', { class: 'models accounts' },
       h('div', {}, h('h2', { text: 'Accounts' }),
         h('p', { class: 'lede', text: 'The logins agents run on. New sessions pick the account with the most room.' }),
@@ -2059,8 +2084,8 @@
         toolOf(provider).settings.accountPolicy && h('p', { class: 'hint', text: toolOf(provider).settings.accountPolicy }),
         h('div', { class: 'prov-signin' }, signCard && signCard.atCards && signCard.provider === provider ? signCard.el : null),
         accountRows(provider).filter((a) => !toolOf(provider).singleAccount || a.id === `default-${provider}`).map(accountCard),
-        !(data.accounts || []).some((a) => a.id === `default-${provider}`) && restoreDefault(provider))),
-      addForm());
+        !(data.accounts || []).some((a) => a.id === `default-${provider}`) && restoreDefault(provider),
+        canAdd.has(provider) && (adding && adding.provider === provider ? addForm(offered) : addButton(provider)))));
   }
 
   // ---- Usage panel

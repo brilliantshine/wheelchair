@@ -123,8 +123,14 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       const gemini = page.locator('.prov-group[data-provider="gemini"]');
       await expect(gemini).toContainText('Antigravity supports one account per machine');
       await expect(gemini.locator('.acct[data-account="default-gemini"]')).toHaveCount(1);
-      await page.getByRole('button', { name: 'Add account' }).click();
+      await expect(gemini.getByRole('button', { name: 'Add account' })).toHaveCount(0);
+      await claude.getByRole('button', { name: 'Add account' }).click();
+      await expect(claude.locator('.add-form')).toHaveCount(1);
+      await expect(page.locator('#add-provider')).toHaveValue('claude');
       await expect(page.locator('.add-form select').first().locator('option')).not.toContainText(['Antigravity']);
+      await page.locator('.prov-group[data-provider="gpt"]').getByRole('button', { name: 'Add account' }).click();
+      await expect(page.locator('.prov-group[data-provider="gpt"] .add-form')).toHaveCount(1);
+      await expect(page.locator('#add-provider')).toHaveValue('gpt');
       const first = claude.locator('.acct[data-account="default-claude"]');
       await expect(first).toContainText('Max 5x');
       await expect(first).toContainText('in use · 2 agents');
@@ -238,7 +244,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       const state = {};
       await mock(page, state);
       await open(page, 'providers');
-      await page.locator('#add-account').click();
+      await page.locator('.prov-group[data-provider="claude"] .add-account').click();
       await page.locator('#add-name').fill('Spare');
       await page.getByRole('button', { name: 'Save' }).click();
       await expect(page.locator('#claude-warning')).toContainText("Anthropic's terms say plan limits assume ordinary, individual use. Several Claude accounts behind one setup may get flagged.");
@@ -246,7 +252,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await expect(page.locator('.add-form')).toHaveCount(0);
       expect(state.calls.filter((c) => c[1] === '/settings/accounts')).toHaveLength(0);
       // Again, and this time Add anyway.
-      await page.locator('#add-account').click();
+      await page.locator('.prov-group[data-provider="claude"] .add-account').click();
       await page.locator('#add-name').fill('Spare');
       await page.getByRole('button', { name: 'Save' }).click();
       state.usage = usageBody();
@@ -263,13 +269,49 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       const state = {};
       await mock(page, state);
       await open(page, 'providers');
-      await page.locator('#add-account').click();
-      await page.locator('#add-provider').selectOption('gpt');
+      await page.locator('.prov-group[data-provider="gpt"] .add-account').click();
+      await expect(page.locator('#add-provider')).toHaveValue('gpt');
       await page.locator('#add-name').fill('Second GPT');
       await page.locator('#add-plan').selectOption('pro');
       await page.getByRole('button', { name: 'Save' }).click();
       await expect.poll(() => state.calls.filter((c) => c[1] === '/settings/accounts').length).toBe(1);
       await expect(page.locator('#claude-warning')).toHaveCount(0);
+    });
+
+    test('changing provider in an open Add account form keeps the form visible', async ({ page }) => {
+      await mock(page, {});
+      await open(page, 'providers');
+      const openrouter = page.locator('.prov-group[data-provider="openrouter"]');
+      await openrouter.locator('.add-account').click();
+      await expect(page.locator('#add-provider')).toHaveValue('openrouter');
+      await page.locator('#add-provider').selectOption('claude');
+      await expect(page.locator('.prov-group[data-provider="claude"] .add-form')).toBeVisible();
+      const inView = await page.locator('.add-form').evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= window.innerHeight;
+      });
+      expect(inView).toBe(true);
+    });
+
+    test('a pending save on one provider does not clear a newer draft opened on another', async ({ page }) => {
+      const state = {};
+      await mock(page, state);
+      let releaseSave;
+      const saveHeld = new Promise((resolve) => { releaseSave = resolve; });
+      await page.route('**/wheelchair/api/settings/accounts', async (route) => {
+        if (route.request().method() !== 'POST') return route.fallback();
+        await saveHeld;
+        return route.fulfill({ status: 201, json: { id: 'new-gpt' } });
+      });
+      await open(page, 'providers');
+      await page.locator('.prov-group[data-provider="gpt"] .add-account').click();
+      await page.locator('#add-name').fill('Second GPT');
+      await page.getByRole('button', { name: 'Save' }).click();
+      await page.locator('.prov-group[data-provider="claude"] .add-account').click();
+      await page.locator('#add-name').fill('Claude Draft');
+      releaseSave();
+      await expect(page.locator('.prov-group[data-provider="claude"] .add-form')).toBeVisible();
+      await expect(page.locator('#add-name')).toHaveValue('Claude Draft');
     });
 
     test('Usage shows bars, the amber line and the account table with reasons', async ({ page }) => {

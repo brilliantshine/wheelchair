@@ -170,7 +170,7 @@
 .mstate.signed_in { color: var(--good-text); }
 .mstate.signed_out, .mstate.problem { color: var(--warn); }
 .acct .actions input, .acct .actions select { flex: 1 1 140px; min-width: 0; }
-.add-form { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.add-form { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; scroll-margin-top: calc(var(--nav-h, 64px) + 12px); }
 .add-form .fields { display: flex; flex-wrap: wrap; gap: 8px; }
 .add-form .fields > * { flex: 1 1 160px; min-width: 0; }
 button.danger { color: var(--bad-text); }
