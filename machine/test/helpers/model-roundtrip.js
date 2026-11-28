@@ -12,7 +12,7 @@ function roundTrip(tools) {
   const registry = path.join(dir, 'registry.json');
   fs.writeFileSync(registry, JSON.stringify({ tools }));
   const env = { ...process.env, HOME: dir, CODEX_HOME: dir, WHEELCHAIR_REGISTRY: registry,
-    WHEELCHAIR_MODELS: path.join(dir, 'models'), WHEELCHAIR_MODELS_CACHE: path.join(dir, 'cache'), WHEELCHAIR_KIMI_CONFIG: path.join(dir, 'kimi.toml') };
+    WHEELCHAIR_AGY: '', WHEELCHAIR_MODELS: path.join(dir, 'models'), WHEELCHAIR_MODELS_CACHE: path.join(dir, 'cache'), WHEELCHAIR_KIMI_CONFIG: path.join(dir, 'kimi.toml') };
   let context = 'init';
   function runExpected(expected, ...args) {
     const result = spawnSync(path.resolve(__dirname, '../../../codex/model.sh'), args, { env, encoding: 'utf8', timeout: 10000 });

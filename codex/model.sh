@@ -38,6 +38,7 @@ provider_usage = "|".join(PROVIDERS)
 USAGE = (f"usage: model.sh <light|standard|heavy|critical> | <{provider_usage}> <slot> | "
          f"effort <{provider_usage}> <slot> | family claude <slot> | "
          "set [<provider> <slot> | <tier>] <model|none> [effort] | "
+         "levels gemini <model> | agy-refresh | agy-launch <model> [effort] | "
          "skip <model> | init | reset | check [--json] | show --json")
 
 
@@ -269,67 +270,141 @@ def kimi_models():
 
 
 # model-script: Antigravity model discovery
-AGY_TTL = 3600
-# The tool whose Settings list is "agy_visible", found from the registry rather than named here.
+AGY_TTL = 30
+LEVELS = ("low", "medium", "high", "xhigh", "max")
 AGY = next((tool for tool in TOOLS if (tool.get("settings", {}).get("modelOptions") or {}).get("listedKey") == "agy_visible"), None)
+AGY_PROVIDER = AGY["provider"] if AGY else None
+
+
+def agy_valid(models):
+    return [o for o in models if isinstance(o, dict) and isinstance(o.get("value"), str) and isinstance(o.get("label"), str)
+            and o["value"] != "none" and FORMATS[AGY["provider"]].fullmatch(o["value"])
+            and ("efforts" not in o or (isinstance(o["efforts"], list) and all(e in LEVELS for e in o["efforts"])))]
 
 
 def agy_parse(text):
-    """`agy models` lines (`<id>\t<name>`) as [{value, label}]; ids a pin cannot hold are skipped."""
-    listed, seen = [], set()
+    entries, seen, groups = [], set(), {}
     for line in text.splitlines():
         model, _, name = line.partition("\t")
         model, name = model.strip(), name.strip()
         if model == "none" or model in seen or not FORMATS[AGY["provider"]].fullmatch(model):
             continue
         seen.add(model)
-        listed.append({"value": model, "label": f"{name} · {model}" if name else model})
-    return listed
+        match = re.fullmatch(r"(.+)-(low|medium|high|xhigh|max)", model)
+        named = re.fullmatch(r"(.*) \((low|medium|high|xhigh|max)\)", name, re.I)
+        group = None
+        if match and named and match[2] == named[2].lower() and match[1] != "none" and FORMATS[AGY["provider"]].fullmatch(match[1]):
+            group = match[1]
+            groups.setdefault(group, []).append((match[2], named[1]))
+        entries.append((model, name, group))
+    result, emitted, values = [], set(), set()
+    for model, name, group in entries:
+        if group and len(groups[group]) >= 2:
+            if group in emitted:
+                continue
+            emitted.add(group)
+            if group in values:
+                continue
+            values.add(group)
+            levels = [level for level in LEVELS if any(e == level for e, _ in groups[group])]
+            result.append({"value": group, "label": f"{groups[group][0][1]} · {group}", "efforts": levels})
+        else:
+            if model in values:
+                continue
+            values.add(model)
+            result.append({"value": model, "label": f"{name} · {model}" if name else model, "efforts": []})
+    return result
 
 
-def agy_models(pin_path):
-    """Antigravity's model list from `agy models`, cached beside the pins for an hour.
+def agy_cache(pin_path):
+    path = os.path.join(os.path.dirname(os.path.abspath(pin_path)), "agy-models.json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict) and isinstance(data.get("models"), list) and isinstance(data.get("at"), (int, float)):
+            data["models"] = agy_valid(data["models"])
+            return path, data
+    except Exception:
+        pass
+    return path, None
 
-    A failed or empty listing keeps the last good cache; with none, [] (the pins still show).
-    WHEELCHAIR_AGY names the binary; set to empty it turns the listing off (tests)."""
+
+def agy_models(pin_path, mode="demand", model=None, effort=None, timeout=10):
     import shutil
     import subprocess
     import time
     if AGY is None:
         return []
-    path = os.path.join(os.path.dirname(os.path.abspath(pin_path)), "agy-models.json")
-    cached = None
-    try:
-        with open(path, encoding="utf-8") as handle:
-            data = json.load(handle)
-        if isinstance(data, dict) and isinstance(data.get("models"), list) and isinstance(data.get("at"), (int, float)):
-            cached = data
-    except Exception:
-        pass
-    if cached is not None and 0 <= time.time() - cached["at"] < AGY_TTL:
-        return agy_valid(cached["models"])
+    path, cached = agy_cache(pin_path)
+    failure_path = path + ".failed"
+    now = time.time()
+    listed = cached["models"] if cached else []
+    age = now - cached["at"] if cached else float("inf")
+    complete = bool(cached) and all("efforts" in entry for entry in listed)
+    refresh = not complete or (mode == "show" and not 0 <= age < AGY_TTL)
+    if mode == "refresh" and complete:
+        refresh = age > 3600
+    if mode == "launch" and complete:
+        normalized, requested = agy_normalize(model, effort, listed)
+        entry = next ( (e for e in listed if e["value"] == normalized), None)
+        refresh = age > 3600 or (age > 30 and (entry is None or (requested and requested not in entry.get("efforts", []))))
+    if not refresh:
+        return listed
+    failed_at = cached.get("failed_at") if cached else None
+    if failed_at is None:
+        try:
+            with open(failure_path, encoding="utf-8") as handle:
+                failed_at = float(handle.read())
+        except (OSError, ValueError):
+            pass
+    if isinstance(failed_at, (int, float)) and 0 <= now - failed_at < 60:
+        return listed
     name = AGY["install"]["binary"]
     binary = os.environ.get("WHEELCHAIR_AGY", shutil.which(name) or os.path.expanduser(f"~/.local/bin/{name}"))
-    listed = []
-    if binary and os.access(binary, os.X_OK):
-        try:
-            run = subprocess.run([binary, "models"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
-            if run.returncode == 0:
-                listed = agy_parse(run.stdout)
-        except Exception:
-            listed = []
-    if not listed:
-        return agy_valid(cached["models"]) if cached is not None else []
+    if not binary or not os.path.isfile(binary) or not os.access(binary, os.X_OK):
+        return listed
+    fresh = []
     try:
-        atomic_write(path, json.dumps({"at": time.time(), "models": listed}) + "\n")
+        run = subprocess.run([binary, "models"], capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+        if run.returncode == 0:
+            fresh = agy_parse(run.stdout)
     except Exception:
         pass
-    return listed
+    try:
+        if fresh:
+            atomic_write(path, json.dumps({"at": time.time(), "models": fresh}) + "\n")
+            try:
+                os.unlink(failure_path)
+            except FileNotFoundError:
+                pass
+        elif cached:
+            cached["failed_at"] = time.time()
+            atomic_write(path, json.dumps(cached) + "\n")
+        else:
+            atomic_write(failure_path, str(time.time()) + "\n")
+    except OSError:
+        pass
+    return fresh or listed
 
 
-def agy_valid(models):
-    return [o for o in models if isinstance(o, dict) and isinstance(o.get("value"), str) and isinstance(o.get("label"), str)
-            and o["value"] != "none" and FORMATS[AGY["provider"]].fullmatch(o["value"])]
+def agy_normalize(model, effort, listed):
+    match = re.fullmatch(r"(.+)-(low|medium|high|xhigh|max)", model)
+    if match and any(e["value"] == match[1] and len(e.get("efforts", [])) >= 2 for e in listed):
+        return match[1], effort or match[2]
+    return model, effort
+
+
+def agy_fix(model, effort, listed):
+    model, effort = agy_normalize(model, effort, listed)
+    entry = next((e for e in listed if e["value"] == model), None)
+    if effort and entry is not None and "efforts" in entry:
+        levels = entry["efforts"]
+        if not levels:
+            effort = None
+        elif effort not in levels and effort in LEVELS:
+            below = [e for e in levels if LEVELS.index(e) <= LEVELS.index(effort)]
+            effort = max(below, key=LEVELS.index) if below else min(levels, key=LEVELS.index)
+    return model, effort
 
 
 # model-script: GPT heads-up workflow
@@ -433,7 +508,9 @@ def main(root, argv):
         print(model)
         return
     if len(argv) == 2 and argv[0] in PROVIDERS and (slot := slot_for(argv[0], argv[1])) is not None:
-        model, _ = read_cell(pin_path, argv[0], slot)
+        model, effort = read_cell(pin_path, argv[0], slot)
+        if argv[0] == AGY_PROVIDER:
+            model, effort = agy_normalize(model, effort, agy_models(pin_path))
         if model == "none":
             print(f"{argv[0]} is not used at {slot}", file=sys.stderr)
             raise SystemExit(3)
@@ -441,6 +518,8 @@ def main(root, argv):
         return
     if len(argv) == 3 and argv[0] == "effort" and argv[1] in PROVIDERS and (slot := slot_for(argv[1], argv[2])) is not None:
         model, effort = read_cell(pin_path, argv[1], slot)
+        if argv[1] == AGY_PROVIDER:
+            model, effort = agy_normalize(model, effort, agy_models(pin_path))
         if model != "none" and effort:
             print(effort)
         return
@@ -452,6 +531,24 @@ def main(root, argv):
                 return
         print(f"claude has no family at {slot}", file=sys.stderr)
         raise SystemExit(3)
+    if len(argv) == 3 and argv[0] == "levels" and argv[1] == AGY_PROVIDER:
+        listed = agy_models(pin_path)
+        entry = next((e for e in listed if e["value"] == argv[2]), None)
+        if entry is None or "efforts" not in entry:
+            raise SystemExit(4)
+        for level in LEVELS:
+            if level in entry["efforts"]:
+                print(level)
+        return
+    if argv == ["agy-refresh"]:
+        agy_models(pin_path, "refresh")
+        return
+    if len(argv) in (2, 3) and argv[0] == "agy-launch" and (len(argv) == 2 or argv[2] in LEVELS):
+        model, effort = argv[1], argv[2] if len(argv) == 3 else None
+        listed = agy_models(pin_path, "launch", model, effort, timeout=5)
+        model, effort = agy_fix(model, effort, listed)
+        print(f"{model}\t{effort or ''}")
+        return
     if argv == ["init"]:
         write(pin_path, lambda: None if os.path.exists(pin_path) else atomic_write(pin_path, rendered(blank_pins(), [])))
         return
@@ -472,15 +569,18 @@ def main(root, argv):
         pins, _, malformed = read_pins(pin_path)
         if malformed:
             pins = blank_pins()
+        listed = agy_models(pin_path, "show")
         result = {provider: {} for provider in PROVIDERS}
         for provider in PROVIDERS:
             for slot in SLOTS:
                 model, effort = cell(pins, provider, slot)
+                if provider == AGY_PROVIDER:
+                    model, effort = agy_fix(model, effort, listed)
                 result[provider][slot] = None if model == "none" else {
                     "model": model, "effort": effort}
         result["malformed"], result["visible"] = malformed, listed_models(cache_path)
         result["kimi_visible"] = kimi_models()
-        result["agy_visible"] = agy_models(pin_path)
+        result["agy_visible"] = listed
         print(json.dumps(result, separators=(",", ":")))
         return
     if len(argv) == 3 and argv[0] == "set" and (slot := slot_for("gpt", argv[1])) in WORK_TIERS:

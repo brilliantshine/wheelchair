@@ -221,7 +221,7 @@ async function applyLesson(hub, card, saver, project, thread) {
 }
 function snapshot(item) { return { text: item.text, ...(item.provider ? { provider: item.provider } : {}), ...(item.project ? { project: item.project } : {}) }; }
 
-function roleLayers(settings, role, project, scout, provider, preview = false, { projectLead = false } = {}) {
+function roleLayers(settings, role, project, scout, provider, preview = false, { projectLead = false, levels = [] } = {}) {
   const template = projectLead ? null : templateFor(settings, role, project);
   const deciding = role === 'worker' && template?.switches.unsettled === 'decide';
   const lines = projectLead ? [] : [deciding
@@ -234,7 +234,7 @@ function roleLayers(settings, role, project, scout, provider, preview = false, {
     lines.push('Where the template and the brief you are given disagree, the brief wins.');
   }
   if (settings.user_name) lines.push('', `The user’s name is ${settings.user_name}. Where these rules say "the user", that is ${settings.user_name}; call them by it.`);
-  if (role === 'sub-lead') lines.push('', 'Escalation rules from Settings:', ...escalationSentences(settings.escalation));
+  if (role === 'sub-lead') lines.push('', 'Escalation rules from Settings:', ...escalationSentences(settings.escalation), ...levels);
   if (role === 'lead') lines.push('', 'The user’s writing style for everything they read (thread replies and the text of cards):', renderStyle(settings.style));
   if (scout && ['lead', 'sub-lead'].includes(role)) {
     const scoutHelper = connectors.byProvider(provider)?.settings.scoutHelper;
@@ -437,6 +437,53 @@ async function modelCommand(hub, args) {
 async function models(hub) { return JSON.parse((await modelCommand(hub, ['show', '--json'])).stdout); }
 async function headsUp(hub) { return JSON.parse((await modelCommand(hub, ['check', '--json'])).stdout); }
 
+// The provider whose models list their own levels (the one `model.sh levels` answers for).
+function levelTool() { return connectors.list().find((m) => m.settings.modelOptions?.listedKey === 'agy_visible'); }
+
+// A model's levels from the saved list: [] when it has none, null when they are unknown.
+async function modelLevels(hub, provider, model) {
+  try { return (await modelCommand(hub, ['levels', provider, model])).stdout.split('\n').filter(Boolean); }
+  catch (error) { if (error.code === 4) return null; throw error; }
+}
+
+// `<base>-<level>` of a level group (two or more levels) is the base at that level; an
+// effort given with it wins.
+async function normalizeLevelModel(hub, provider, model, effort) {
+  const suffixed = /^(.+)-(low|medium|high|xhigh|max)$/.exec(model);
+  if (suffixed && (await modelLevels(hub, provider, suffixed[1]))?.length >= 2) return { model: suffixed[1], effort: effort || suffixed[2] };
+  return { model, effort };
+}
+
+// The sub-lead's per-tier level lines, empty when this provider cannot take workers or has
+// no tier cell set.
+async function levelLines(hub, settings) {
+  const tool = levelTool();
+  if (!tool || !settings.harnesses[tool.provider] || !settings.worker_order.includes(tool.provider)) return [];
+  const read = async (args) => {
+    try { return (await modelCommand(hub, args)).stdout.trim(); }
+    catch (error) { if (error.code === 3) return null; throw error; }
+  };
+  const cells = async () => {
+    const found = [];
+    for (const slot of WORK_TIERS) {
+      const model = await read([tool.provider, slot]);
+      if (model) found.push({ slot, model });
+    }
+    return found;
+  };
+  try { await modelCommand(hub, ['agy-refresh']); } catch {}
+  const lines = [];
+  for (const { slot, model } of await cells()) {
+    const levels = await modelLevels(hub, tool.provider, model);
+    const has = levels === null ? 'levels unknown' : levels.length ? `levels ${levels.join(', ')}` : 'takes no effort';
+    const effort = await read(['effort', tool.provider, slot]);
+    lines.push(`${tool.label} ${slot[0].toUpperCase()}${slot.slice(1)}: ${model}, ${has}, set to ${effort || 'CLI default'}`);
+  }
+  if (!lines.length) return [];
+  lines.push(`On ${tool.label}, a tier's highest listed level is its highest effort: once a worker ran there, or the model takes no effort, the next step moves tier if a higher tier is allowed; otherwise report the task blocked.`);
+  return lines;
+}
+
 function options(models) {
   const result = {};
   for (const manifest of connectors.list()) {
@@ -448,7 +495,7 @@ function options(models) {
     if (spec.listedShape === 'strings') result[manifest.provider] = [...new Set([...listed, ...current])].map(value => ({ value, label: value }));
     else {
       const valid = listed.filter(o => o && typeof o.value === 'string' && typeof o.label === 'string');
-      result[manifest.provider] = [...valid.map(({ value, label }) => ({ value, label })), ...[...new Set(current.filter(value => !valid.some(o => o.value === value)))].map(value => ({ value, label: value }))];
+      result[manifest.provider] = [...valid.map(({ value, label, efforts }) => ({ value, label, ...(Array.isArray(efforts) ? { efforts } : {}) })), ...[...new Set(current.filter(value => !valid.some(o => o.value === value)))].map(value => ({ value, label: value }))];
     }
   }
   return result;
@@ -478,4 +525,4 @@ async function preview(hub, style) {
   } catch (error) { throw appError(502, `Preview failed: ${error.message}`); }
 }
 
-module.exports = { isLessonStale, STALE_DAYS, HISTORY_MAX, REMOVED_MAX, recordHistory, mergeLessons, mergeIncoming, exportLessons, restoreLesson, keepLesson, waitingAction, applyLesson, validLessonText, MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, reportedPlan, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate, validUserName };
+module.exports = { isLessonStale, STALE_DAYS, HISTORY_MAX, REMOVED_MAX, recordHistory, mergeLessons, mergeIncoming, exportLessons, restoreLesson, keepLesson, waitingAction, applyLesson, validLessonText, MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, reportedPlan, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, levelLines, levelTool, load, modelCommand, modelLevels, models, normalizeLevelModel, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate, validUserName };

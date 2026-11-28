@@ -1,4 +1,5 @@
 'use strict';
+require('./helpers/isolate-models.js');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const connectors = require('../../connectors');
@@ -17,4 +18,8 @@ test('model choices include a sixth manifest', () => {
   const extra = structuredClone(original()[0]); extra.provider = 'extra'; extra.settings.modelOptions = { fixed: [['new','New']] };
   connectors.list = () => [...original(), extra];
   try { assert.deepEqual(options(models).extra, [{ value: 'new', label: 'New' }]); } finally { connectors.list = original; }
+});
+test('model choices pass listed levels through and leave appended pins unknown', () => {
+  const listed = [{ value: 'g-a', label: 'A', efforts: ['low', 'high'] }, { value: 'g-s', label: 'S', efforts: [] }, { value: 'g-old', label: 'Old' }];
+  assert.deepStrictEqual(options({ agy_visible: listed, gemini: { light: { model: 'g-a' }, heavy: { model: 'g-b' } } }).gemini, [...listed, { value: 'g-b', label: 'g-b' }]);
 });

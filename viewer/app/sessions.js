@@ -119,7 +119,13 @@ async function resolveModel(hub, cli, role, requestedTier = 'top') {
 async function resolveScout(hub, provider, tier) {
   const args = connectors.byProvider(provider)?.models.familyCommand ? ['family', provider, tier] : [provider, tier];
   try {
-    const model = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), args)).stdout.trim();
+    let model = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), args)).stdout.trim();
+    // A level model's scout is named by its member id, when the saved list has that member.
+    if (provider === settingsStore.levelTool()?.provider) {
+      const effort = (await settingsStore.modelCommand(hub, ['effort', provider, tier])).stdout.trim();
+      const levels = effort ? await settingsStore.modelLevels(hub, provider, model) : null;
+      if (levels?.length >= 2 && levels.includes(effort)) model = `${model}-${effort}`;
+    }
     return model.length > settingsStore.MODEL_MAX ? null : model;
   } catch (error) {
     if (error.code === 3) return null;
@@ -357,12 +363,14 @@ async function startSession(hub, thread, input) {
   if (role === 'lead' && !thread.provider) { thread.provider = selection.provider; thread.cli = cli; }
   const resolved = await resolveModel(hub, cli, role, input.tier);
   const settings = await settingsStore.load(hub);
+  // Worked out before the scouts, so they read the list this may refresh.
+  const levels = role === 'sub-lead' ? await settingsStore.levelLines(hub, settings) : [];
   let scout;
   if (role === 'lead' || role === 'sub-lead') {
     scout = { light: await resolveScout(hub, selection.provider, settings.other_agents.scout), heavy: null };
     if (role === 'sub-lead') scout.heavy = await resolveScout(hub, selection.provider, settings.other_agents['scout-heavy']);
   }
-  const layers = settingsStore.roleLayers(settings, role, thread.project, scout, selection.provider, false, { projectLead: thread.project_lead });
+  const layers = settingsStore.roleLayers(settings, role, thread.project, scout, selection.provider, false, { projectLead: thread.project_lead, levels });
   // Spec "Machine service on the hub": no new sessions while that service runs another commit.
   // A service that can't be reached falls through to the start, which records the failure.
   const current = await hub.call(thread.machine, '/v1/status', 'GET').catch(() => null);

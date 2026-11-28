@@ -46,12 +46,12 @@ default_pins() {
     "gpt.critical = gpt-6-astra" \
     "gpt.lead = gpt-6.1-sol" \
     "gpt.sub-lead = gpt-6.1-sol" \
-    "gemini.light = gemini-3.8-flash-low" \
-    "gemini.standard = gemini-3.8-flash-medium" \
-    "gemini.heavy = gemini-3.8-flash-high" \
-    "gemini.critical = gemini-3.8-flash-high" \
-    "gemini.lead = gemini-3.8-flash-high" \
-    "gemini.sub-lead = gemini-3.8-flash-high" \
+    "gemini.light = gemini-3.8-flash @low" \
+    "gemini.standard = gemini-3.8-flash @medium" \
+    "gemini.heavy = gemini-3.8-flash @high" \
+    "gemini.critical = gemini-3.8-flash @high" \
+    "gemini.lead = gemini-3.8-flash @high" \
+    "gemini.sub-lead = gemini-3.8-flash @high" \
     "kimi.light = kimi-code/kimi-for-coding" \
     "kimi.standard = kimi-code/k3" \
     "kimi.heavy = kimi-code/k3.1-pro" \
@@ -105,10 +105,10 @@ new_case
 for slot in light standard heavy critical lead; do
   case $slot in light) expected=low ;; standard) expected=medium ;; *) expected=high ;; esac
   run_model gemini "$slot"
-  assert "Gemini $slot uses its shipped default" bash -c '[[ $1 == 0 && $2 == "$3" ]]' _ "$status" "$output" "gemini-3.8-flash-$expected"
+  assert "Gemini $slot uses its shipped default" bash -c '[[ $1 == 0 && $2 == "$3" ]]' _ "$status" "$output" "gemini-3.8-flash"
 done
 run_model effort gemini heavy
-assert 'Gemini default effort is empty and successful' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
+assert 'Gemini default effort is high' bash -c '[[ $1 == 0 && $2 == high ]]' _ "$status" "$output"
 run_model set gemini standard gemini-custom max
 assert 'set accepts Gemini max effort' test "$status" -eq 0
 run_model gemini standard
@@ -334,7 +334,7 @@ fake_agy=$case_dir/agy
 printf '%s\n' '#!/bin/sh' 'echo "Fetching available models..." >&2' 'printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\nclaude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)\nBad Model\tx\nnone\tNone\ngpt-oss-120b\n"' > "$fake_agy"
 chmod +x "$fake_agy"
 output=$(WHEELCHAIR_AGY="$fake_agy" WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" "$model" show --json)
-assert 'show JSON lists Antigravity models from agy models' json_assert 'import json,sys; assert json.load(sys.stdin)["agy_visible"] == [{"value":"gemini-3.8-flash-high","label":"Gemini 3.8 Flash (High) · gemini-3.8-flash-high"},{"value":"claude-opus-4-6-thinking","label":"Claude Opus 4.6 (Thinking) · claude-opus-4-6-thinking"},{"value":"gpt-oss-120b","label":"gpt-oss-120b"}]'
+assert 'show JSON lists Antigravity models from agy models' json_assert 'import json,sys; assert json.load(sys.stdin)["agy_visible"] == [{"value":"gemini-3.8-flash-high","label":"Gemini 3.8 Flash (High) · gemini-3.8-flash-high","efforts":[]},{"value":"claude-opus-4-6-thinking","label":"Claude Opus 4.6 (Thinking) · claude-opus-4-6-thinking","efforts":[]},{"value":"gpt-oss-120b","label":"gpt-oss-120b","efforts":[]}]'
 assert 'show caches the Antigravity list beside the pins' test -s "$case_dir/agy-models.json"
 printf '%s\n' '#!/bin/sh' 'exit 1' > "$fake_agy"
 python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["at"]=0; json.dump(d,open(p,"w"))' "$case_dir/agy-models.json"
@@ -343,6 +343,166 @@ assert 'show keeps the stale Antigravity list when agy models fails' json_assert
 new_case
 output=$(WHEELCHAIR_AGY="$case_dir/missing" WHEELCHAIR_MODELS="$pins" WHEELCHAIR_MODELS_CACHE="$cache" "$model" show --json)
 assert 'show gives no Antigravity models without the CLI' json_assert 'import json,sys; assert json.load(sys.stdin)["agy_visible"] == []'
+
+# An unavailable executable did not run and must not create a failure backoff.
+new_case
+export WHEELCHAIR_AGY=
+run_model levels gemini gemini-4-hydrogen
+assert 'empty agy leaves no failure marker' test ! -e "$case_dir/agy-models.json.failed"
+fake_agy=$case_dir/agy
+printf '#!/bin/sh\nprintf "gemini-4-hydrogen-low\\tHydrogen (Low)\\ngemini-4-hydrogen-high\\tHydrogen (High)\\n"\n' > "$fake_agy"
+chmod +x "$fake_agy"
+export WHEELCHAIR_AGY=$fake_agy
+run_model levels gemini gemini-4-hydrogen
+assert 'working agy fetches immediately after unavailable CLI' equals "$output" $'low\nhigh'
+
+# Invalid group bases stay singles; collisions keep the first emitted value.
+new_case
+fake_agy=$case_dir/agy
+printf '%s\n' '#!/bin/sh' "printf 'none-low\\tNone (Low)\\nnone-high\\tNone (High)\\nx\\tX single\\nx-low\\tX (Low)\\nx-high\\tX (High)\\ny-low\\tY (Low)\\ny-high\\tY (High)\\ny\\tY single\\n'" > "$fake_agy"
+chmod +x "$fake_agy"
+export WHEELCHAIR_AGY=$fake_agy
+run_model show --json
+assert 'none group base leaves its members single' json_assert 'import json,sys; a=json.load(sys.stdin)["agy_visible"]; assert [(x["value"],x["efforts"]) for x in a[:2]] == [("none-low",[]),("none-high",[])]'
+assert 'group and single collisions keep the first value' json_assert 'import json,sys; a=json.load(sys.stdin)["agy_visible"]; assert [x["value"] for x in a] == ["none-low","none-high","x","y"]; assert a[2]["efforts"] == [] and a[3]["efforts"] == ["low","high"]'
+
+# Level grouping, catalog reuse, migration, and launch fix-up use only a fake CLI.
+new_case
+fake_agy=$case_dir/agy
+listing=$case_dir/listing
+for family in hydrogen neon carbon argon flash; do
+  case $family in hydrogen|neon) levels='low medium high xhigh'; base="gemini-4-$family" ;; carbon|argon) levels='low medium high'; base="gemini-4-$family" ;; *) levels='low medium high'; base=gemini-3.8-flash ;; esac
+  for level in $levels; do
+    title="${level^}"
+    case $family in hydrogen|neon|carbon|argon) label="Gemini 4 ${family^}" ;; *) label="Gemini 3.8 Flash" ;; esac
+    printf '%s\t%s (%s)\n' "$base-$level" "$label" "$title" >> "$listing"
+  done
+done
+printf '%s\n' $'orchestrator-one\tOrchestrator One' $'orchestrator-two\tOrchestrator Two' $'orchestrator-three\tOrchestrator Three' $'claude-sonnet-4-6\tClaude Sonnet' $'claude-opus-4-6-thinking\tClaude Opus' $'gpt-oss-120b-medium\tGPT OSS' $'lone-low\tLone (Low)' >> "$listing"
+printf '#!/bin/sh\necho call >> "%s"\ncat "%s"\n' "$case_dir/calls" "$listing" > "$fake_agy"
+chmod +x "$fake_agy"
+export WHEELCHAIR_AGY=$fake_agy
+run_model show --json
+assert 'groups level models in first-member order and keeps singles' json_assert 'import json,sys; a=json.load(sys.stdin)["agy_visible"]; assert [x["value"] for x in a]==["gemini-4-hydrogen","gemini-4-neon","gemini-4-carbon","gemini-4-argon","gemini-3.8-flash","orchestrator-one","orchestrator-two","orchestrator-three","claude-sonnet-4-6","claude-opus-4-6-thinking","gpt-oss-120b-medium","lone-low"]; assert a[0]=={"value":"gemini-4-hydrogen","label":"Gemini 4 Hydrogen · gemini-4-hydrogen","efforts":["low","medium","high","xhigh"]} and a[2]["efforts"]==["low","medium","high"] and a[-1]["efforts"]==[]'
+run_model show --json
+assert 'fresh list reused for 30 seconds' bash -c '[[ $(wc -l < "$1") == 1 ]]' _ "$case_dir/calls"
+run_model levels gemini gemini-4-hydrogen
+assert 'levels returns ordered levels' equals "$output" $'low\nmedium\nhigh\nxhigh'
+run_model levels gemini lone-low
+assert 'single has no levels' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
+run_model levels gemini missing
+assert 'missing model levels exit 4' equals "$status" 4
+printf 'gemini.light = gemini-4-hydrogen-low\ngemini.standard = gemini-4-hydrogen-low @max\n' > "$pins"
+run_model gemini light
+assert 'suffixed pin reads base' equals "$output" gemini-4-hydrogen
+run_model effort gemini light
+assert 'suffix becomes pin effort' equals "$output" low
+run_model effort gemini standard
+assert 'explicit pin effort wins without capping' equals "$output" max
+run_model show --json
+assert 'Settings caps the explicit effort' json_assert 'import json,sys; x=json.load(sys.stdin); assert x["gemini"]["standard"]=={"model":"gemini-4-hydrogen","effort":"xhigh"}'
+run_model agy-launch gemini-4-hydrogen-low
+assert 'launch derives effort from a grouped suffix' equals "$output" $'gemini-4-hydrogen\tlow'
+run_model agy-launch gemini-4-hydrogen-low high
+assert 'launch normalizes suffix and preserves explicit effort' equals "$output" $'gemini-4-hydrogen\thigh'
+run_model agy-launch gemini-4-carbon max
+assert 'launch rounds down' equals "$output" $'gemini-4-carbon\thigh'
+run_model agy-launch lone-low max
+assert 'launch drops effort on single' equals "$output" $'lone-low\t'
+run_model agy-launch missing max
+assert 'launch preserves unknown model' equals "$output" $'missing\tmax'
+run_model agy-launch gemini-4-carbon
+assert 'launch preserves CLI default' equals "$output" $'gemini-4-carbon\t'
+# The sub-lead refresh uses only the one-hour age, migration and failure backoff.
+refresh_case() {
+  local kind=$1 expected=$2
+  rm -f "$case_dir/agy-models.json" "$case_dir/agy-models.json.failed"
+  : > "$case_dir/calls"
+  if [[ $kind != missing ]]; then
+    python3 -c 'import json,sys,time; kind=sys.argv[2]; d={"at":time.time()-(3700 if kind in ("stale","failure") else 120),"models":[{"value":"old","label":"Old",**({} if kind=="old" else {"efforts":[]})}]}; d.update({"failed_at":time.time()} if kind=="failure" else {}); json.dump(d,open(sys.argv[1],"w"))' "$case_dir/agy-models.json" "$kind"
+  fi
+  run_model agy-refresh
+  [[ $status == 0 && -z $output && ! -s $stderr && $(wc -l < "$case_dir/calls") -eq $expected ]] || return 1
+  if [[ $expected == 1 ]]; then
+    python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["models"][0]["value"] == "gemini-4-hydrogen"' "$case_dir/agy-models.json"
+  fi
+}
+assert 'refresh reuses a complete two-minute list silently' refresh_case recent 0
+assert 'refresh rewrites a list over an hour old silently' refresh_case stale 1
+assert 'refresh creates a missing list silently' refresh_case missing 1
+assert 'refresh migrates a fresh old-format list silently' refresh_case old 1
+assert 'refresh respects recent failure silently' refresh_case failure 0
+printf '#!/bin/sh\necho call >> "%s"\nexit 1\n' "$case_dir/calls" > "$fake_agy"
+rm -f "$case_dir/agy-models.json" "$case_dir/agy-models.json.failed"
+: > "$case_dir/calls"
+run_model agy-refresh
+assert 'failed refresh exits successfully and silently and records failure' bash -c '[[ $1 == 0 && -z $2 && ! -s $3 && -s $4 && $(wc -l < "$5") == 1 ]]' _ "$status" "$output" "$stderr" "$case_dir/agy-models.json.failed" "$case_dir/calls"
+printf '#!/bin/sh\necho call >> "%s"\ncat "%s"\n' "$case_dir/calls" "$listing" > "$fake_agy"
+rm -f "$case_dir/agy-models.json.failed"
+: > "$case_dir/calls"
+
+# S4.1: each case starts with a controlled saved age and an empty call log.
+launch_refresh_case() {
+  local age=$1 models=$2 requested_model=$3 requested_effort=$4 expected=$5 failure=${6:-0}
+  python3 -c 'import json,sys,time; d={"at":time.time()-int(sys.argv[2]),"models":json.loads(sys.argv[3])}; d.update({"failed_at":time.time()} if sys.argv[4]=="1" else {}); json.dump(d,open(sys.argv[1],"w"))' "$case_dir/agy-models.json" "$age" "$models" "$failure"
+  : > "$case_dir/calls"
+  run_model agy-launch "$requested_model" "$requested_effort"
+  [[ $status == 0 && $(wc -l < "$case_dir/calls") -eq $expected ]]
+}
+listed='[{"value":"gemini-4-hydrogen","label":"Hydrogen","efforts":["low","high"]}]'
+assert 'launch refreshes over hour even for listed model and effort' launch_refresh_case 3700 "$listed" gemini-4-hydrogen low 1
+assert 'launch refreshes missing model after 30 seconds' launch_refresh_case 120 "$listed" missing low 1
+assert 'launch refreshes missing effort after 30 seconds' launch_refresh_case 120 "$listed" gemini-4-hydrogen medium 1
+assert 'launch reuses matching model and effort under hour' launch_refresh_case 120 "$listed" gemini-4-hydrogen low 0
+assert 'launch reuses recent list for missing model' launch_refresh_case 5 "$listed" missing low 0
+assert 'launch skips refresh after recent failure' launch_refresh_case 3700 "$listed" missing low 0 1
+
+# Old format is refreshed even when fresh; failure leaves unknown levels and backs off.
+python3 -c 'import json,sys,time; json.dump({"at":time.time(),"models":[{"value":"old","label":"Old"}]},open(sys.argv[1],"w"))' "$case_dir/agy-models.json"
+run_model levels gemini gemini-4-carbon
+assert 'fresh old-format cache refreshes' equals "$output" $'low\nmedium\nhigh'
+python3 -c 'import json,sys,time; json.dump({"at":time.time(),"models":[{"value":"old","label":"Old"}]},open(sys.argv[1],"w"))' "$case_dir/agy-models.json"
+printf '#!/bin/sh\necho fail >> "%s"\nexit 1\n' "$case_dir/calls" > "$fake_agy"
+run_model levels gemini old
+assert 'unknown old-format levels exit 4' equals "$status" 4
+run_model show --json
+assert 'show omits unknown old-format efforts after refresh failure' json_assert 'import json,sys; a=json.load(sys.stdin)["agy_visible"]; assert len(a)==1 and a[0]["value"]=="old" and "efforts" not in a[0]'
+run_model agy-launch old high
+assert 'old-format launch keeps effort on failure' equals "$output" $'old\thigh'
+assert 'failure backoff avoids second invocation' bash -c '[[ $(grep -c fail "$1") == 1 ]]' _ "$case_dir/calls"
+python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["failed_at"]=0; json.dump(d,open(p,"w"))' "$case_dir/agy-models.json"
+printf '#!/bin/sh\necho call >> "%s"\ncat "%s"\n' "$case_dir/calls" "$listing" > "$fake_agy"
+run_model levels gemini gemini-4-carbon
+assert 'success clears failure' bash -c '[[ $1 == 0 ]] && ! grep -q failed_at "$2"' _ "$status" "$case_dir/agy-models.json"
+python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["at"]=0; json.dump(d,open(p,"w"))' "$case_dir/agy-models.json"
+printf '#!/bin/sh\nsleep 8\n' > "$fake_agy"
+start=$SECONDS
+run_model agy-launch gemini-4-carbon max
+assert 'stalled launch refresh times out and uses saved list' bash -c '[[ $1 == 0 && $2 == $'"'"'gemini-4-carbon\thigh'"'"' && $3 -le 6 ]]' _ "$status" "$output" "$((SECONDS-start))"
+assert 'timeout records failure' grep -q failed_at "$case_dir/agy-models.json"
+# Missing list fetches on demand, and a failed first fetch uses a sibling backoff file.
+new_case
+fake_agy=$case_dir/agy
+printf '#!/bin/sh\necho call >> "%s"\nexit 1\n' "$case_dir/calls" > "$fake_agy"
+chmod +x "$fake_agy"
+export WHEELCHAIR_AGY=$fake_agy
+printf 'gemini.light = gemini-4-carbon-low\n' > "$pins"
+run_model gemini light
+assert 'without a list a suffix stays unchanged' equals "$output" gemini-4-carbon-low
+run_model effort gemini light
+assert 'without a list a suffix does not invent effort' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
+assert 'missing-list failure backs off in sibling file' bash -c '[[ $(wc -l < "$1") == 1 && -s $2 ]]' _ "$case_dir/calls" "$case_dir/agy-models.json.failed"
+printf '0\n' > "$case_dir/agy-models.json.failed"
+printf '#!/bin/sh\necho call >> "%s"\nprintf "gemini-4-carbon-low\\tCarbon (Low)\\ngemini-4-carbon-high\\tCarbon (High)\\n"\n' "$case_dir/calls" > "$fake_agy"
+run_model effort gemini light
+assert 'missing list fetch normalizes pin on demand' equals "$output" low
+assert 'success removes sibling failure marker' test ! -e "$case_dir/agy-models.json.failed"
+run_model agy-launch gemini-4-carbon medium
+assert 'launch rounds down across a gap' equals "$output" $'gemini-4-carbon\tlow'
+python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["models"][0]["efforts"]=["high","xhigh"]; json.dump(d,open(p,"w"))' "$case_dir/agy-models.json"
+run_model agy-launch gemini-4-carbon low
+assert 'launch uses lowest level if none is below request' equals "$output" $'gemini-4-carbon\thigh'
+export WHEELCHAIR_AGY=
 
 # Legacy behavior coverage ported to the new tier names and models-file format.
 new_case

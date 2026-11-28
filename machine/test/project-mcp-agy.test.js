@@ -77,3 +77,28 @@ test('folder entries alone create the plugin and are loaded', () => {
   assert.deepEqual(call({ ...context, extraServers: [] }), call(context));
   assert.deepEqual(call({ ...context, tools: false, extraServers }), call({ ...context, tools: false }));
 });
+
+test('launch fix-up supplies argv and falls back on failure, timeout and malformed output', async () => {
+  const { makeTempSync } = require('../../test-support/run-dir');
+  const dir = makeTempSync('agy-launch-');
+  const old = { ...process.env };
+  Object.assign(process.env, { WHEELCHAIR_AGY_MODEL_SCRIPT: path.join(__dirname, 'fixtures/agy/model-launch-fake.sh'), WHEELCHAIR_AGY_LAUNCH_TIMEOUT_MS: '1000', WHEELCHAIR_MODELS: path.join(dir, 'models'), WHEELCHAIR_MODELS_CACHE: path.join(dir, 'cache'), WHEELCHAIR_AGY: path.join(dir, 'agy') });
+  try {
+    for (const [model, effort, expected] of [
+      ['gemini-4-hydrogen', 'high', ['--model', 'gemini-4-hydrogen', '--effort', 'high']],
+      ['gemini-4-hydrogen', null, ['--model', 'gemini-4-hydrogen']],
+      ['gemini-4-hydrogen-low', 'high', ['--model', 'gemini-4-hydrogen', '--effort', 'high']],
+      ['fail', 'medium', ['--model', 'fail', '--effort', 'medium']],
+      ['stall', 'medium', ['--model', 'stall', '--effort', 'medium']],
+      ['malformed', 'medium', ['--model', 'malformed', '--effort', 'medium']],
+    ]) {
+      const input = { model }, session = { name: 'wc-test', effort };
+      const extras = await agy.launchContext({}, input, session);
+      const argv = agy.command(input, session, '/work', { stateDir: '/state', ...extras }).argv;
+      assert.deepEqual(argv.slice(4), expected, model);
+      assert.equal(session.effort, effort);
+    }
+    const fallback = agy.command({ model: 'raw' }, { name: 'wc-test', effort: 'low' }, '/work', { stateDir: '/state' });
+    assert.deepEqual(fallback.argv.slice(4), ['--model', 'raw', '--effort', 'low']);
+  } finally { for (const key of Object.keys(process.env)) if (!(key in old)) delete process.env[key]; Object.assign(process.env, old); }
+});

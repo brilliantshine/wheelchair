@@ -73,19 +73,24 @@ module.exports = {
   "models": {
     "pins": {
       "light": {
-        "model": "gemini-3.8-flash-low"
+        "model": "gemini-3.8-flash",
+        "effort": "low"
       },
       "standard": {
-        "model": "gemini-3.8-flash-medium"
+        "model": "gemini-3.8-flash",
+        "effort": "medium"
       },
       "heavy": {
-        "model": "gemini-3.8-flash-high"
+        "model": "gemini-3.8-flash",
+        "effort": "high"
       },
       "critical": {
-        "model": "gemini-3.8-flash-high"
+        "model": "gemini-3.8-flash",
+        "effort": "high"
       },
       "lead": {
-        "model": "gemini-3.8-flash-high"
+        "model": "gemini-3.8-flash",
+        "effort": "high"
       }
     },
     "format": "^[a-z0-9][a-z0-9._-]{0,63}$",

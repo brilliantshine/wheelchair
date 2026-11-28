@@ -1,4 +1,5 @@
 'use strict';
+require('./helpers/isolate-models.js');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { validate, shown, roles } = require('../app/card');

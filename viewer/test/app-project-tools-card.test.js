@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const { execFileSync, spawn } = require('node:child_process');
 const { makeTempSync } = require('../../test-support/run-dir.js');
+require('./helpers/isolate-models.js');
 process.env.WHEELCHAIR_MODELS = path.join(makeTempSync('ptools-models-'), 'models');
 const { setup, close, api } = require('./helpers/app.js');
 const { Hub } = require('../app/hub.js');

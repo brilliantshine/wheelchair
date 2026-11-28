@@ -1,5 +1,6 @@
 'use strict';
 
+require('./helpers/isolate-models.js');
 const { makeTemp } = require('../../test-support/run-dir');
 
 // A thread's slug is the plan its branch adds, not whatever docs/plans/ already holds.

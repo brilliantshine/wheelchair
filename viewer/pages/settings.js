@@ -47,6 +47,9 @@
   ];
   const roleInfo = (role) => ROLES.find((r) => r[0] === role) || ROLES[2];
   const SAVED = 'Saved, applies to new sessions';
+  const NOT_REFRESHED = 'Saved; the list could not be refreshed';
+  let modelSaves = 0; // saved model cells, so only the latest save's re-read is drawn
+  const unreadCells = new Map(); // saved cells still waiting for that re-read
 
   let data = null;
   let section = null; // the open category's key; on a phone with no hash the list covers 'you'
@@ -204,13 +207,54 @@
     return list;
   }
 
+  // A model's levels as its option lists them: [] takes no effort, null is unknown.
+  function levelsOf(provider, model) {
+    const entry = (data.model_options[provider] || []).find((o) => o.value === model);
+    return entry && Array.isArray(entry.efforts) ? entry.efforts : null;
+  }
+
+  // The effort that goes with a newly chosen model. A member id of a level group
+  // (`<base>-<level>`) carries its own, which the hub reads out of the id.
+  function keptEffort(provider, model, effort) {
+    const member = /^(.+)-(low|medium|high|xhigh|max)$/.exec(model || '');
+    if (member && levelsOf(provider, member[1])?.length >= 2) return '';
+    const levels = levelsOf(provider, model);
+    return levels && !levels.includes(effort) ? '' : effort;
+  }
+
+  // Redraw one model cell in place: every other cell keeps what is typed or open in it.
+  function redrawCell(block, provider, slot) {
+    const host = document.querySelector(`[data-cell="${block}:${provider}:${slot}"]`);
+    if (host) host.replaceWith(modelPicker(block, provider, slot, { allowNone: block === 'tiers', withEffort: Boolean(EFFORTS[provider]) }));
+  }
+
+  // After a save the lists are read again, so the saved cell shows what the hub now holds.
+  async function refreshModels(provider, slot, block) {
+    const ticket = ++modelSaves;
+    unreadCells.set(`${block}:${provider}:${slot}`, [block, provider, slot]);
+    let fresh;
+    try { fresh = await api('/settings'); } catch {
+      if (ticket !== modelSaves) return;
+      unreadCells.clear();
+      const host = document.querySelector(`[data-cell="${block}:${provider}:${slot}"]`);
+      if (host) host.append(h('p', { class: 'hint', role: 'status', text: NOT_REFRESHED }));
+      return;
+    }
+    if (ticket !== modelSaves) return;
+    data.models = fresh.models;
+    data.model_options = fresh.model_options;
+    // A save overtaken by a later one is drawn here too, by the later save's read.
+    for (const saved of unreadCells.values()) redrawCell(...saved);
+    unreadCells.clear();
+  }
+
   // One model picker for a provider and slot. A change saves at once; a refusal shows its
   // reason under the control and puts the control back.
   function modelPicker(block, provider, slot, { allowNone, withEffort }) {
     const cell = data.models[provider] && data.models[provider][slot];
     const current = cell ? cell.model : null;
     const effort = cell && cell.effort ? cell.effort : '';
-    const wrap = h('div', { class: 'cell' });
+    const wrap = h('div', { class: 'cell', 'data-cell': `${block}:${provider}:${slot}` });
     const label = `${PROVIDER_NAME[provider]} ${slot} model`;
     const select = h('select', { 'aria-label': label, class: toolOf(provider).settings.monoModelNames ? 'mono' : '' },
       optionList(provider, current, { allowNone }).map((o) => h('option', { value: o.value, text: o.label })));
@@ -221,25 +265,28 @@
     async function commit(model, newEffort) {
       const body = { provider, slot, model };
       if (model && newEffort) body.effort = newEffort;
+      let res;
       try {
-        const res = await api('/settings/models', { method: 'PUT', body });
-        data.models = res.models;
-        inlineErr(wrap, '');
-        paint(block);
-        setNote(SAVED, false);
+        res = await api('/settings/models', { method: 'PUT', body });
       } catch (e) {
         select.value = current || NONE;
         if (effortSelect) effortSelect.value = effort;
         wrap.querySelector('.other')?.remove();
         inlineErr(wrap, e.message);
         setNote('', false);
+        return;
       }
+      data.models = res.models;
+      redrawCell(block, provider, slot);
+      setNote(SAVED, false);
+      await refreshModels(provider, slot, block);
     }
 
     select.addEventListener('change', () => {
       if (select.value === OTHER) { openOther(); return; }
       wrap.querySelector('.other')?.remove();
-      commit(select.value === NONE ? null : select.value, effort);
+      const model = select.value === NONE ? null : select.value;
+      commit(model, keptEffort(provider, model, effort));
     });
 
     function openOther() {
@@ -253,7 +300,7 @@
           inlineErr(wrap, toolOf(provider).settings.modelError);
           return;
         }
-        commit(value, effort);
+        commit(value, keptEffort(provider, value, effort));
       };
       use.addEventListener('click', go);
       input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } });
@@ -262,11 +309,12 @@
     }
 
     if (withEffort) {
+      const levels = levelsOf(provider, current);
       effortSelect = h('select', { class: 'effort', 'aria-label': `${PROVIDER_NAME[provider]} ${slot} effort` },
         h('option', { value: '', text: 'CLI default' }),
-        EFFORTS[provider].map((e) => h('option', { value: e, text: e })));
+        (levels || EFFORTS[provider]).map((e) => h('option', { value: e, text: e })));
       effortSelect.value = effort;
-      effortSelect.disabled = !current;
+      effortSelect.disabled = !current || levels?.length === 0;
       effortSelect.addEventListener('change', () => commit(current, effortSelect.value));
       wrap.append(effortSelect);
     }
