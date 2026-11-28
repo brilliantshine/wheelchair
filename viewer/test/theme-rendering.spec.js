@@ -305,6 +305,25 @@ test('the working dot, activity outline and trail stay visible with white and bl
   }
 });
 
+test('the timeline connector stays visible with a white accent in light mode', async ({ page }) => {
+  const { made, plan } = await seedThread(page);
+  await fs.writeFile(path.join(plan, 'graphs/steps.json'), JSON.stringify({ form: 'timeline', explanation: 'Two steps.',
+    events: [{ when: 'Today', label: 'Start' }, { when: 'Next', label: 'Finish' }] }));
+  await ctx.post(made.id, { kind: 'diagram', plan: 'dark', graph: 'steps', title: 'Steps', format: 'form' });
+  const saved = await setTheme(page, { accent: '#ffffff' });
+  await open(page, `/app/thread?id=${made.id}`, saved);
+  const event = page.locator('.form-event').first();
+  await expect(event).toBeVisible();
+  await expect(event).toHaveCSS('border-left-style', 'solid');
+  // Both --panel and the surface really behind the line (the diagram card's own).
+  const [panelRatio, cardRatio] = await event.evaluate((n, panel) => {
+    const { parse, over, ratio, behind } = window.__color;
+    return [parse(panel), behind(n)].map((under) => ratio(over(parse(getComputedStyle(n).borderLeftColor), under), under));
+  }, await cssVar(page, '--panel'));
+  expect(panelRatio, 'against --panel').toBeGreaterThanOrEqual(3);
+  expect(cardRatio, 'against the card surface').toBeGreaterThanOrEqual(3);
+});
+
 test('the spinner takes the visible accent', async ({ page }) => {
   const { made } = await seedThread(page);
   const saved = await setTheme(page, { accent: '#ffffff' });

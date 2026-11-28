@@ -332,7 +332,7 @@ body.aside-open .col-side { padding: 0; }
 .form-explanation { margin-bottom: 14px !important; color: var(--ink-2); }
 .form-body { display: grid; gap: 10px; }
 .form-timeline { gap: 0; padding-left: 10px; }
-.form-event { border-left: 2px solid var(--accent-line); padding: 0 0 16px 18px; position: relative; }
+.form-event { border-left: 2px solid var(--accent-vis); padding: 0 0 16px 18px; position: relative; }
 .form-event::before { content: ''; position: absolute; left: -6px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent-vis); }
 .form-when, .form-detail { color: var(--dim); font-size: 12px; }
 .form-layer, .form-column { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
