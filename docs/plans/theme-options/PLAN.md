@@ -39,8 +39,8 @@ Log and is deleted from here.
   - `distinct-themes`: Editor-style named themes where each theme sets its own fixed surface + accent palette.
 - **Recommendation:** `curated-palettes` — gives cohesive looks in both light and dark modes while still allowing any custom accent color.
 
-### Overlap with 72ca062b2848 (Auto-refresh an open Settings page when settings change): both threads touch Settings (`viewer/pages/settings.js`) and unsaved-draft / save handling in the You section.
-- **Context:** Thread `72ca062b2848` is working on auto-refreshing an open Settings page without clobbering unsaved drafts or focused controls. Messaged its lead to learn what it is changing in Settings.
+### Overlap with 72ca062b2848 (Auto-refresh an open Settings page when settings change): both threads touch Settings (`viewer/pages/settings.js`), `viewer/app/settings.js`, and `viewer/app/routes.js`.
+- **Context:** Thread `72ca062b2848` (`settings-live-refresh`) is planning auto-refresh for an open Settings page: polling, block dirty/focus guards, and save-ordering in `viewer/pages/settings.js`, plus a lightweight settings revision endpoint in `viewer/app/routes.js` / `viewer/app/settings.js`. Our thread adds Theme controls in Settings → You (`viewer/pages/settings.js`) and theme persistence/routes in `viewer/app/settings.js` / `viewer/app/routes.js` (if hub-synced).
 
 ### Q4: Agree the mockups
 - **Context:** Designer is creating mockups for Settings → You (desktop and phone) and a themed Light-mode Thread page with a custom accent color.
