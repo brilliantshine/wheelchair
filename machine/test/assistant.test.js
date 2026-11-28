@@ -103,6 +103,10 @@ test('assistant start uses its own folder and prompt, and switch requires the ma
     assert.ok(prompt.includes((await fs.readFile(path.join(app, 'assistant.md'), 'utf8')).trimEnd()));
     assert.ok(prompt.includes((await fs.readFile(path.join(app, 'cards-lead.md'), 'utf8')).trimEnd()));
     assert.ok(!prompt.includes((await fs.readFile(path.join(app, 'lead.md'), 'utf8')).trimEnd()));
+    assert.match(prompt, /wc\.js assistant settings \[--include-history\]/);
+    assert.match(prompt, /setting <target> --file/);
+    assert.match(prompt, /temporary JSON or text\s+files outside any project repository/);
+    assert.doesNotMatch(prompt, /Do not change Settings\./);
     assert.ok(!prompt.includes('--- realism.md ---')); assert.ok(prompt.endsWith('hub layer'));
     const commands = await log(env); assert.match(commands, new RegExp(`new-session .* -c ${folder}`)); assert.doesNotMatch(commands, /^git /m);
     const invalid = await api(env, 'POST', '/v1/sessions', { ...body, thread_id: 'invalid', assistant: false }, hubHeader);
@@ -118,12 +122,12 @@ test('assistant start uses its own folder and prompt, and switch requires the ma
 });
 
 test('assistant relay forwards once, preserves refusals, and waits beyond five seconds', async () => {
-  const root = await temp(); let status = 200; let delay = 0; const calls = [];
+  const root = await temp(); let status = 200; let delay = 0; let answer = null; const calls = [];
   const hub = http.createServer((req, res) => { let body = ''; req.on('data', c => body += c); req.on('end', () => {
     if (req.url !== '/api/machine/assistant') { res.end('{}'); return; }
     calls.push({ url: req.url, headers: req.headers, body: JSON.parse(body) });
     if (status === 0) return req.socket.destroy();
-    setTimeout(() => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify({ answer: status })); }, delay);
+    setTimeout(() => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(answer || { answer: status })); }, delay);
   }); });
   await new Promise(resolve => hub.listen(0, '127.0.0.1', resolve));
   const env = await service(root, { config: { hub_url: `http://127.0.0.1:${hub.address().port}` } });
@@ -133,9 +137,12 @@ test('assistant relay forwards once, preserves refusals, and waits beyond five s
     delay = 6100; assert.deepEqual(await post(), { status: 200, body: { answer: 200 } });
     assert.equal(calls[0].url, '/api/machine/assistant'); assert.equal(calls[0].body.calling_session, session.name);
     assert.equal(calls[0].headers['x-wheelchair-machine-secret'], 'correct-secret');
-    delay = 0; status = 403; assert.deepEqual(await post(), { status: 403, body: { answer: 403 } });
+    delay = 0; answer = { ok: false, error: 'some machines failed', result: { machines: [{ name: 'hub', ok: true }, { name: 'remote', ok: false, error: 'unavailable' }] } };
+    const partial = await api(env, 'POST', '/v1/agent/assistant', { action: 'setting', target: 'diagram-sensitivity', payload: { level: 'high' } }, headers);
+    assert.deepEqual(partial, { status: 200, body: answer });
+    answer = null; status = 403; assert.deepEqual(await post(), { status: 403, body: { answer: 403 } });
     status = 0; assert.deepEqual(await post(), { status: 503, body: { error: 'hub unavailable' } });
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 4);
     env.instance.config.hub_url = ''; assert.deepEqual(await post(), { status: 503, body: { error: 'hub unavailable' } });
   } finally { await env.close(); await new Promise(resolve => hub.close(resolve)); }
 });
