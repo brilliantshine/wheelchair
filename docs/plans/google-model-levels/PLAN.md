@@ -94,6 +94,15 @@ Claude, GPT, Kimi, OpenRouter models and their effort; the scout lines (they sho
 
 ## Review Rounds
 
+### Round 1 — 2026-11-27
+
+**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
