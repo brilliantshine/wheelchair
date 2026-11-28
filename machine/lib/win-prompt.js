@@ -5,7 +5,7 @@ const sandboxed = session => { const m = connectors.manifest(session.cli); retur
 function promptLines({ health, wsl, loaded, mcp, copy, cli, codexMode, version, unityExists }) {
   const lines = [];
   if (health?.ok === false) lines.push(`Windows bridge: not working on this machine (${health.reason}). Don't rely on \`wc.js win\` until the user fixes it.`);
-  if (!wsl || !loaded.some(entry => entry.windows && mcp?.servers?.[entry.name]?.args?.includes('mcp-for-unity'))) return lines;
+  if (!wsl || !loaded.some(entry => entry.unity === true || (entry.windows && mcp?.servers?.[entry.name]?.args?.includes('mcp-for-unity')))) return lines;
   const project = copy || '<copy_windows from win info>';
   lines.push(copy ? `Unity: your project copy on Windows is \`${copy}\`.` : 'Unity: run `wc.js win info` to get your project copy\'s Windows path (`copy_windows`); if it is null, wait and run it again.');
   if (sandboxed({ cli, codex_mode: codexMode })) lines.push("You can't start Windows programs from this sandboxed session; ask whoever started you to have Unity opened on that path.");

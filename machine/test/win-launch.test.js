@@ -18,3 +18,8 @@ test('Unity and cached bridge warnings follow loaded tools and launch context', 
   assert.deepEqual(promptLines({ ...base, wsl: false }), []);
   assert.match(promptLines({ ...base, loaded: [], health: { ok: false, reason: 'broken' } })[0], /broken.*wc.js win/);
 });
+
+test('folder Unity tool gets project selection instructions', () => {
+  const lines = promptLines({ wsl: true, loaded: [{ name: 'my-unity', unity: true }], cli: 'claude' });
+  assert.ok(lines.some(line => /select the one whose project path is your copy/.test(line)));
+});

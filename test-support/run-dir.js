@@ -7,7 +7,8 @@ const path = require('node:path');
 const legacy = ['wheelchair-machine-test-', 'wc-accounts-', 'wc-statusline-', 'wc-seed-', 'aside-test-', 'aside-recover-', 'aside-groups-', 'aside-http-', 'aside-tombstone-', 'wc-doc-', 'wc-archived-', 'wc-gh-', 'wc-git-', 'wheelchair-viewer-version-', 'wheelchair-viewer-state-', 'wc-graph-', 'usage-test-', 'hub-version-', 'wc-asides-', 'app-slug-'];
 const procAvailable = fs.existsSync('/proc/self/stat');
 const sleeper = new Int32Array(new SharedArrayBuffer(4));
-let dir;
+const dirs = new Map();
+let installed = false;
 let cleaned = false;
 const children = new Map();
 const callbacks = [];
@@ -64,14 +65,13 @@ function sweepRun(target) {
   }
   if (waitStopped(waiting)) remove(target);
 }
-function sweep() {
-  const root = os.tmpdir();
+function sweep(root) {
   try {
     for (const name of fs.readdirSync(root)) {
       try {
         const target = path.join(root, name);
         if (name.startsWith('wheelchair-test-run-')) sweepRun(target);
-        else if (legacy.some(prefix => name.startsWith(prefix)) && fs.statSync(target).mtimeMs < Date.now() - 3600000) remove(target);
+        else if (root === os.tmpdir() && legacy.some(prefix => name.startsWith(prefix)) && fs.statSync(target).mtimeMs < Date.now() - 3600000) remove(target);
       } catch {}
     }
   } catch {}
@@ -85,24 +85,29 @@ function sweep() {
     }
   } catch {}
 }
-function writeOwner() {
+function writeOwner(dir) {
   const tmp = path.join(dir, 'owner.json.tmp');
   fs.writeFileSync(tmp, JSON.stringify({ pid: process.pid, start: stat(process.pid)?.start ?? null, children: [...children.values()] }));
   fs.renameSync(tmp, path.join(dir, 'owner.json'));
 }
 function cleanupNow() {
-  if (!dir || cleaned) return;
+  if (!dirs.size || cleaned) return;
   cleaned = true;
   for (const fn of callbacks) { try { fn(); } catch {} }
   const tracked = [...children.values()];
   for (const child of tracked) kill(child);
-  if (waitStopped(tracked.map(child => child.pid))) remove(dir);
+  if (waitStopped(tracked.map(child => child.pid))) for (const dir of dirs.values()) remove(dir);
 }
-function runDir() {
-  if (dir) return dir;
-  sweep();
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), `wheelchair-test-run-${process.pid}-`));
-  writeOwner();
+function runDir(base = os.tmpdir()) {
+  base = path.resolve(base);
+  if (dirs.has(base)) return dirs.get(base);
+  fs.mkdirSync(base, { recursive: true });
+  sweep(base);
+  const dir = fs.mkdtempSync(path.join(base, `wheelchair-test-run-${process.pid}-`));
+  dirs.set(base, dir);
+  writeOwner(dir);
+  if (installed) return dir;
+  installed = true;
   process.on('exit', cleanupNow);
   const handlers = new Map();
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
@@ -116,15 +121,15 @@ function runDir() {
   }
   return dir;
 }
-function makeTemp(prefix = 'tmp-') { return fs.promises.mkdtemp(path.join(runDir(), prefix)); }
-function makeTempSync(prefix = 'tmp-') { return fs.mkdtempSync(path.join(runDir(), prefix)); }
+function makeTemp(prefix = 'tmp-', base) { return fs.promises.mkdtemp(path.join(runDir(base), prefix)); }
+function makeTempSync(prefix = 'tmp-', base) { return fs.mkdtempSync(path.join(runDir(base), prefix)); }
 function trackChild(child, { group = false } = {}) {
   runDir();
   if (!child.pid) return;
   const record = { pid: child.pid, start: stat(child.pid)?.start ?? null, group };
   children.set(child, record);
-  writeOwner();
-  child.once('exit', () => { children.delete(child); try { writeOwner(); } catch {} });
+  for (const dir of dirs.values()) writeOwner(dir);
+  child.once('exit', () => { children.delete(child); for (const dir of dirs.values()) try { writeOwner(dir); } catch {} });
 }
 function onCleanup(fn) { callbacks.push(fn); }
 module.exports = { runDir, makeTemp, makeTempSync, trackChild, onCleanup, cleanupNow };

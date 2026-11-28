@@ -73,6 +73,7 @@ These are called only when present; they need no flag in the manifest.
 
 | Member | Signature | Purpose |
 |---|---|---|
+| `sandboxWrapTool` | `sandboxWrapTool(command, { worktree, toolDir })` returns an argv array | Runs a folder tool inside the tool's sandbox confined to `worktree`, with `toolDir` as its working directory. |
 | `shellToolsOnly` | `shellToolsOnly(session)` returns a boolean | Whether folder scripts require shell calls. |
 | `keyedToolsReason` | `keyedToolsReason(session)` returns text or `null` | Why keyed folder tools cannot run in this session. |
 | `keyedToolsByMachine` | `keyedToolsByMachine(session)` returns a boolean | Whether keyed folder tools in a shell-only session run through the machine (`wc.js tool run` posts them to `/v1/agent/tools/run`). |
@@ -115,7 +116,7 @@ have none of them. The registry validation also limits `preflight` to one tool.
 | `usageProbe` | `usageProbe(dir, options)` returns a parsed usage reading | `POST /v1/usage` and the hub's usage polling run the tool's own usage query. The manifest `usage.probeWhileLive`, `usage.tryEveryMachine` and `usage.defaultProblem` tune how polling treats it. | The app never polls the tool's usage; the account shows no reading. |
 | `usageEvents` | `usageFrom(raw)` returns `{ at, five_hour, week }` or `null` | Usage carried in hook or statusline payloads becomes a reading on the event. | Usage in that tool's events is ignored. |
 | `preflight` | `preflightCommand(dir)` returns `{ file, args, env }` | `POST /v1/preflight` runs it; the hub's Ready check and balancer call it. At most one connector may have it (today Codex). | No preflight; the hub does not call it for that tool. |
-| `sandbox` | `sandboxed(session)`, `sandboxWrap(command)` | Sessions that run sandboxed get screen commands wrapped, Windows launches denied, and the matching status text. | Sessions are treated as unsandboxed. |
+| `sandbox` | `sandboxed(session)`, `sandboxWrap(command)` | Sessions that run sandboxed get screen commands wrapped, Windows launches denied, and the matching status text. See optional `sandboxWrapTool` for folder tools. | Sessions are treated as unsandboxed. |
 | `restartLoss` | `restartLossReason()` returns the end-reason text | A session adopted from tmux after a machine restart gets this reason. The manifest `stopWhenEnded` flag goes with it: an ended session of the tool is stopped on the next poll. | Adopted sessions get no reason. |
 | `projectTools` | `projectToolReason(name, entry)`, `projectToolFileWarning(servers)` | Project-tool checks ask the connector why an entry is skipped or whether the whole file is too large. `lib/project-tools.js` asks every connector with this flag. | Project tools are never skipped for this tool. |
 | `recover` | `recognizePane(text)` returns boolean | After a machine restart the service identifies adopted tmux panes by asking connectors in manifest `recoverRank` order; the first match sets the session's `cli`. A pane matching none gets the tool with `recoverFallback: true`. | The tool's panes are not recognised and fall to the fallback tool. |
