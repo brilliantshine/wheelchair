@@ -15,14 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q2: Should theme settings sync across devices or stay per browser?
-- **Context:** Background settings are stored in hub `settings.json` and synced across devices, whereas browser-local storage lets each device keep its own theme.
-- **Options:**
-  - `sync-hub`: Sync across all devices via hub `settings.json`, plus a local browser cache for instant pre-paint loading.
-  - `per-device`: Store per browser/device locally.
-  - `hybrid`: Sync preset and accent color on the hub, keep light/dark/system mode per device.
-- **Recommendation:** `sync-hub` — matches Background, and `system` color mode already lets each device follow its own OS light/dark schedule.
-
 ### Q3: What kind of ready-made presets should ship?
 - **Context:** Collin wants ready-made color theme presets alongside picking any custom accent color.
 - **Options:**
@@ -50,6 +42,7 @@ Log and is deleted from here.
 | 2 | Place Theme controls in Settings → You alongside Background, using a browser-cached pre-paint bootstrap so signed-in pages do not flash the wrong color mode on load. | Matches the existing Appearance/You home in Settings and prevents light/dark FOUC on page load. | defaulted |
 | 3 | Leave `signin.html` on the default theme. | Unauthenticated browsers cannot fetch user settings, and sign-in is a one-time gate. | defaulted |
 | 4 | Apply theme (color mode, preset, custom accent color) to all signed-in app pages, standalone doc (`viewer/doc.html`), and graph viewer (`viewer/index.html` + `picture-export.js`), while keeping the embedded terminal (`xterm.js` in `viewer/pages/term-view.js`) dark. | Keeps all Wheelchair UI and diagrams cohesive without making CLI ANSI colors unreadable in light mode. | user |
+| 5 | Store theme settings in hub `settings.json` synced across all devices, backed by a browser-local cache applied before first paint so pages do not flash the wrong theme on load. | Matches Background sync behavior across phone and computer; `system` color mode lets each device follow its own OS light/dark schedule. | user |
 
 ## Spec
 
@@ -61,6 +54,10 @@ Log and is deleted from here.
 
 ### 2. Accent color derivation
 - A single chosen hex accent color (or the active preset's default accent) derives the full 7-token accent family (`--accent`, `--accent-ink`, `--accent-soft`, `--accent-line`, `--accent-text`, `--accent-hi`, `--accent-chip`) for the resolved light or dark mode, maintaining WCAG AA contrast for `--accent-ink` on `--accent` and for `--accent-text`/`--accent-hi` on panel/page surfaces.
+
+### 3. Storage, syncing, and pre-paint bootstrap
+- Theme settings are stored in hub `settings.json` under a `theme` object with revision-checked writes (serialized through `viewer/app/state.js`'s settings file queue, matching `background`).
+- Signed-in pages apply the last cached theme from `localStorage` via a tiny synchronous pre-paint script before stylesheets paint, then refresh from the hub (and re-sync on focus/pageshow/polling like Background) so changes on one device propagate to other open tabs and devices.
 
 ## Accepted Risks
 
