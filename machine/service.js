@@ -862,8 +862,8 @@ class MachineService {
       if (created?.branch && input.role === 'worker') this.startingBranches.delete(created.branch);
     }
   }
-  launchEnv(session, adapter) {
-    return [['PATH', process.env.PATH || ''], ['WHEELCHAIR_LANE', '1'], ...(adapter.sessionNameEnv ? [['WHEELCHAIR_SESSION_NAME', session.name]] : []), ['WHEELCHAIR_STATE_DIR', this.stateDir], ['WHEELCHAIR_MACHINE_ORIGIN', `http://${this.config.host}:${this.config.port}`], ...Object.entries(adapter.loginEnv(session.account_dir))];
+  launchEnv(session, adapter, codexHome) {
+    return [['PATH', process.env.PATH || ''], ['WHEELCHAIR_LANE', '1'], ...(adapter.sessionNameEnv ? [['WHEELCHAIR_SESSION_NAME', session.name]] : []), ['WHEELCHAIR_STATE_DIR', this.stateDir], ['WHEELCHAIR_MACHINE_ORIGIN', `http://${this.config.host}:${this.config.port}`], ...Object.entries(codexHome ? { ...adapter.loginEnv(session.account_dir), CODEX_HOME: codexHome } : adapter.loginEnv(session.account_dir))];
   }
   async startIn(input, name, adapter, account, dir, options, createdWorktree, created, promptPath, rolePrompt) {
     const worktree = created.worktree;
@@ -974,6 +974,8 @@ class MachineService {
     const read = session.assistant || session.project_lead ? { mcp: null, warnings: [], hash: null, dropped: [] } : await readProjectMcp(worktree, { wsl, mount, kernel: !!this.win?.detected?.kernel });
     const { mcp, warnings } = read;
     const tools = TOOL_ROLES.has(input.role) && !session.assistant && !session.project_lead;
+    const codexHome = adapter.sandboxed?.(session) ? (session.account_dir ? adapter.loginEnv(session.account_dir).CODEX_HOME : adapter.usual()) : null;
+    const sandbox = tools && codexHome ? { cli: input.cli, codexHome } : undefined;
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
@@ -1038,7 +1040,7 @@ class MachineService {
             if (missing.length) { folder.push({ names: [row.name], text: `${row.source === 'shared' ? 'shared tool' : 'tool'} ${row.name} needs ${missing.length === 1 ? 'key' : 'keys'} ${missing.join(', ')}, not set on this machine` }); continue; }
           } catch (error) { folder.push({ names: [row.name], text: error.message }); continue; }
         }
-        const options = { stateDir: this.stateDir };
+        const options = { stateDir: this.stateDir, sandbox };
         if (this.win?.detected?.kernel && connectors.manifest(input.cli).wrapProjectTools && row.tool.transport === 'http' && row.tool.windows === true) {
           try { const target = windowsTarget({ type: 'http', url: row.tool.url }); if (!target) throw new Error('invalid Windows tool address'); const port = await this.win.forwards.get(target.port); options.urlOverride = rewriteUrl(row.tool.url, port); if (options.urlOverride === null) throw new Error('invalid Windows tool address'); }
           catch (error) { folder.push({ names: [row.name], text: `tool ${row.name}: couldn't reach Windows (${error.message || String(error)}); left out of this session` }); continue; }
@@ -1051,7 +1053,7 @@ class MachineService {
         }
         servers.push(folderTools.serverEntry(worktree, row, options));
       }
-      const entries = [...(scriptRows.length ? [folderTools.bridgeEntry(worktree, scriptRows, { stateDir: this.stateDir, ...(scriptRows.some(row => row.windows) ? { winReadyFile: readyFile } : {}) })] : []), ...servers];
+      const entries = [...(scriptRows.length ? [folderTools.bridgeEntry(worktree, scriptRows, { stateDir: this.stateDir, sandbox, ...(scriptRows.some(row => row.windows) ? { winReadyFile: readyFile } : {}) })] : []), ...servers];
       context.extraServers = entries.filter(entry => {
         if (!mcp?.names.includes(entry.name)) return true;
         folder.push({ names: [entry.name], text: `tool ${entry.name}: hidden by the .mcp.json server of the same name` });
@@ -1134,7 +1136,7 @@ class MachineService {
         }
       } catch (error) { console.error("the key store on this machine can't be read"); }
     }
-    const env = this.launchEnv(session, adapter);
+    const env = this.launchEnv(session, adapter, codexHome);
     if (tools) {
       const started = Date.now();
       await this.win?.beforeLaunch(session, { windowsTools, wrappedTools });

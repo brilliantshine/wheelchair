@@ -201,22 +201,33 @@ test('Codex keeps .mcp.json entries when folder entries exceed the launch budget
   assert.match(session.project_tools.clis.codex.lines[0].text, /over Codex's launch size limit/);
 });
 
-test('sandboxed Codex omits folder entries and warns only with a usable folder tool', async t => {
+test('sandboxed Codex registers folder entries with its account home', async t => {
   const f = await fixture(t);
-  const dir = await putTool(f.worktree, 'server', 'Project server', 'server');
-  const unrestricted = await f.start();
-  assert.match(await f.command(), /mcp_servers\.project_server\.command=/);
-  assert.deepEqual(unrestricted.project_tools.clis.codex.lines, []);
-  const sandbox = await f.start({ mode: 'sandboxed' });
-  assert.doesNotMatch(await f.command(), /mcp_servers\.project_/);
-  assert.deepEqual(sandbox.project_tools.clis.codex.lines, [{
-    names: ['server'],
-    text: 'folder tools run from the shell here (`wc.js tool run`); server tools need Codex set to unrestricted',
-  }]);
-  await fs.unlink(path.join(dir, 'tool.json'));
-  const invalid = await f.start({ mode: 'sandboxed' });
-  assert.equal(invalid.project_tools.folder.length, 1);
-  assert.deepEqual(invalid.project_tools.clis.codex?.lines || [], []);
+  await putTool(f.worktree, 'script', 'Project script');
+  await putTool(f.worktree, 'server', 'Project server', 'server');
+  const accountDir = path.join(f.root, 'account');
+  const session = await f.start({ mode: 'sandboxed', accountDir });
+  const command = await f.command();
+  assert.match(command, /tool-bridge\.js/); assert.match(command, /tool-launch\.js/);
+  assert.equal((command.match(/--sandbox-cli/g) || []).length, 2);
+  assert.ok(command.includes(accountDir)); assert.match(command, /tool_timeout_sec=260/);
+  assert.ok(command.indexOf('project_wheelchair-tools.command') < command.indexOf('project_server.command'));
+  assert.deepEqual(session.project_tools.clis.codex.lines, []);
+  assert.deepEqual(f.machine.launchEnv(session, connectors.machine('codex'), accountDir).find(([key]) => key === 'CODEX_HOME'), ['CODEX_HOME', accountDir]);
+});
+
+test('sandboxed Codex skips Windows executables on WSL', async t => {
+  const f = await fixture(t);
+  const mount = path.join(f.root, 'mnt'); const exe = path.join(mount, 'c', 'tools', 'app.exe');
+  await fs.mkdir(path.dirname(exe), { recursive: true }); await fs.writeFile(exe, '', { mode: 0o755 });
+  for (const kind of ['script', 'server']) {
+    const dir = await putTool(f.worktree, kind, kind, kind); const file = path.join(dir, 'tool.json');
+    const tool = await readJson(file); tool[kind === 'script' ? 'run' : 'start'] = [exe]; await fs.writeFile(file, JSON.stringify(tool));
+  }
+  f.machine.win.detected = { wsl: true, mount };
+  const session = await f.start({ mode: 'sandboxed' });
+  assert.doesNotMatch(await f.command(), /tool-(bridge|launch)\.js/);
+  assert.deepEqual(session.project_tools.folder.map(row => row.text), ['script', 'server'].map(name => `tool ${name}: skipped in sandboxed Codex (Windows programs cannot run inside Codex's Linux sandbox; set Codex to unrestricted in Settings to use it)`));
 });
 
 test('reviewers and mappers get no folder tools', async t => {
@@ -246,14 +257,14 @@ test('.mcp.json entries win over a folder server and the script bridge', async t
   })));
 });
 
-test('shell instructions require a usable script on Kimi, Pi or sandboxed Codex and are not rewritten on resume', async t => {
+test('shell instructions apply to Kimi and Pi and are not rewritten on resume', async t => {
   const f = await fixture(t);
   await putTool(f.worktree, 'server', 'Project server', 'server');
   const unusable = await putTool(f.worktree, 'script', 'Project script');
   const descriptionFile = path.join(unusable, 'tool.json');
   const tool = await readJson(descriptionFile);
   await fs.writeFile(descriptionFile, JSON.stringify({ ...tool, run: ['./missing-program'] }));
-  const fallback = [{ cli: 'kimi' }, { cli: 'pi' }, { cli: 'codex', mode: 'sandboxed' }];
+  const fallback = [{ cli: 'kimi' }, { cli: 'pi' }];
   const line = `Folder tools: this session can't call them through MCP. Run \`node ${path.resolve(__dirname, '../..')}/viewer/app/wc.js tool list\` to see them and \`node ${path.resolve(__dirname, '../..')}/viewer/app/wc.js tool run <name> --input '<json>'\` to run a script tool; give that shell command a timeout longer than the tool's timeout_seconds (default 120 s).`;
   for (const options of fallback) {
     const session = await f.start(options);
@@ -537,7 +548,7 @@ test('agent tools endpoint and wc tool list use the session pin', async t => {
 test('shell-only sessions report keyed tools and include the starting clause', async t => {
   const f = await fixture(t); git(f.worktree, 'init');
   for (const name of ['first', 'second']) { const dir = await putTool(f.worktree, name, name); const file = path.join(dir, 'tool.json'); await fs.writeFile(file, JSON.stringify({ ...(await readJson(file)), keys: ['TOKEN'] })); }
-  for (const options of [{cli:'kimi'}, {cli:'pi'}, {cli:'codex',mode:'sandboxed'}]) {
+  for (const options of [{cli:'kimi'}, {cli:'pi'}]) {
     const session = await f.start(options), lines = session.project_tools.keyed[session.name];
     assert.equal(lines.length, 2); assert.doesNotMatch(await f.command(), /tool-bridge\.js/);
     const prompt = await fs.readFile(f.promptPath(session.name), 'utf8');
@@ -598,7 +609,7 @@ test('agent routes report key status and sandbox restriction without values', as
   const unrestricted=await f.start(), sandbox=await f.start({mode:'sandboxed'}), eligible=await f.start({cli:'kimi'}); const server=http.createServer((req,res)=>f.machine.handle(req,res)); server.listen(0,'127.0.0.1'); await once(server,'listening');
   try {
     const request=async (session,route)=>{const response=await fetch(`http://127.0.0.1:${server.address().port}/v1/agent/${route}`,{method:'POST',headers:{'x-wheelchair-session-token':session.token},body:'{}',signal:AbortSignal.timeout(4000)}); assert.equal(response.status,200); return response.json();};
-    assert.equal((await request(eligible,'tools')).keyed_run,'machine'); assert.equal((await request(unrestricted,'tools')).keyed_run,'local'); assert.equal((await request(unrestricted,'tools')).keyed_unavailable,null); assert.equal((await request(sandbox,'tools')).keyed_unavailable,connectors.machine('codex').keyedToolsReason(sandbox));
+    assert.equal((await request(eligible,'tools')).keyed_run,'machine'); assert.equal((await request(unrestricted,'tools')).keyed_run,'local'); assert.equal((await request(unrestricted,'tools')).keyed_unavailable,null); assert.equal((await request(sandbox,'tools')).keyed_unavailable,null);
     const result=await request(unrestricted,'tool-keys'); assert.ok(!JSON.stringify(result).includes('sentinelvalue')); assert.deepEqual(result.tools.find(row=>row.name==='secret').keys,[{name:'SET',set:true,reason:null},{name:'MISSING',set:false,reason:'not set on this machine'},{name:'BAD',set:false,reason:'value too short (under 8 characters)'}]); assert.deepEqual(result.tools.find(row=>row.name==='srv').keys,[{name:'SET',set:true,reason:null}]);
   } finally { await new Promise(resolve=>server.close(resolve)); }
 });

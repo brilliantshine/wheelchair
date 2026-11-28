@@ -14,14 +14,15 @@ function runScript(args) {
   if (args.keys && args.keys.length) return runKeyedScript(args);
   return runKeylessScript(args);
 }
-function runKeyedScript({ dir, tool, input, env, keys, signal: abortSignal }) {
+function runKeyedScript({ dir, tool, input, env, keys, sandboxCli, projectDir, signal: abortSignal }) {
   const refusal = { ok: false, refused: "Node debug output for child processes is on; keyed tools won't run", text: '', code: null, signal: null, timedOut: false, truncated: false, stderr: '' };
   if (debuglog('child_process').enabled) return Promise.resolve(refusal);
   return new Promise(resolve => {
     let child, pipeTimer, timedOut = false, aborted = false, stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), overflow = false, dropped = false, launchError = null, stdoutEnded = false, stderrEnded = false, stdoutCut = false, stderrCut = false;
     const program = tool.run[0].includes('/') ? path.resolve(dir, tool.run[0]) : tool.run[0];
     const fail = e => `cannot start ${tool.run[0]}: ${e.code}`;
-    try { child = spawn(program, tool.run.slice(1), { cwd: dir, env, detached: true, stdio: ['pipe','pipe','pipe'] }); }
+    const argv = sandboxCli ? require('../../connectors').machine(sandboxCli).sandboxWrapTool([program, ...tool.run.slice(1)], { worktree: projectDir, toolDir: dir }) : [program, ...tool.run.slice(1)];
+    try { child = spawn(argv[0], argv.slice(1), { cwd: sandboxCli ? projectDir : dir, env, detached: true, stdio: ['pipe','pipe','pipe'] }); }
     catch (e) { resolve({ ok: false, text: '', code: null, signal: null, timedOut: false, truncated: false, stderr: fail(e) }); return; }
     if (child.pid) live.add(child.pid);
     child.stdout.on('data', b => { const room = 2097152 - stdout.length; if (b.length > room) overflow = true; if (room > 0) stdout = Buffer.concat([stdout, b.subarray(0, room)]); });
@@ -45,11 +46,12 @@ function runKeyedScript({ dir, tool, input, env, keys, signal: abortSignal }) {
     });
   });
 }
-function runKeylessScript({ dir, tool, input, env, signal: abortSignal }) {
+function runKeylessScript({ dir, tool, input, env, sandboxCli, projectDir, signal: abortSignal }) {
   return new Promise(resolve => {
     let child, pipeTimer, timedOut = false, aborted = false, stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), launchError = null;
     const program = tool.run[0].includes('/') ? path.resolve(dir, tool.run[0]) : tool.run[0];
-    try { child = spawn(program, tool.run.slice(1), { cwd: dir, env, detached: true, stdio: ['pipe','pipe','pipe'] }); } catch (e) { resolve({ ok: false, text: '', code: null, signal: null, timedOut: false, truncated: false, stderr: e.message }); return; }
+    const argv = sandboxCli ? require('../../connectors').machine(sandboxCli).sandboxWrapTool([program, ...tool.run.slice(1)], { worktree: projectDir, toolDir: dir }) : [program, ...tool.run.slice(1)];
+    try { child = spawn(argv[0], argv.slice(1), { cwd: sandboxCli ? projectDir : dir, env, detached: true, stdio: ['pipe','pipe','pipe'] }); } catch (e) { resolve({ ok: false, text: '', code: null, signal: null, timedOut: false, truncated: false, stderr: e.message }); return; }
     if (child.pid) live.add(child.pid);
     child.stdout.on('data', b => { if (stdout.length < 2097152) stdout = Buffer.concat([stdout, b.subarray(0, 2097152 - stdout.length)]); });
     child.stderr.on('data', b => { stderr = Buffer.concat([stderr, b]).subarray(-4096); });

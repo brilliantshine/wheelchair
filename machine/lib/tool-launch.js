@@ -9,8 +9,8 @@ const { projectIdentity, readKeyStore, usableReason } = require('./project-keys'
 const { readSharedKeys } = require('./shared-keys');
 const { relay } = require('./server-relay');
 function main() {
-const args = process.argv.slice(2); let dir, projectDir, stateDir, keyStore, win, winReadyFile, winListCache; const keys = [];
-for (let i = 0; i < args.length; i++) { if (args[i] === '--win') win = true; else if (args[i] === '--win-ready-file') winReadyFile = args[++i]; else if (args[i] === '--win-list-cache') winListCache = args[++i]; else if (args[i] === '--project-dir') projectDir = args[++i]; else if (args[i] === '--tool') dir = args[++i]; else if (args[i] === '--state-dir') stateDir = args[++i]; else if (args[i] === '--key-store') keyStore = args[++i]; else if (args[i] === '--key') keys.push(args[++i]); }
+const args = process.argv.slice(2); let dir, projectDir, stateDir, keyStore, win, winReadyFile, winListCache, sandboxCli; const keys = [];
+for (let i = 0; i < args.length; i++) { if (args[i] === '--sandbox-cli') sandboxCli = args[++i]; else if (args[i] === '--win') win = true; else if (args[i] === '--win-ready-file') winReadyFile = args[++i]; else if (args[i] === '--win-list-cache') winListCache = args[++i]; else if (args[i] === '--project-dir') projectDir = args[++i]; else if (args[i] === '--tool') dir = args[++i]; else if (args[i] === '--state-dir') stateDir = args[++i]; else if (args[i] === '--key-store') keyStore = args[++i]; else if (args[i] === '--key') keys.push(args[++i]); }
 if (!projectDir || projectDir.startsWith('--')) { console.error('usage: --project-dir <dir> --tool <dir>'); process.exit(1); }
 let tool;
 try {
@@ -40,7 +40,9 @@ if (keyed) {
 if (keyed && (win || winReadyFile)) { const entries = (env.WSLENV || '').split(':').filter(Boolean); for (const key of keys) if (!entries.some(e => e.split('/')[0] === key)) entries.push(key); env.WSLENV = entries.join(':'); }
 const program = tool.start[0].includes('/') ? path.resolve(dir, tool.start[0]) : tool.start[0];
 let child;
-try { child = spawn(winReadyFile ? process.execPath : program, winReadyFile ? [path.join(__dirname, 'win-tool-proxy.js'), '--ready-file', winReadyFile, ...(winListCache ? ['--list-cache', winListCache] : []), '--name', tool.name, '--', program, ...tool.start.slice(1)] : tool.start.slice(1), { cwd: dir, env, detached: true, stdio: keyed ? ['pipe','pipe','pipe'] : ['pipe','pipe','inherit'] }); } catch (e) { console.error(`tool ${tool.name}: cannot start ${tool.start[0]}: ${keyed ? e.code : e.message.replace(/[\r\n]+/g, ' ')}`); process.exit(1); }
+const command = winReadyFile ? [process.execPath, path.join(__dirname, 'win-tool-proxy.js'), '--ready-file', winReadyFile, ...(winListCache ? ['--list-cache', winListCache] : []), '--name', tool.name, '--', program, ...tool.start.slice(1)] : [program, ...tool.start.slice(1)];
+const argv = sandboxCli ? require('../../connectors').machine(sandboxCli).sandboxWrapTool(command, { worktree: projectDir, toolDir: dir }) : command;
+try { child = spawn(argv[0], argv.slice(1), { cwd: sandboxCli ? projectDir : dir, env, detached: true, stdio: keyed ? ['pipe','pipe','pipe'] : ['pipe','pipe','inherit'] }); } catch (e) { console.error(`tool ${tool.name}: cannot start ${tool.start[0]}: ${keyed ? e.code : e.message.replace(/[\r\n]+/g, ' ')}`); process.exit(1); }
 let killed = false;
 function kill() { if (killed || !child.pid) return; killed = true; try { process.kill(-child.pid, 'SIGTERM'); } catch {} const reaper = spawn(process.execPath, ['-e', "setTimeout(() => { try { process.kill(-Number(process.argv[1]), 'SIGKILL'); } catch {} }, 5000)", String(child.pid)], { detached: true, stdio: 'ignore' }); reaper.on('error', () => {}); reaper.unref(); }
 process.on('exit', kill);
