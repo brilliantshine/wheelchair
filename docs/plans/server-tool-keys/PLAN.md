@@ -494,7 +494,7 @@ flowchart TD
 | T3 | tricky: S3 launcher (args, refusals, key read, spawn env), S4 streaming/backpressure/size limit/shutdown, S6 injection, S7 stderr, keyed path only; after T2 and T5 | `machine/lib/tool-launch.js`, `machine/lib/server-relay.js` (new), launcher tests in `machine/test/folder-tools-launch.test.js` | standard / gpt-6.1-terra (attempt 2, same tier: brief rewritten) | wc-878f834f8279-worker-6 | S3–S7 command | not started |
 | T5 | Restore the three keyed-script test fixtures T1 turned into servers (server cases added beside them), add the server store-read-error test, scope the guide's script-output `[key]` sentence | `viewer/test/wc-tool.test.js`, `machine/test/folder-tools-launch.test.js`, one sentence of `protocol/tools.md` | light / gpt-6-luna | wc-878f834f8279-worker-3 | `node --test viewer/test/wc-tool.test.js machine/test/folder-tools-launch.test.js` | done |
 | T6 | Fix three defects in `server-lines.js`: per-string decode buffer sized to the rest of the line (quadratic), 1 MiB batch allocated per line, replacement inside a non-string top-level `id`/`jsonrpc`/`method` value | `machine/lib/server-lines.js`, `machine/test/server-lines.test.js` | light / gpt-6-luna | wc-878f834f8279-worker-4 | `node --test machine/test/server-lines.test.js` | done |
-| T4 | End-to-end S4–S6 detection cases of Validation through the launcher; after T3 | `machine/test/folder-tools-launch.test.js` | standard | | S3–S7 command | not started |
+| T4 | End-to-end S4–S6 detection cases of Validation through the launcher; after T3 | `machine/test/folder-tools-launch.test.js` | standard / gpt-6.1-terra | wc-878f834f8279-worker-7 | S3–S7 command | in progress |
 
 ## Log
 
