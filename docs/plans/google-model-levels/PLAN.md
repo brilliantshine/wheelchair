@@ -257,3 +257,8 @@ For a gemini scout whose pin (read by S2) has an effort, the scout line names th
 | T3 | Settings picker, PUT checks, sub-lead level lines, scout lines (S3, S5, S6); after T1 | viewer/app/{settings,routes,sessions}.js, viewer/pages/settings.js, named viewer tests | standard / claude-sonnet-5-5 | | node --test viewer model/settings/hub/effort tests; npm --prefix viewer run test:browser -- --grep 'effort' | not started |
 
 ## Log
+- 2026-11-27 — Choice: T2, connectors/agy/machine.js: test seams `WHEELCHAIR_AGY_MODEL_SCRIPT` (helper path) and `WHEELCHAIR_AGY_LAUNCH_TIMEOUT_MS` (deadline, default 15 s).
+- 2026-11-27 — Choice: T2, machine/test/fixtures/agy/model-launch-fake.sh: the service case's fake returns a different effort than requested, to show the record keeps the request.
+- 2026-11-27 — Choice: T2, connectors/agy/machine.js: launch-extra keys `agyLaunchModel` / `agyLaunchEffort`; output parsed strictly as one `model\teffort\n` line; no model means no helper call (scout list, not in the report).
+- 2026-11-27 — Choice: T2, machine/test/agy-launch-service.test.js: service start test in a new file, stubbing worktree, tmux liveness and readiness (scout list, not in the report).
+- 2026-11-27 — T2 accepted (band: scout): validation re-run by the sub-lead (6 + 1 pass, export check clean); `bash machine/test/run.sh` left to the full run.
