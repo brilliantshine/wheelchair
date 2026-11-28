@@ -45,6 +45,7 @@ async function read(hub) {
 async function write(hub, body) {
   if (!body || !LEVELS.includes(body.level)) throw appError(400, 'level must be ask, default or high');
   const { machines, ok } = await fanOut(hub, 'POST', { level: body.level }, (value) => ({ level: value.level }));
+  if (Object.values(machines).some((m) => !m.error)) hub.bumpSettingsRevision('diagram');
   return { status: ok ? 200 : 502, body: { machines } };
 }
 

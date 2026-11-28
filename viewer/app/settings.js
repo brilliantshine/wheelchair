@@ -426,12 +426,14 @@ async function save(hub, settings) { assertFits(settings); await hub.state.saveS
 // Keep normalization, validation, and the write in State's one read-modify-write queue.
 // A rejected change never reaches atomicWrite, so the prior settings file remains intact.
 async function update(hub, change) {
-  return hub.state.updateSettings(async (saved) => {
+  const result = await hub.state.updateSettings(async (saved) => {
     const value = normalize(saved);
     await change(value);
     assertFits(value);
     return value;
   });
+  hub.bumpSettingsRevision('settings');
+  return result;
 }
 
 async function modelCommand(hub, args) {

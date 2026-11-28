@@ -58,7 +58,10 @@ test('GET reports each machine, and POST forwards to all of them', async () => {
     assert.equal(read.status, 200);
     assert.deepEqual(read.body.machines.a, { level: 'default', files: [{ harness: 'claude', level: 'default' }] });
     assert.equal(read.body.machines.b.level, null);
+    const before = (await api(context, '/settings/revision')).body;
     const saved = await api(context, '/settings/diagram-sensitivity', { method: 'POST', body: { level: 'high' } });
+    const after = (await api(context, '/settings/revision')).body;
+    assert.deepEqual(after, { ...before, diagram: before.diagram.replace(/:0$/, ':1') });
     assert.equal(saved.status, 200);
     assert.deepEqual(saved.body, { machines: { a: { level: 'high' }, b: { level: 'high' } } });
     assert.deepEqual(fakes.a.posts, [{ level: 'high' }]);
@@ -71,8 +74,10 @@ test('one machine failing gives 502 with the per-machine map; the others keep th
     good: { level: 'ask', files: [] },
     bad: { status: 422, error: 'harness file is not writable' },
   }, async (context, fakes) => {
+    const before = (await api(context, '/settings/revision')).body;
     const saved = await api(context, '/settings/diagram-sensitivity', { method: 'POST', body: { level: 'high' } });
     assert.equal(saved.status, 502);
+    assert.deepEqual((await api(context, '/settings/revision')).body, { ...before, diagram: before.diagram.replace(/:0$/, ':1') });
     assert.deepEqual(saved.body.machines, { good: { level: 'high' }, bad: { error: 'harness file is not writable' } });
     assert.deepEqual(fakes.good.posts, [{ level: 'high' }]);
   });
@@ -105,5 +110,14 @@ test('a refused connection is "did not answer", and a bad level is 400 without c
       assert.equal(bad.status, 400);
     }
     assert.deepEqual(fakes.good.posts, []);
+  });
+});
+
+
+test('a full diagram write failure leaves all revisions unchanged', async () => {
+  await withHub({ bad: { status: 422, error: 'refused' } }, async (context) => {
+    const before = (await api(context, '/settings/revision')).body;
+    assert.equal((await api(context, '/settings/diagram-sensitivity', { method: 'POST', body: { level: 'high' } })).status, 502);
+    assert.deepEqual((await api(context, '/settings/revision')).body, before);
   });
 });
