@@ -340,6 +340,19 @@ Targeted commands covering all touched files (full-run is handled before push pe
 | mechanics | minor | `drawDiagram()` and `refreshUsage()`'s `paint('accounts')` bypass `swapKeepingFocus` | upheld | Wrapped `drawDiagram()` in `swapKeepingFocus` and used `repaint('accounts')` in `refreshUsage()` in Spec §3.1 |
 | mechanics | minor | `saved_dirs` change can alter declared keys/notes for selected `shared_tools_repo` without changing `shared_tools_repo` | upheld | Triggered guarded `refreshSharedKeys(null)` when either `shared_tools_repo` or `saved_dirs` changes on `shared-tools` in Spec §2.2 |
 
+### Round 4 — 2026-11-28
+
+**Changed since Round 3:**
+- Excluded `diagrams` and `background` (alongside `enter` and `tools`) from `reconcileVisibleBlocks()` so unrelated Settings writes never trigger false banners on them (§3.3–§3.4).
+- Removed ordinal/text fallback from `swapKeepingFocus` (exact identity match only: `data-focus`, `id`, `aria-label`) and routed `drawDiagram()` and `refreshUsage()`'s accounts repaint through `swapKeepingFocus` (§3.1).
+- Required `startGen = localWriteGen` check in `applySettingsSnapshot` across `reload`, `refreshModels`, `refreshDiffs`, `legacyNotice`, and `readReserved` so no delayed partial reread can undo a newer local save (§2.1).
+- Cleared `lessonEdit.texts` on clean refresh, carried forward only genuinely modified entries during 409 recovery, and wrapped 409 `reload(false)` in `try/catch/finally` so controls are never stranded disabled (§3.4, §4.1).
+- Restored `addName`/`addValue` first in `paintKeys()` and deleted only the saved key's entry from `sharedKeyDraft` on Save; persisted `stylePendingText`, `editing` form values, and pre-leave `sharedKeyDraft` across category switches (§3.2–§3.3, §4.2).
+- Added `sharedProjectsGen` check in `loadSharedProjects()`, triggered guarded `refreshSharedKeys(null)` on `saved_dirs` change on `shared-tools`, and closed `signCard` + called `refreshUsage()` on Accounts `Load latest` (§2.1–§2.2, §3.4).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
@@ -358,3 +371,4 @@ Targeted commands covering all touched files (full-run is handled before push pe
 - 2026-11-28: Triaged Review Round 1 (19 findings: 4 intent minor, 15 mechanics — 5 blocking, 7 major, 3 minor; all 19 upheld) and updated Spec for Round 2.
 - 2026-11-28: Triaged Review Round 2 (12 findings: 3 intent — 2 major, 1 minor; 9 mechanics — 4 blocking, 4 major, 1 minor; all 12 upheld) and updated Spec for Round 3.
 - 2026-11-28: Triaged Review Round 3 (11 findings: 2 intent — 1 major, 1 minor; 9 mechanics — 4 blocking, 3 major, 2 minor; all 11 upheld) and applied all fixes to Spec. Hit the 3-round review budget without a clean round; posted budget `needs` card for Collin.
+- 2026-11-28: Collin chose "Run another review pass (Thorough)" (budget reset); launching Round 4.
