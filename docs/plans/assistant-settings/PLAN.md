@@ -139,18 +139,19 @@ Update `protocol/app/assistant.md`:
 - **Scratch files for action payloads:** In the opening rule (`protocol/app/assistant.md:11`), explicitly permit writing temporary JSON/text files outside any project repository (for example under `/tmp` or the session's scratch directory) when preparing inputs for `wc.js assistant` (`start --message-file`, `message --text-file`, `setting <target> --file`) and `card.js`, while continuing to forbid editing files in any project or running git writes.
 - **Settings rule block** (replacing `"Do not change Settings."`):
   - You can inspect and change hub settings when Collin asks in chat using `wc.js assistant settings [--include-history]` (read) and `wc.js assistant setting <target> --file <json-file>` (write).
-  - Read `settings` first when you need current values, ids (accounts, templates, lessons), or revisions (background), and report clearly what changed (before → after). Note that `account-restore` only restores a removed default account (`default-<provider>`), never a removed custom account.
+  - Read `settings` first when you need current values, ids (accounts, templates, lessons), or revisions (background), and report clearly what changed (before → after). After any write, remind Collin to reload any already-open Settings page before editing that block. Note that `account-restore` only restores a removed default account (`default-<provider>`), never a removed custom account.
   - **Preserve untouched fields on replacement payloads:**
     - `model`: read the current slot first; when changing only `model` for a provider that supports effort, carry forward the slot's existing `effort` if compatible with the new model (or omit/adjust only if incompatible, and say so); when changing only `effort`, carry forward the slot's existing `model`.
     - `style`: read current `style` first and send the full style object with only the requested field(s) changed.
     - `balancing`: send only the changed balancing key(s); when changing one role in `held_back`, send the full five-role `held_back` object preserving the other roles.
-    - `template-update`: send `id` plus the changed top-level field(s). Because `switches` is replaced as a whole object, when changing any switch read the current template first and send the full `switches` object preserving untouched switches; when changing `role` away from `worker`, omit the worker-only `switches.unsettled` field.
+    - `template-update`: send `id` plus the changed top-level field(s). Because `switches` is replaced as a whole object, when changing any switch read the current template first and send the full `switches` object preserving untouched switches; when changing `role` away from `worker` (even if Collin asked only to change the role), always include the full saved `switches` object with the worker-only `unsettled` field removed so the validator accepts it.
     - `preferences`: send only the changed key(s).
   - **Confirm first with a `question` card** (naming the exact change and its effect) before applying:
     - Loosening session permissions (`permission_mode: "bypass"`, `codex_mode: "unrestricted"`) or broadening aside access (`aside_access: "full"`).
     - Turning on `auto_merge: "on"` or `auto_merge_delete_branch: "on"`.
     - Turning off `project_leads: "off"` (stops live project-lead sessions) or disabling an AI provider (`harness` with `enabled: false`).
-    - Adding an account for a provider that has a provider warning (such as Claude — quote the warning that several Claude accounts behind one setup may get flagged, matching the Settings page's "Add anyway" warning).
+    - Adding an account for a provider that has a provider warning (`accountWarning`, such as Claude) when at least one account for that provider already exists — quote the warning (matching the Settings page's "Add anyway" warning).
+    - Pausing an account (`account-update` with `paused: true`) or clearing a model pin (`model` with `model: null`), which could leave the assistant or leads without an eligible account or model on restart.
     - Removing an account (`account-remove`), deleting a template (`template-delete`), removing a lesson (`lessons-update` with non-empty `removals`), discarding a waiting lesson (`lesson-waiting` with `action: "discard"`), removing the background image (`background` with `action: "remove"`, passing the `revision` read before the card — if the CLI returns `{"ok":false,"error":"Background changed elsewhere"}` because a new image was uploaded meanwhile, re-read `settings` and ask again), or resetting model pins (`models-heads-up` with `action: "reset"`).
     - Any ambiguous request where more than one setting or value could match.
   - Apply other hub setting changes immediately and confirm what changed.
@@ -162,7 +163,8 @@ Update `protocol/app/assistant.md`:
     - Shared tools keys (`Settings → Shared tools`).
     - Uploading a new background image file (`Settings → You`).
   - `settings` retries on hub unavailability; `setting` never retries automatically. After "hub unavailable" on `setting`, check `settings` before trying again. Report the returned outcome (including per-machine results on `diagram-sensitivity`).
-- Add `settings [--include-history]` and `setting <target> --file <f>` rows to the **Actions** table, listing the supported targets.
+- Add `settings [--include-history]` and `setting <target> --file <f>` rows to the **Actions** table in `protocol/app/assistant.md`, listing the supported targets.
+- Update `viewer/app/API.md` to document the new `settings` and `setting` assistant actions on `/api/machine/assistant`, including the partial `diagram-sensitivity` failure returned inside an HTTP 200 response.
 - **Activation / Rollout (`CONTRIBUTING.md:67`):** Role file edits reach sessions started after the edit, never an already-running session. After merging and updating, restart the personal assistant session (or toggle it off and on in Settings) so it picks up the new `protocol/app/assistant.md` rules. Verification checks the composed prompt of a fresh assistant session.
 
 ### 6. Validation Commands & Required Assertions
@@ -183,13 +185,13 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
   ```bash
   node --test viewer/test/assistant.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js
   ```
-  Required assertions: live personal assistant reads settings (omitting `lesson_history` by default, including it with `include_history: true`) and writes across supported targets, with an independent browser-facing `GET /wheelchair/api/settings` read confirming persisted changes; `project-lead-actions.dispatch` rejects `settings`/`setting` with 400 and `assistant-actions.run` without `allowSettings` rejects with 403; `preferences` containing `assistant` is refused with 403; `preferences` containing an unknown or excluded key (such as `enter_to_send`) or empty object is refused with 400; unknown target is refused with 400; `diagram-sensitivity` partial machine failure returns `{ ok: false, error, result: { machines } }`; `background` `remove` requires `revision` and returns 409 (`Background changed elsewhere`) on stale revision.
+  Required assertions: live personal assistant reads settings (omitting `lesson_history` by default, including it with `include_history: true`) and writes across supported targets, with independent browser-facing read-backs confirming persisted state (`GET /wheelchair/api/settings` for hub settings, `GET /wheelchair/api/settings/background` for background changes, and `GET /wheelchair/api/settings/diagram-sensitivity` for diagram sensitivity); `project-lead-actions.dispatch` rejects `settings`/`setting` with 400 and `assistant-actions.run` without `allowSettings` rejects with 403; `preferences` containing `assistant` is refused with 403; `preferences` containing an unknown or excluded key (such as `enter_to_send`) or empty object is refused with 400; unknown target is refused with 400; `diagram-sensitivity` partial machine failure returns `{ ok: false, error, result: { machines } }`; `background` `remove` requires `revision` and returns 409 (`Background changed elsewhere`) on stale revision.
 - **Assistant popup UI (`viewer/test/app-assistant-popup.spec.js`):**
   ```bash
   npm --prefix viewer run test:browser -- app-assistant-popup.spec.js
   ```
-- **Protocol (`protocol/app/assistant.md`):**
-  - Review rendered prose for consistency with `viewer/app/wc.js` and `viewer/app/assistant-actions.js`, and verify activation guidance.
+- **Protocol (`protocol/app/assistant.md`) & API doc (`viewer/app/API.md`):**
+  - Review rendered prose for consistency with `viewer/app/wc.js` and `viewer/app/assistant-actions.js`, and verify activation guidance and `viewer/app/API.md` endpoint entries.
 
 ## Accepted Risks
 
@@ -306,11 +308,28 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 
 ### Round 5 — 2026-11-28
 
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
+
 **Changed since Round 4:**
 - Replaced 19 target branches in Spec §4 with one route lookup table plus three custom handlers (`preferences`, `diagram-sensitivity`, `background`), and noted `account-restore` applies only to `default-<provider>` accounts.
 - Updated Spec §5 (`protocol/app/assistant.md`) to preserve sibling `switches` on `template-update` (omitting `switches.unsettled` when leaving `worker`), require confirmation quoting the provider warning when adding an account for a provider with `accountWarning` (such as Claude), and check for `{"ok":false,"error":"Background changed elsewhere"}` on background removal conflict.
 - Recorded simultaneous browser/assistant edit on replacement payloads (`style`, `held_back`, model slot) as a rare-path Accepted Risk (`review-round-4`).
 - Added CLI conflict assertion and independent `GET /wheelchair/api/settings` read-back assertion in Spec §6.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|---|---|---|---|---|
+| intent | minor | Remind Collin to reload any already-open Settings page before editing that block after an assistant write | upheld | Added one-line reload reminder rule to Spec §5 |
+| mechanics | major | Role-only `template-update` moving a worker template to another role must include full saved `switches` with `unsettled` removed | upheld | Required full saved `switches` without `unsettled` whenever changing `role` away from `worker` in Spec §5 |
+| mechanics | major | Pausing an account or clearing a model pin (`model: null`) could remove the assistant's last eligible startup option | upheld | Added `account-update` with `paused: true` and `model` with `model: null` to confirmation list in Spec §5 |
+| mechanics | minor | `accountWarning` confirmation applies when at least one account for that provider already exists (matching Settings UI) | upheld | Added account-count condition ("when at least one account for that provider already exists") in Spec §5 |
+| mechanics | minor | Independent read-back should also check `GET /settings/background` and `GET /settings/diagram-sensitivity` | upheld | Added both browser-facing read-backs to Spec §6 |
+| mechanics | minor | Document `settings` and `setting` (including partial diagram failure in HTTP 200) in `viewer/app/API.md` | upheld | Added `viewer/app/API.md` update to Spec §5 & §6 |
+
+### Round 6 — 2026-11-28
+
+**Changed since Round 5:**
+- Updated Spec §5 (`protocol/app/assistant.md`): added one-line reload reminder for open Settings pages; required sending full saved `switches` without `unsettled` whenever changing a template's `role` away from `worker`; added `account-update` (`paused: true`) and `model` (`model: null`) to the confirmation list; scoped `accountWarning` confirmation to when at least one account for that provider already exists; added `viewer/app/API.md` update for `settings` and `setting` (including partial diagram failure in HTTP 200).
+- Updated Spec §6 validation assertions to include independent read-backs from `GET /wheelchair/api/settings/background` and `GET /wheelchair/api/settings/diagram-sensitivity`, plus `viewer/app/API.md` check.
 
 ## Prior Work
 
