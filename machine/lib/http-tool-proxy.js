@@ -31,22 +31,24 @@ async function start() {
   const checker = createLineChecker({ name: tool.name, values }), url = urlOverride || tool.url, controllers = new Set();
   let sessionId = null, protocolVersion = null, params, initialized = false, initGate = null, initNotice = null, recovering = null, closing = false, initStarted = 0;
   const errorReply = (id, text) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32603, message: `tool ${tool.name}: ${text}` } }) + '\n');
-  const deadline = (promise, ms) => { let timer; return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('initialization timed out')), ms); })]).finally(() => clearTimeout(timer)); };
-  function post(msg, sid, version, forward = true) {
-    const controller = new AbortController(); controllers.add(controller);
+  const configuredDeadline = process.env.WHEELCHAIR_HTTP_INIT_DEADLINE_MS;
+  const initDeadline = /^[1-9][0-9]*$/.test(configuredDeadline || '') && Number.isSafeInteger(Number(configuredDeadline)) ? Number(configuredDeadline) : 30000;
+  const deadline = (promise, ms, controller) => { let timer; return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('initialization timed out')); }, ms); })]).finally(() => clearTimeout(timer)); };
+  function post(msg, sid, version, forward = true, controller = new AbortController()) {
+    const isRequest = typeof msg.method === 'string' && msg.id !== undefined; controllers.add(controller);
     return new Promise((resolve, reject) => {
       let done = false, responseHeaders;
       const finish = (err, value) => { if (done) return; done = true; err ? reject(err) : resolve(value); };
       const apply = result => {
+        if (controller.signal.aborted || done) return null;
         if (result.note) console.error(result.note);
         if (result.toServer) { try { const injected = JSON.parse(result.toServer); request({ url, headers, sessionId: sid, protocolVersion: version, message: injected, signal: controller.signal }).catch(() => {}); } catch {} }
-        if (result.out && done && msg.id !== undefined) { try { const out = JSON.parse(result.out); if (out.id === msg.id && (Object.hasOwn(out, 'result') || Object.hasOwn(out, 'error'))) return null; } catch {} }
         if (result.out && forward) process.stdout.write(Buffer.from(result.out).toString().trimEnd() + '\n');
-        if (result.out && msg.id !== undefined) { try { const out = JSON.parse(result.out); if (out.id === msg.id && (Object.hasOwn(out, 'result') || Object.hasOwn(out, 'error'))) return out; } catch {} }
+        if (result.out && isRequest) { try { const out = JSON.parse(result.out); if (out.id === msg.id && (Object.hasOwn(out, 'result') || Object.hasOwn(out, 'error'))) return out; } catch {} }
         return null;
       };
       request({ url, headers, sessionId: sid, protocolVersion: version, message: msg, signal: controller.signal,
-        onHeaders: h => { responseHeaders = h; if (msg.id === undefined) finish(null, { headers: h }); },
+        onHeaders: h => { responseHeaders = h; if (!isRequest) finish(null, { headers: h }); },
         onMessage: response => { const result = apply(checker.line(Buffer.from(JSON.stringify(response)))); if (result) finish(null, { message: result, headers: responseHeaders, original: response }); },
         onOversized: prefix => { const result = apply(checker.oversized(prefix)); if (result) finish(null, { message: result, headers: responseHeaders }); }
       }).then(() => { controllers.delete(controller); if (!done) finish(new Error('HTTP stream ended without a matching response')); }, e => { controllers.delete(controller); finish(e); });
@@ -55,50 +57,54 @@ async function start() {
   async function recover(expiredId) {
     if (recovering) return recovering.promise;
     const record = { expiredId, promise: null }; recovering = record;
+    const controller = new AbortController();
     const work = (async () => {
       if (!params) throw new Error('initialization has not been sent');
       if (expiredId) await deleteSession(url, headers, { sessionId: expiredId, protocolVersion });
-      const init = await post({ jsonrpc: '2.0', id: '__wheelchair_init__', method: 'initialize', params }, null, null, false);
+      const init = await post({ jsonrpc: '2.0', id: '__wheelchair_init__', method: 'initialize', params }, null, null, false, controller);
       if (!init.original?.result) throw new Error('initialization failed');
       const newSessionId = init.headers?.['mcp-session-id'] || null, newVersion = init.original.result.protocolVersion || '2025-06-18';
-      await post({ jsonrpc: '2.0', method: 'notifications/initialized' }, newSessionId, newVersion, false);
+      await post({ jsonrpc: '2.0', method: 'notifications/initialized' }, newSessionId, newVersion, false, controller);
       if (recovering !== record) throw new Error('recovery expired');
       sessionId = newSessionId; protocolVersion = newVersion; initialized = true;
     })();
-    record.promise = deadline(work, 30000).catch(e => { initialized = false; throw e; }).finally(() => { if (recovering === record) recovering = null; });
+    record.promise = deadline(work, initDeadline, controller).catch(e => { initialized = false; throw e; }).finally(() => { if (recovering === record) recovering = null; });
     return record.promise;
   }
-  async function send(msg, retry = true) {
+  async function send(msg, retry = true, controller) {
     const sentSessionId = sessionId;
-    try { return await post(msg, sentSessionId, protocolVersion); }
+    try { return await post(msg, sentSessionId, protocolVersion, true, controller); }
     catch (e) {
       if (e.status !== 404 || !sentSessionId || !retry) throw e;
       if (recovering) await recovering.promise;
       if (sessionId === sentSessionId) await recover(sentSessionId);
       if (msg.method === 'notifications/initialized') return {};
-      return send(msg, false);
+      return send(msg, false, controller);
     }
   }
   async function handle(msg) {
+    const isRequest = typeof msg.method === 'string' && msg.id !== undefined;
     try {
       if (msg.method === 'initialize') {
         params = msg.params; initialized = false; initStarted = Date.now();
-        const gate = deadline(send(msg), 30000).then(r => { if (Date.now() - initStarted >= 30000) throw new Error('initialization timed out'); if (!r.original?.result) { const e = new Error('initialization failed'); e.replied = true; throw e; } sessionId = r.headers?.['mcp-session-id'] || null; protocolVersion = r.original.result.protocolVersion || '2025-06-18'; initialized = true; return r; });
+        const controller = new AbortController();
+        const gate = deadline(send(msg, true, controller), initDeadline, controller).then(r => { if (!r.original?.result) { const e = new Error('initialization failed'); e.replied = true; throw e; } sessionId = r.headers?.['mcp-session-id'] || null; protocolVersion = r.original.result.protocolVersion || '2025-06-18'; initialized = true; return r; });
         initGate = gate; try { await gate; } finally { if (initGate === gate) initGate = null; }
       } else if (msg.method === 'notifications/initialized') {
-        const notice = deadline((async () => { if (initGate) await initGate; initialized = false; await send(msg); if (Date.now() - initStarted >= 30000) throw new Error('initialization timed out'); initialized = true; })(), Math.max(0, 30000 - (Date.now() - initStarted)));
+        const controller = new AbortController();
+        const notice = deadline((async () => { if (initGate) await initGate; initialized = false; await send(msg, true, controller); initialized = true; })(), Math.max(0, initDeadline - (Date.now() - initStarted)), controller);
         initNotice = notice; try { await notice; } finally { if (initNotice === notice) initNotice = null; }
       } else {
         if (initGate) await initGate;
         if (initNotice) await initNotice;
         if (recovering) await recovering.promise;
-        if (!initialized) await recover(sessionId);
+        if (!initialized && typeof msg.method === 'string') await recover(sessionId);
         await send(msg);
       }
-    } catch (e) { if (msg.method === 'initialize' || msg.method === 'notifications/initialized') initialized = false; if (msg.id !== undefined && !closing && !e.replied) errorReply(msg.id, e.status ? `HTTP status ${e.status}` : e.code ? `HTTP error ${e.code}` : 'HTTP request failed'); }
+    } catch (e) { if (msg.method === 'initialize' || msg.method === 'notifications/initialized') initialized = false; if (isRequest && !closing && !e.replied) errorReply(msg.id, e.status ? `HTTP status ${e.status}` : e.code ? `HTTP error ${e.code}` : 'HTTP request failed'); }
   }
   const input = readline.createInterface({ input: process.stdin });
-  input.on('line', raw => { try { const msg = JSON.parse(raw); if (msg && typeof msg.method === 'string') handle(msg); } catch {} });
+  input.on('line', raw => { try { const msg = JSON.parse(raw); if (msg && typeof msg === 'object' && (typeof msg.method === 'string' || (Object.hasOwn(msg, 'id') && (Object.hasOwn(msg, 'result') || Object.hasOwn(msg, 'error'))))) handle(msg); } catch {} });
   async function shutdown() { if (closing) return; closing = true; for (const controller of controllers) controller.abort(); if (sessionId) await deleteSession(url, headers, { sessionId, protocolVersion }); process.exit(0); }
   input.on('close', shutdown); for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, shutdown);
 }

@@ -84,3 +84,45 @@ test('failed initialized notification gates queued calls and the next call recov
   const send = msg => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
   try { send({ id: 1, method: 'initialize', params: {} }); assert.equal((await next()).id, 1); send({ method: 'notifications/initialized' }); send({ id: 2, method: 'ping' }); assert.equal((await next()).error.code, -32603); send({ id: 3, method: 'ping' }); assert.deepEqual((await next()).result, {}); assert.equal(count, 2); child.stdin.end(); await new Promise(resolve => child.on('exit', resolve)); } finally { child.kill(); fixture.s.close(); }
 });
+
+test('proxy forwards client replies to server requests on an open SSE stream', async () => {
+  const fs = require('node:fs/promises'), path = require('node:path'), { spawn } = require('node:child_process'), readline = require('node:readline'), { makeTemp } = require('../../test-support/run-dir');
+  const root = await makeTemp(), dir = path.join(root, 'web'), state = path.join(root, 'state'); await fs.mkdir(dir); await fs.mkdir(path.join(state, 'shared-keys'), { recursive: true });
+  await fs.writeFile(path.join(state, 'shared-keys', 'keys.json'), JSON.stringify({ shared: true, revision: 1, keys: { API_KEY: 'secret123456' } }));
+  let stream, received;
+  const fixture = await server((req, res) => { let body = ''; req.on('data', b => { body += b; }); req.on('end', () => {
+    if (req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+    const msg = JSON.parse(body);
+    if (msg.method === 'initialize') { res.setHeader('mcp-session-id', 'session'); res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2025-06-18' } })); }
+    else if (msg.method === 'notifications/initialized') { res.writeHead(202); res.end(); }
+    else if (msg.method === 'tools/call') { stream = res; res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(`data: ${JSON.stringify({ jsonrpc: '2.0', id: 'srv-1', method: 'roots/list' })}\n\n`); }
+    else { received = msg; res.writeHead(202); res.end(); stream.end(`data: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: { content: [] } })}\n\n`); }
+  }); });
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'web', description: 'x', kind: 'server', url: fixture.url, keys: ['API_KEY'] }));
+  const child = spawn(process.execPath, [path.join(__dirname, '../lib/http-tool-proxy.js'), '--project-dir', root, '--tool', dir, '--state-dir', state, '--key-store', 'shared', '--key', 'API_KEY'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+  const next = async () => JSON.parse((await Promise.race([lines.next(), new Promise((_, reject) => setTimeout(() => reject(new Error('reply timed out')), 3000))])).value);
+  const send = msg => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
+  try {
+    send({ id: 1, method: 'initialize', params: {} }); assert.equal((await next()).id, 1);
+    send({ method: 'notifications/initialized' }); send({ id: 2, method: 'tools/call' });
+    assert.deepEqual(await next(), { jsonrpc: '2.0', id: 'srv-1', method: 'roots/list' });
+    const reply = { jsonrpc: '2.0', id: 'srv-1', result: { roots: [] } }; child.stdin.write(JSON.stringify(reply) + '\n');
+    assert.deepEqual(await next(), { jsonrpc: '2.0', id: 2, result: { content: [] } }); assert.deepEqual(received, reply);
+  } finally { child.kill(); fixture.s.close(); }
+});
+
+test('initialization deadline aborts late replies', async () => {
+  const fs = require('node:fs/promises'), path = require('node:path'), { spawn } = require('node:child_process'), readline = require('node:readline'), { makeTemp } = require('../../test-support/run-dir');
+  const root = await makeTemp(), dir = path.join(root, 'web'), state = path.join(root, 'state'); await fs.mkdir(dir); await fs.mkdir(path.join(state, 'shared-keys'), { recursive: true });
+  await fs.writeFile(path.join(state, 'shared-keys', 'keys.json'), JSON.stringify({ shared: true, revision: 1, keys: { API_KEY: 'secret123456' } }));
+  const fixture = await server((req, res) => { req.resume(); req.on('end', () => { setTimeout(() => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18' } })); }, 400); }); });
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'web', description: 'x', kind: 'server', url: fixture.url, keys: ['API_KEY'] }));
+  const child = spawn(process.execPath, [path.join(__dirname, '../lib/http-tool-proxy.js'), '--project-dir', root, '--tool', dir, '--state-dir', state, '--key-store', 'shared', '--key', 'API_KEY'], { env: { ...process.env, WHEELCHAIR_HTTP_INIT_DEADLINE_MS: '200' }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const replies = []; readline.createInterface({ input: child.stdout }).on('line', line => replies.push(JSON.parse(line)));
+  try {
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n');
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    assert.equal(replies.length, 1); assert.equal(replies[0].id, 1); assert.equal(replies[0].error.code, -32603);
+  } finally { child.kill(); fixture.s.close(); }
+});
