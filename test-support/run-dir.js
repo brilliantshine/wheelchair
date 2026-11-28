@@ -43,12 +43,45 @@ function waitStopped(pids) {
 function kill(child) {
   try { process.kill(child.group ? -child.pid : child.pid, 'SIGKILL'); } catch {}
 }
+function makeWritable(root) {
+  const stack = [root];
+  while (stack.length) {
+    const entry = stack.pop();
+    let info;
+    try { info = fs.lstatSync(entry); } catch { continue; }
+    if (info.isSymbolicLink()) continue;
+    if (info.isDirectory()) {
+      if ((info.mode & 0o700) !== 0o700) {
+        try { fs.chmodSync(entry, (info.mode & 0o777) | 0o700); } catch {}
+      }
+      let names;
+      try { names = fs.readdirSync(entry); } catch { continue; }
+      for (const name of names) stack.push(path.join(entry, name));
+    } else if ((info.mode & 0o200) === 0) {
+      try { fs.chmodSync(entry, (info.mode & 0o777) | 0o600); } catch {}
+    }
+  }
+}
 function remove(target) {
-  try { fs.rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); } catch {}
+  try {
+    fs.rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  } catch {
+    makeWritable(target);
+    try { fs.rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); } catch {}
+  }
 }
 function sweepRun(target) {
   let owner;
-  try { owner = JSON.parse(fs.readFileSync(path.join(target, 'owner.json'), 'utf8')); } catch { return; }
+  try {
+    owner = JSON.parse(fs.readFileSync(path.join(target, 'owner.json'), 'utf8'));
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      const match = path.basename(target).match(/^wheelchair-test-run-(\d+)-/);
+      if (match && !alive(Number(match[1]))) remove(target);
+      else if (fs.statSync(target).mtimeMs < Date.now() - 3600000) remove(target);
+    }
+    return;
+  }
   if (!owner || !Number.isInteger(owner.pid) || owner.pid <= 0) return;
   const current = stat(owner.pid)?.start ?? null;
   if (alive(owner.pid) && (owner.start == null || current == null || owner.start === current)) return;

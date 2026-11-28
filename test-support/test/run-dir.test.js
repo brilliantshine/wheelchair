@@ -92,3 +92,44 @@ test('custom base is created, swept and cleaned along with default root', () => 
   const value = JSON.parse(result.stdout); assert.equal(value.owner, true); assert.equal(value.dead, false);
   assert.equal(fs.existsSync(value.dir), false); assert.deepEqual(remaining(root), []);
 });
+
+test('exit cleanup and sweep remove read-only trees without chmodding symlink targets', () => {
+  const root = sandbox();
+  const external = path.join(root, 'external-readonly');
+  fs.writeFileSync(external, 'keep');
+  fs.chmodSync(external, 0o444);
+
+  const dead = path.join(root, 'wheelchair-test-run-dead-ro');
+  const deadNested = path.join(dead, 'state', 'shared-tools', 'locked');
+  fs.mkdirSync(deadNested, { recursive: true });
+  fs.writeFileSync(path.join(dead, 'owner.json'), JSON.stringify({ pid: 2147483647, start: null, children: [] }));
+  fs.writeFileSync(path.join(deadNested, 'tool.json'), '{}');
+  fs.chmodSync(path.join(deadNested, 'tool.json'), 0o444);
+  fs.chmodSync(deadNested, 0o555);
+  fs.chmodSync(path.dirname(deadNested), 0o555);
+
+  const orphan = path.join(root, 'wheelchair-test-run-2147483647-orphan');
+  const orphanNested = path.join(orphan, 'locked');
+  fs.mkdirSync(orphanNested, { recursive: true });
+  fs.writeFileSync(path.join(orphanNested, 'tool.json'), '{}');
+  fs.chmodSync(orphanNested, 0o555);
+
+  const result = script(`
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const dir = h.makeTempSync('ro-');
+    const nested = path.join(dir, 'outer', 'inner');
+    fs.mkdirSync(nested, { recursive: true });
+    fs.writeFileSync(path.join(nested, 'file.txt'), 'data');
+    fs.symlinkSync(${JSON.stringify(external)}, path.join(nested, 'link'));
+    fs.chmodSync(path.join(nested, 'file.txt'), 0o444);
+    fs.chmodSync(nested, 0o555);
+    fs.chmodSync(path.dirname(nested), 0o000);
+  `, root);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(dead), false);
+  assert.equal(fs.existsSync(orphan), false);
+  assert.deepEqual(remaining(root), []);
+  assert.equal(fs.statSync(external).mode & 0o777, 0o444);
+  fs.chmodSync(external, 0o644);
+});
