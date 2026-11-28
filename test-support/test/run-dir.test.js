@@ -81,3 +81,14 @@ test('sweep respects owner liveness and legacy age', async () => {
     await done;
   }
 });
+
+test('custom base is created, swept and cleaned along with default root', () => {
+  const root = sandbox(), base = path.join(root, 'custom', 'nested');
+  fs.mkdirSync(base, { recursive: true });
+  const dead = path.join(base, 'wheelchair-test-run-dead'); fs.mkdirSync(dead);
+  fs.writeFileSync(path.join(dead, 'owner.json'), JSON.stringify({ pid: 2147483647, children: [] }));
+  const result = script(`const base = ${JSON.stringify(base)}; const dir = h.runDir(base); h.makeTempSync('custom-', base); h.makeTempSync(); console.log(JSON.stringify({ dir, owner: require('node:fs').existsSync(require('node:path').join(dir, 'owner.json')), dead: require('node:fs').existsSync(${JSON.stringify(dead)}) })); h.cleanupNow();`, root);
+  assert.equal(result.status, 0, result.stderr);
+  const value = JSON.parse(result.stdout); assert.equal(value.owner, true); assert.equal(value.dead, false);
+  assert.equal(fs.existsSync(value.dir), false); assert.deepEqual(remaining(root), []);
+});

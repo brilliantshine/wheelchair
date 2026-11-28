@@ -14,7 +14,7 @@ function usableReason(value) {
   return null;
 }
 const KEY_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const exact = ['IFS', 'OPTIND', 'OPTARG', 'PS1', 'PS2', 'PS4', 'PPID', 'ENV', 'CDPATH', 'HISTFILE', 'MAIL', 'MAILPATH', 'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'TMPDIR', 'PWD', 'LANG', 'TZ', 'NODE_OPTIONS', 'NODE_PATH', 'NODE_EXTRA_CA_CERTS', 'PYTHONPATH', 'PYTHONHOME', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'GITHUB_TOKEN', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_ORG_ID', 'OPENAI_PROJECT_ID'];
+const exact = ['IFS', 'OPTIND', 'OPTARG', 'PS1', 'PS2', 'PS4', 'PPID', 'ENV', 'CDPATH', 'HISTFILE', 'MAIL', 'MAILPATH', 'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'TMPDIR', 'PWD', 'LANG', 'TZ', 'WSLENV', 'NODE_OPTIONS', 'NODE_PATH', 'NODE_EXTRA_CA_CERTS', 'PYTHONPATH', 'PYTHONHOME', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'GITHUB_TOKEN', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_ORG_ID', 'OPENAI_PROJECT_ID'];
 const prefixes = ['LD_', 'DYLD_', 'LC_', 'XDG_', 'TMUX', 'SSH_', 'DBUS_', 'GIT_', 'GH_', 'WHEELCHAIR_', 'CLAUDE_', 'CODEX_', 'ANTHROPIC_'];
 function reservedNames() { return { exact: [...new Set([...exact, ...Object.values(adapters).flatMap(a => Object.keys(a.loginEnv('x')))])], prefixes: [...prefixes] }; }
 function isReserved(name) { const rules = reservedNames(); return rules.exact.some(key => key.toUpperCase() === name.toUpperCase()) || rules.prefixes.some(prefix => name.startsWith(prefix)); }

@@ -14,7 +14,7 @@ test('references, reservations and held-back names', () => {
   const { references, heldBack } = keyReferences(servers);
   assert.deepEqual({ ...references }, { A: ['a'], B: ['a'], TOKEN: ['a', 'b'] });
   assert.deepEqual({ ...heldBack }, { A: [{ tool: 'a', field: 'args' }], B: [{ tool: 'b', field: 'url' }], TOKEN: [{ tool: 'malformed', field: 'command' }] });
-  for (const name of ['HOME', 'OPENAI_API_KEY', 'LD_PRELOAD', 'WHEELCHAIR_X', 'CLAUDE_CONFIG_DIR', 'path', 'OPTIND', 'ifs', 'MAILPATH']) assert.equal(isReserved(name), true, name);
+  for (const name of ['WSLENV', 'wslenv', 'HOME', 'OPENAI_API_KEY', 'LD_PRELOAD', 'WHEELCHAIR_X', 'CLAUDE_CONFIG_DIR', 'path', 'OPTIND', 'ifs', 'MAILPATH']) assert.equal(isReserved(name), true, name);
   assert.equal(isReserved('MAILBOX'), false);
   assert.deepEqual({ ...launchKeys(servers, { keys: { A: 'a', B: 'b', TOKEN: 't' } }).env }, {});
 });
