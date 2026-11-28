@@ -278,6 +278,42 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await expect(page.locator('#claude-warning')).toHaveCount(0);
     });
 
+    test('changing provider in an open Add account form keeps the form visible', async ({ page }) => {
+      await mock(page, {});
+      await open(page, 'providers');
+      const openrouter = page.locator('.prov-group[data-provider="openrouter"]');
+      await openrouter.locator('.add-account').click();
+      await expect(page.locator('#add-provider')).toHaveValue('openrouter');
+      await page.locator('#add-provider').selectOption('claude');
+      await expect(page.locator('.prov-group[data-provider="claude"] .add-form')).toBeVisible();
+      const inView = await page.locator('.add-form').evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= window.innerHeight;
+      });
+      expect(inView).toBe(true);
+    });
+
+    test('a pending save on one provider does not clear a newer draft opened on another', async ({ page }) => {
+      const state = {};
+      await mock(page, state);
+      let releaseSave;
+      const saveHeld = new Promise((resolve) => { releaseSave = resolve; });
+      await page.route('**/wheelchair/api/settings/accounts', async (route) => {
+        if (route.request().method() !== 'POST') return route.fallback();
+        await saveHeld;
+        return route.fulfill({ status: 201, json: { id: 'new-gpt' } });
+      });
+      await open(page, 'providers');
+      await page.locator('.prov-group[data-provider="gpt"] .add-account').click();
+      await page.locator('#add-name').fill('Second GPT');
+      await page.getByRole('button', { name: 'Save' }).click();
+      await page.locator('.prov-group[data-provider="claude"] .add-account').click();
+      await page.locator('#add-name').fill('Claude Draft');
+      releaseSave();
+      await expect(page.locator('.prov-group[data-provider="claude"] .add-form')).toBeVisible();
+      await expect(page.locator('#add-name')).toHaveValue('Claude Draft');
+    });
+
     test('Usage shows bars, the amber line and the account table with reasons', async ({ page }) => {
       await mock(page, {});
       await open(page, 'usage');
