@@ -95,7 +95,8 @@ test('placement ranks accounts and respects provider policy', async (t) => {
     const hub = await fixture({ worker_order: ['claude', 'gpt'], lead_order: ['claude', 'any'] });
     assert.equal((await choose(hub, { machine: 'hub' }, 'worker')).provider, 'gpt');
     assert.equal((await choose(hub, { machine: 'hub' }, 'worker', 'top', { not_provider: 'gpt' })).provider, 'claude');
-    for (const role of ['lead', 'sub-lead']) assert.equal((await choose(hub, { machine: 'hub', provider: 'gpt' }, role)).provider, 'gpt');
+    assert.equal((await choose(hub, { machine: 'hub', provider: 'gpt' }, 'lead')).provider, 'gpt');
+    assert.equal((await choose(hub, { machine: 'hub', provider: 'gpt' }, 'sub-lead')).provider, 'claude');
   });
   await t.test('lead any and constraint fallback', async () => {
     const hub = await fixture({ lead_order: ['claude', 'any'] }, {}, ['default-gpt']);
@@ -471,10 +472,16 @@ test('waiting lead records provider and promoted role layers and style', async (
   } finally { await close(c); }
 });
 
-test('lead and sub-lead use distinct model slots', async () => {
-  const { slotFor } = require('../app/balancer.js');
-  assert.equal(await slotFor(null, 'lead'), 'lead');
-  assert.equal(await slotFor(null, 'sub-lead'), 'sub-lead');
+test('standalone roles use their configured tier', async () => {
+  const { slotFor, expandOrder } = require('../app/balancer.js');
+  const settings = require('../app/settings.js');
+  const value = settings.defaults();
+  value.other_agents['sub-lead'] = 'light'; value.other_agents.assistant = 'critical';
+  const hub = { state: { settings: async () => value } };
+  assert.equal(await slotFor(hub, 'lead'), 'heavy');
+  assert.equal(await slotFor(hub, 'sub-lead'), 'light');
+  assert.equal(await slotFor(hub, 'lead', 'top', { assistant: true }), 'critical');
+  assert.deepEqual(expandOrder(['gpt', 'any'], value), ['gpt', ...value.worker_order]);
 });
 
 test('OpenRouter explicit placement outside order respects review family', async () => {

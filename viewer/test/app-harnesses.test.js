@@ -25,7 +25,7 @@ test('switches, lead guard, waiting reason and harness status', async () => {
     assert.equal(switched.status, 200); assert.equal(switched.body.harnesses.claude, false);
     assert.equal((await api(c, '/settings/balancing', { method: 'PUT', body: { lead_order: ['claude'] } })).status, 409);
     const sub = await machinePost(c, '/machine/session', { calling_session: start.sessions[0].name, action: 'start', role: 'sub-lead', attempt_id: 'left-out' });
-    assert.equal(sub.body.session.waiting_reason, 'Claude Code is left out in Settings');
+    assert.notEqual(sub.body.session.provider, 'claude');
     const data = (await api(c, '/harnesses?fresh=1')).body;
     assert.equal(data.switches.claude, false); assert.equal(data.threads_using.claude, 1);
     assert.deepEqual(data.machines[0].harnesses.claude, { installed: true, version: null, recipe: null, signed_in: true });
@@ -49,7 +49,7 @@ test('cached status, placement and onboarding follow the installed CLI and enabl
   hub.allThreads = async () => [];
   let data = await harnesses.describe(hub);
   assert.equal(data.can_start.machine, 'host');
-  assert.equal(data.can_start.lead.ok, false); assert.match(data.can_start.lead.reason, /Pi \(OpenRouter\).*Workers try first/);
+  assert.equal(data.can_start.lead.ok, false); assert.match(data.can_start.lead.reason, /Pi \(OpenRouter\).*Worker ladder/);
   assert.equal(data.can_start.worker.ok, false); assert.deepEqual(data.machines[1], { name: 'offline', reachable: false, harnesses: {} });
   const before = calls; await harnesses.describe(hub); assert.equal(calls, before);
   await harnesses.describe(hub, true); assert.ok(calls > before);
@@ -110,12 +110,16 @@ test('GET settings describes the harness switches', async () => {
 
 test('switch and balancing writes guard the expanded lead order with the exact message', async () => {
   const c = await setup();
-  const message = 'Lead order would have no harness left. Add another to Lead order first.';
+  const message = "Leads would have no enabled provider left. Turn a provider on under Settings → AI providers or add another to Leads' provider ladder in Settings → Models first.";
   try {
     let r = await api(c, '/settings/harnesses/claude', { method: 'PUT', body: { enabled: false } });
     assert.equal(r.status, 200); assert.equal(r.body.harnesses.claude, false);
     r = await api(c, '/settings/balancing', { method: 'PUT', body: { lead_order: ['claude'] } });
     assert.equal(r.status, 409); assert.equal(r.body.detail, message);
+    r = await api(c, '/settings/preferences', { method: 'PUT', body: { provider_orders: { lead: ['claude'] } } });
+    assert.equal(r.status, 409); assert.equal(r.body.detail, message);
+    assert.equal((await api(c, '/settings/preferences', { method: 'PUT', body: { provider_orders: { reviewer: ['any'] } } })).status, 400);
+    assert.equal((await api(c, '/settings/preferences', { method: 'PUT', body: { other_agents: { unknown: 'light' } } })).status, 400);
     await api(c, '/settings/harnesses/claude', { method: 'PUT', body: { enabled: true } });
     await api(c, '/settings/balancing', { method: 'PUT', body: { lead_order: ['claude'] } });
     r = await api(c, '/settings/harnesses/claude', { method: 'PUT', body: { enabled: false } });
@@ -174,12 +178,12 @@ test('can_start reports orders, room, version, connectivity and the resolved hub
   const { hub, statuses } = await harnessFixture({ hostname: s });
   let data = await harnesses.describe(hub);
   assert.equal(data.can_start.machine, 'hostname');
-  for (const role of ['lead', 'worker']) { assert.equal(data.can_start[role].ok, false); assert.match(data.can_start[role].reason, /Pi \(OpenRouter\).*Workers try first/); }
+  for (const role of ['lead', 'worker']) { assert.equal(data.can_start[role].ok, false); assert.match(data.can_start[role].reason, /Pi \(OpenRouter\).*Worker ladder/); }
   await settings.update(hub, v => { v.worker_order.push('openrouter'); v.escalation.max_tier = 'standard'; });
   data = await harnesses.describe(hub); assert.deepEqual(data.can_start.lead, { ok: true }); assert.deepEqual(data.can_start.worker, { ok: true });
   Object.assign(s, statusFor('gpt')); delete s.pi; usage.clearCache(hub);
   await settings.update(hub, v => { v.lead_order = ['claude']; });
-  data = await harnesses.describe(hub); assert.match(data.can_start.lead.reason, /Codex.*Leads try/);
+  data = await harnesses.describe(hub); assert.match(data.can_start.lead.reason, /Codex.*Lead ladder/);
   await settings.update(hub, v => { v.harnesses.gpt = false; });
   data = await harnesses.describe(hub); assert.equal(data.can_start.lead.ok, false); assert.doesNotMatch(data.can_start.lead.reason, /Add Codex/);
   await settings.update(hub, v => { v.harnesses.gpt = true; v.lead_order = ['gpt']; });

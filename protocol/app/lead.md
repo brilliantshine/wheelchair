@@ -90,8 +90,7 @@ a commit without a message is refused.
   command after "hub unavailable". Before starting a sub-lead, run `session list`: the hub
   refuses a second live sub-lead, so a live one means you should not start another.
 - `--tier top`: pass it when you start a mapper, designer, reviewer, sub-lead or verifier. The hub
-  ignores the tier for those roles: the lead and sub-lead run on the lead model from Settings,
-  and the reviewer, verifier, mapper and designer on the Other agents tiers there. The hub drops a
+  ignores the tier for those roles: the lead, sub-lead, reviewer, verifier, mapper and designer each run on their configured tier in Settings → Models. The hub drops a
   provider constraint it cannot meet and says so in the start output's `note`. The Ready
   check covers the thread's own CLI login; a start for a missing CLI fails at the machine with
   the reason.

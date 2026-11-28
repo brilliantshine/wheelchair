@@ -252,6 +252,11 @@ async function reservedLabel(hub, value) {
   return provider ? PROVIDERS[provider].label : null;
 }
 
+const leadLadderError = "Leads would have no enabled provider left. Turn a provider on under Settings → AI providers or add another to Leads' provider ladder in Settings → Models first.";
+function guardLeadLadder(value) { if (!harnesses.enabledLeadOrder(value).length) throw appError(409, leadLadderError); }
+async function dismissEmptyLeadNotice(hub, value) {
+  if (!value.lead_tier_notice_dismissed && !settings.legacyLeadDiffs(value, await settings.models(hub)).length) value.lead_tier_notice_dismissed = true;
+}
 async function handleSettings(hub, request, response, url, bits, body) {
   if (bits[1] === 'diagram-sensitivity' && bits.length === 2) {
     if (request.method === 'GET') return send(response, 200, await diagramSensitivity.read(hub));
@@ -262,7 +267,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
     const provider = bits[2];
     if (!Object.hasOwn(PROVIDERS, provider)) throw appError(404, 'provider not found');
     if (typeof body.enabled !== 'boolean') throw appError(400, 'enabled must be a boolean');
-    await settings.update(hub, (value) => { value.harnesses[provider] = body.enabled; if (!body.enabled && !harnesses.enabledLeadOrder(value).length) throw appError(409, 'Lead order would have no harness left. Add another to Lead order first.'); });
+    await settings.update(hub, (value) => { value.harnesses[provider] = body.enabled; guardLeadLadder(value); });
     if (!body.enabled) {
       // Stop any install of this harness on every known machine; the answers are ignored.
       hub.machines().then((all) => { for (const name of Object.keys(all || {})) Promise.resolve().then(() => hub.client.passThrough(name, `/v1/harnesses/${provider}/install`, 'DELETE', {})).catch(() => {}); }).catch(() => {});
@@ -339,7 +344,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
     }
   }
   if (bits[1] === 'balancing' && bits.length === 2 && request.method === 'PUT') {
-    const value = await settings.update(hub, (value) => { for (const [key, v] of Object.entries(body)) { if (!settings.BALANCING.includes(key) || !settings.validBalancing(key, v)) throw appError(400, `invalid ${key}`); value[key] = v; } if (!harnesses.enabledLeadOrder(value).length) throw appError(409, 'Lead order would have no harness left. Add another to Lead order first.'); });
+    const value = await settings.update(hub, (value) => { for (const [key, v] of Object.entries(body)) { if (!settings.BALANCING.includes(key) || !settings.validBalancing(key, v)) throw appError(400, `invalid ${key}`); value[key] = v; } guardLeadLadder(value); });
     return send(response, 200, { ...Object.fromEntries(settings.BALANCING.map((key) => [key, value[key]])), reserved_provider: await reservedLabel(hub, value) });
   }
   if (bits[1] === 'models' && request.method === 'PUT') {
@@ -357,6 +362,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
       const levels = effort ? await settings.modelLevels(hub, body.provider, model) : null;
       if (levels && !levels.includes(effort)) throw appError(400, levels.length ? `${model} has no ${effort} level; it has ${levels.join(', ')}` : `${model} takes no effort`);
     }
+    await settings.update(hub, async (value) => { await dismissEmptyLeadNotice(hub, value); });
     try { await settings.modelCommand(hub, ['set', body.provider, slot, model || 'none', ...(effort ? [effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });
@@ -380,7 +386,8 @@ async function handleSettings(hub, request, response, url, bits, body) {
   }
   if (bits[1] === 'preferences' && request.method === 'PUT') {
     let beforeAssistant, beforeProjectLeads;
-    const value = await settings.update(hub, (value) => {
+    const value = await settings.update(hub, async (value) => {
+      if (body.other_agents !== undefined) await dismissEmptyLeadNotice(hub, value);
       beforeAssistant = value.assistant;
       beforeProjectLeads = value.project_leads;
       if (body.lead_names !== undefined) {
@@ -456,8 +463,14 @@ async function handleSettings(hub, request, response, url, bits, body) {
       }
       if (body.other_agents !== undefined) {
         if (!body.other_agents || typeof body.other_agents !== 'object' || Array.isArray(body.other_agents)) throw appError(400, 'other_agents must be an object');
-        for (const role of ['reviewer', 'verifier', 'mapper', 'designer', 'scout', 'scout-heavy']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
+        for (const [role, tier] of Object.entries(body.other_agents)) { if (!Object.hasOwn(value.other_agents, role)) throw appError(400, `invalid other_agents.${role}`); value.other_agents[role] = settings.tier(tier, `other_agents.${role}`); }
       }
+      if (body.provider_orders !== undefined) {
+        if (!body.provider_orders || typeof body.provider_orders !== 'object' || Object.getPrototypeOf(body.provider_orders) !== Object.prototype) throw appError(400, 'provider_orders must be an object');
+        for (const [role, order] of Object.entries(body.provider_orders)) { if (!Object.hasOwn(value.provider_orders, role) || !settings.validProviderOrder(order, { allowAny: settings.LEAD_FAMILY_ROLES.includes(role) })) throw appError(400, `invalid provider_orders.${role}`); value.provider_orders[role] = order; }
+      }
+      if (body.lead_tier_notice_dismissed !== undefined) { if (typeof body.lead_tier_notice_dismissed !== 'boolean') throw appError(400, 'lead_tier_notice_dismissed must be a boolean'); value.lead_tier_notice_dismissed = body.lead_tier_notice_dismissed; }
+      guardLeadLadder(value);
     });
     let assistantError;
     if (value.project_leads !== beforeProjectLeads) await projectLead.change(hub, value.project_leads === 'on');
@@ -465,7 +478,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
       try { await require('./assistant.js').change(hub, value.assistant === 'on'); }
       catch (error) { if (!error.assistantStart) throw error; assistantError = error.message; }
     }
-    return send(response, 200, { ...(assistantError ? { assistant_error: assistantError } : {}), assistant: value.assistant, project_leads: value.project_leads, lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, shared_tools_repo: value.shared_tools_repo, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    return send(response, 200, { ...(assistantError ? { assistant_error: assistantError } : {}), assistant: value.assistant, project_leads: value.project_leads, lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, shared_tools_repo: value.shared_tools_repo, aside_access: value.aside_access, auto_merge: value.auto_merge, auto_merge_delete_branch: value.auto_merge_delete_branch, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, provider_orders: value.provider_orders, lead_tier_notice_dismissed: value.lead_tier_notice_dismissed, default_project_folder: value.default_project_folder, user_name: value.user_name, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));

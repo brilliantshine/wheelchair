@@ -34,7 +34,7 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     assert.ok(initial.body.accounts.some((account) => account.id === 'default-gemini'));
     assert.deepEqual(initial.body.worker_order, ['gpt', 'claude', 'gemini', 'kimi']);
     assert.ok(initial.body.accounts.some((account) => account.id === 'default-kimi'));
-    assert.deepEqual(initial.body.other_agents, { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', designer: 'standard', scout: 'light', 'scout-heavy': 'standard' });
+    assert.deepEqual(initial.body.other_agents, { lead: 'heavy', 'sub-lead': 'heavy', assistant: 'heavy', 'project-lead': 'heavy', reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', designer: 'standard', scout: 'light', 'scout-heavy': 'standard' });
     const old = settings.normalize({ other_agents: { mapper: 'heavy' }, held_back: { worker: false, reviewer: true, verifier: false, mapper: false } });
     assert.equal(old.other_agents.designer, 'standard');
     assert.deepEqual(old.held_back, { worker: false, reviewer: true, verifier: false, mapper: false, designer: true });
@@ -620,4 +620,24 @@ test('an Antigravity scout is named by its member id only when the list has it',
       ['single', 'orchestrator @low', 'orchestrator'],
     ]) assert.match((await start(attempt, pin)).lead, new RegExp(`Scout model for code reading: ${named}\\.`), attempt);
   });
+});
+
+test('role tiers, ladders and legacy notice normalize and compare cells', () => {
+  const base = settings.defaults();
+  const normalized = settings.normalize({ other_agents: { lead: 'critical', mapper: 'bad', unknown: 'light' }, provider_orders: { lead: ['gpt', 'any'], reviewer: ['any'], unknown: 'lead' } });
+  assert.equal(normalized.other_agents.lead, 'critical');
+  assert.equal(normalized.other_agents.mapper, 'standard');
+  assert.equal(normalized.other_agents.unknown, undefined);
+  assert.deepEqual(normalized.provider_orders.lead, ['gpt', 'any']);
+  assert.equal(normalized.provider_orders.reviewer, 'worker');
+  assert.equal(settings.validProviderOrder(['any'], { allowAny: true }), true);
+  assert.equal(settings.validProviderOrder(['gpt', 'gpt']), false);
+  assert.equal(settings.validProviderOrder(['any']), false);
+  for (const p of Object.keys(base.harnesses)) base.harnesses[p] = p === 'gpt';
+  const cells = { gpt: { lead: { model: 'old', effort: 'high' }, 'sub-lead': { model: 'old', effort: 'high' }, heavy: { model: 'new', effort: 'high' }, light: null } };
+  assert.equal(settings.legacyLeadDiffs(base, cells).length, 1);
+  base.other_agents['sub-lead'] = 'light';
+  assert.equal(settings.legacyLeadDiffs(base, cells).length, 2);
+  base.lead_tier_notice_dismissed = true;
+  assert.deepEqual(settings.legacyLeadDiffs(base, cells), []);
 });
