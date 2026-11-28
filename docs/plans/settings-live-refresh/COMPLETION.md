@@ -15,6 +15,12 @@ verified-by:
   - round: 2
     lane: gpt / gpt-6.2-sol
     checks: light / gpt / gpt-6-luna (R1-1), standard / claude / claude-sonnet-5-5 (R1-2)
+  - round: 3
+    lane: claude / claude-opus-5-5
+    checks: standard / claude / claude-sonnet-5-5 (R2-1)
+  - round: 3
+    lane: gpt / gpt-6.2-sol
+    checks: standard / claude / claude-sonnet-5-5 (R2-1)
 ---
 
 # Completion Report — Auto-refresh an open Settings page when settings change
