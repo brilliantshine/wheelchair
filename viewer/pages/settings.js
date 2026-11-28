@@ -9,7 +9,7 @@
   // key (the address), title, the phone list's line, the line under the title (Project tools
   // draws its own heading), and the blocks it holds in order.
   const CATEGORIES = [
-    { key: 'you', title: 'You', line: 'Your name, writing style, diagrams and background', lede: 'Your name and preferences for how the app looks and communicates.', note: true, blocks: ['name', 'writing', 'diagrams', 'enter', 'background'] },
+    { key: 'you', title: 'You', line: 'Your name, writing style, diagrams and background', lede: 'Your name and preferences for how the app looks and communicates.', note: true, blocks: ['name', 'writing', 'diagrams', 'enter', 'theme', 'background'] },
     { key: 'providers', title: 'AI providers', line: 'Harnesses and accounts', lede: 'The agent programs wheelchair runs and the logins they use.', blocks: ['harnesses', 'accounts'] },
     { key: 'usage', title: 'Usage and balancing', line: 'Usage and reserves', lede: 'What is left this week, and how agents share it.', blocks: ['usage', 'balancing'] },
     { key: 'models', title: 'Models', line: 'Agents, provider ladders, tiers and escalation', lede: 'Who runs what.', note: true, blocks: ['agents', 'ladders', 'tiers', 'escalation', 'assistants'] },
@@ -2388,6 +2388,9 @@
     window.addEventListener('backgrounddispose', discardBackground);
   }
 
+  // Theme drafts belong to a You visit; leaving the page (back-forward cache too) drops them.
+  window.addEventListener('pagehide', () => window.wcThemeEditor.discard());
+
   // ---------------------------------------------------------------- Harnesses
 
   const HARNESSES = TOOLS.map((t) => [t.provider, t.displayName, t.settings.vendor, t.settings.setupUrl]);
@@ -2781,6 +2784,7 @@
 
   const BLOCKS = {
     name: renderName, writing: renderWriting, diagrams: renderDiagrams, enter: renderEnter,
+    theme: () => window.wcThemeEditor.render(),
     background: () => (bg ? renderBackground() : null),
     harnesses: renderHarnesses, accounts: renderAccounts,
     usage: renderUsage, balancing: renderBalancing,
@@ -2885,7 +2889,7 @@
     atRoot = root;
     document.querySelector('.settings').classList.toggle('at-root', root);
     if (leaving) {
-      if (section === 'you') discardBackground();
+      if (section === 'you') { discardBackground(); window.wcThemeEditor.discard(); }
       section = next;
       setNote('', false); styleNote = ''; balNote = '';
     }
