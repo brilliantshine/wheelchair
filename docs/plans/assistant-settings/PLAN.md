@@ -386,3 +386,5 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 - 2026-11-28 — T3 accepted (band: scout): updated `protocol/app/assistant.md`, `viewer/app/API.md`, and `machine/test/assistant.test.js` (`name-guard.test.js` + `assistant.test.js` 4/4 passing).
 - 2026-11-28 — Choice: T2, assistant-actions.js: validate optional background opacity revision as a non-negative safe integer, matching background revision semantics.
 - 2026-11-28 — T2 accepted (band: scout): exported `invokeSettings` in `viewer/app/routes.js`, implemented assistant `settings`/`setting` in `viewer/app/assistant-actions.js`, and added tests in `viewer/test/assistant.test.js` (62/62 passing across the 5 validation suites).
+- 2026-11-28 — Verification attempt 1 (`claude-opus-5-5` checking `gpt-6.1-terra`, commit `5d70a45a`): VERDICT: PASS (0 gaps, 0 rare paths).
+- 2026-11-28 — Full run (`bash test-support/full-run.sh`) passed on `5d70a45a10a9d265966ada4c074f8d7a638ff406` (all 8 suites exit 0).
