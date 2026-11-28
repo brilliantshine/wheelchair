@@ -46,12 +46,12 @@ Facts this rests on (live `agy`, 2026-11-27): `agy --model <base id> --effort <l
 2. A group becomes one entry `{value: <base>, label: "<name without the trailing (Level)> · <base>", efforts: [<its levels in level order>]}`, placed where its first member appeared. Every other line is `{value, label}` as today plus `efforts: []`. Existing filters (`none`, duplicates, id format) still apply, to the base id too.
 3. Freshness: `agy_models` reuses the saved list only when it is under 30 seconds old (Decision 9); otherwise it runs `agy models`. A failed, timed-out or empty run falls back to the saved list whatever its age, as today; with none, `[]`. The saved file keeps its path and gains `efforts` per entry; `agy_valid` accepts entries with or without `efforts` (an old file without it is read as `efforts` unknown, not `[]`).
 4. A new command `model.sh levels gemini <model>` prints the model's levels (one per line, level order) and exits 0; it exits 0 with no output for a model listed with `efforts: []`; it exits 4 for a model not in the list, or listed with unknown efforts (an old-format entry).
-5. **Catalog on demand.** Every reader that needs the list (`levels`, `agy-launch`, and the S2 reads below) uses the saved list when it exists in the new format (entries carry `efforts`), whatever its age; when the saved list is missing or in the old format, it runs `agy models` first regardless of the 30-second reuse (an old-format list is never reused as fresh), and saves the result.
-6. **Failure back-off.** When a run of `agy models` fails, times out or lists nothing, the failure time is saved beside the list (`agy-models.json` gains `failed_at`, or a sibling file when there is no list); no reader runs `agy models` again within 60 seconds of it, and uses the saved list (or none) meanwhile. A successful run clears it. So a fresh or upgraded install resolves levels at its first session start without Settings having been opened.
+5. **Catalog on demand.** Every reader that needs the list (`levels`, `agy-launch`, and the S2 reads below) uses the saved list when it exists in the new format (entries carry `efforts`), whatever its age; when the saved list is missing or in the old format, it runs `agy models` first regardless of the 30-second reuse (an old-format list is never reused as fresh), and saves the result. So a fresh or upgraded install resolves levels at its first session start without Settings having been opened.
+6. **Failure back-off.** When a run of `agy models` fails, times out or lists nothing, the failure time is saved beside the list (`agy-models.json` gains `failed_at`, or a sibling file when there is no list); no reader runs `agy models` again within 60 seconds of it, and uses the saved list (or none) meanwhile. A successful run clears it.
 
 ### S2. Saved settings carry over (`codex/model.sh`, `connectors/agy/manifest.js`)
 
-1. A gemini pin whose model is `<base>-<level>` with no effort of its own, where `<base>` is a level group in the list (S1.5), is read as model `<base>` with effort `<level>` by every reader (`model.sh <provider> <slot>`, `model.sh effort`, `show --json`). After that, an effort the model is known not to have is read as S4.1 would launch it (dropped for a no-level model, else the highest listed level at or below it, else the lowest), so Settings never shows an effort its picker cannot display. The pins file itself is not rewritten; the next save from Settings writes the new form. When the list cannot be had (agy fails and nothing is saved), or `<base>` is not a group in it, the pin is read as is.
+1. A gemini pin whose model is `<base>-<level>` with no effort of its own, where `<base>` is a level group in the list (S1.5), is read as model `<base>` with effort `<level>` by every reader (`model.sh <provider> <slot>`, `model.sh effort`, `show --json`). For Settings only (`show --json`), an effort the model is known not to have is then shown as S4.1 would launch it (dropped for a no-level model, else the highest listed level at or below it, else the lowest), so the picker can always display it. The readers that feed a session start (`model.sh <provider> <slot>`, `model.sh effort`) return the pin's effort uncapped, so S4 decides the launch level against its own, possibly fresher, list. The pins file itself is not rewritten; the next save from Settings writes the new form. When the list cannot be had (agy fails and nothing is saved), or `<base>` is not a group in it, the pin is read as is.
 2. A pin `<base>-<level> @<effort>` (both) is read as `<base> @<effort>`, the pin's effort winning, under the same group condition.
 3. Shipped defaults become base id plus effort: light `gemini-3.8-flash @low`, standard `@medium`, heavy, critical and lead `@high`. The manifest's pin shape already holds `effort`; regenerate the committed registry (`node connectors/export.js`) whenever the manifest changes. `install.sh` still only writes a missing pins file.
 
@@ -68,26 +68,26 @@ Facts this rests on (live `agy`, 2026-11-27): `agy --model <base id> --effort <l
 The fix-up happens on the machine that runs Antigravity, at launch, because the hub may not have Antigravity installed.
 
 1. New command `model.sh agy-launch <model> [<effort>]`, run on the launching machine with that machine's list (S1.5), prints `<model>\t<effort or empty>`:
-   - before anything else: if the saved list is older than an hour, or does not list the model (or its base), or lists it without the requested effort, it runs `agy models` once to refresh (subject to S1.6), then applies the rules below to the result.
+   - before anything else: if the saved list is older than an hour, or (when it is more than 30 seconds old) does not list the model (or its base) or lists it without the requested effort, it runs `agy models` once to refresh (subject to S1.6), then applies the rules below to the result.
    - S2.1–S2.2's suffix rules first (a suffixed id of a known group becomes the base; a suffix level is the effort only when no effort was given).
    - no effort: unchanged; no effort is printed.
    - the model is listed with no levels: the effort is dropped.
    - levels listed and the effort is one of them: unchanged.
    - levels listed and the effort is not one of them: the highest listed level at or below it; if none is below it, the lowest listed level (the one case that goes above the request; a rare path, see Accepted Risks).
    - the model is not listed, or the list cannot be had: unchanged.
-2. The connector's argv builder stays synchronous. An asynchronous preparation step runs `<c.root>/codex/model.sh agy-launch` before it (for example a `prepareLaunch` hook in `connectors/agy/machine.js` awaited by `machine/service.js` before it calls the builder; it must not block the service's other requests), and the builder uses what it printed for `--model` and `--effort` (`--effort` only when non-empty). If the command fails or times out (10 s), it uses the model and effort it was given, as today.
+2. The connector's argv builder stays synchronous. The agy connector's existing async `launchContext` hook (awaited by `machine/service.js` for new and resumed launches, `machine/service.js:980`) is given the launch input and session, runs `<c.root>/codex/model.sh agy-launch` without blocking the service, and returns the fixed-up model and effort in its launch extras; the builder reads them from there (not from `session.effort`, which keeps the requested effort) and uses them for `--model` and `--effort` (`--effort` only when non-empty). Inside `agy-launch`, the `agy models` refresh has a 5-second deadline (on timeout it records the failure per S1.6 and uses the saved list); the connector waits up to 15 seconds for `agy-launch`. If the command fails or times out, it uses the model and effort it was given, as today.
 3. The hub's start path does not change; the session record keeps the requested effort.
 
 ### S5. Stepping up (`viewer/app/settings.js`)
 
 The sub-lead learns which rungs exist from its generated instructions, not from start output, so every start path (immediate, queued, retried) is covered.
 
-1. The lines are worked out only when a sub-lead starts, in `viewer/app/sessions.js` (which already calls `model.sh`), and passed into `roleLayers`; `escalationSentences`, the Settings escalation text and the length check do not change. They are added only when Antigravity can take workers (enabled in `harnesses` and present in `worker_order`): one line per gemini tier cell (light, standard, heavy, critical) that is set, `Antigravity <Tier>: <model>, levels <l1, l2, …>, set to <effort or CLI default>` (`takes no effort` for a no-level model, `levels unknown` when S1.4 exits 4), then the sentences: `On Antigravity, a tier's highest listed level is its highest effort: once a worker ran there, or the model takes no effort, the next step moves tier. Skip a tier only when its model was already tried and it offers no level above those already tried on that model.` Otherwise nothing is added.
+1. The lines are worked out only when a sub-lead starts, in `viewer/app/sessions.js` (which already calls `model.sh`), and passed into `roleLayers`; `escalationSentences`, the Settings escalation text and the length check do not change. They are added only when Antigravity can take workers (enabled in `harnesses` and present in `worker_order`): one line per gemini tier cell (light, standard, heavy, critical) that is set, `Antigravity <Tier>: <model>, levels <l1, l2, …>, set to <effort or CLI default>` (`takes no effort` for a no-level model, `levels unknown` when S1.4 exits 4), then the sentences: `On Antigravity, a tier's highest listed level is its highest effort: once a worker ran there, or the model takes no effort, the next step moves tier. Skip a tier only when its model was already tried and it offers no level above those already tried on that model, up to the effort ceiling in Settings.` Otherwise nothing is added.
 2. `protocol/app/sub-lead.md` is not changed.
 
 ### S6. Scout lines
 
-For a gemini scout whose pin (read by S2) has an effort and whose model is not known to have no levels, the scout line names `<model>-<effort>` (e.g. `gemini-3.8-flash-low`), and the same for the bigger-changes scout, so an agent on Antigravity keeps the pin's level. Otherwise it names the model as read. Other providers' scout lines do not change.
+For a gemini scout whose pin (read by S2) has an effort, the scout line names the member id `<model>-<effort>` (e.g. `gemini-3.8-flash-low`) only when the hub's list contains exactly that id; otherwise it names the model as read, as today. The same applies to the bigger-changes scout. (The hub has the list, Decision 12.) Other providers' scout lines do not change.
 
 ### S7. Usage text and routers
 
@@ -102,11 +102,11 @@ Antigravity installed only on a computer other than the hub's (Decision 12): Set
 
 ### Validation
 
-- `bash codex/test/run.sh` with new cases: grouping from a fake listing matching the 2026-11-27 output (Hydrogen and Neon with four levels, Carbon, Argon and Flash with three, Orchestrator, Claude and GPT-OSS single); a lone `<base>-<level>` stays single; the 30-second reuse and the stale fallback on failure; `levels` exit codes, including 4 for an old-format entry; S1.5 fetching when the saved list is missing or old-format, including a fresh old-format file; every `agy-launch` branch in S4.1; S2 pin reads for suffixed pins with and without effort, with and without a saved list.
+- `bash codex/test/run.sh` with new cases: grouping from a fake listing matching the 2026-11-27 output (Hydrogen and Neon with four levels, Carbon, Argon and Flash with three, Orchestrator, Claude and GPT-OSS single); a lone `<base>-<level>` stays single; the 30-second reuse and the stale fallback on failure; `levels` exit codes, including 4 for an old-format entry; S1.5 fetching when the saved list is missing or old-format, including a fresh old-format file; every `agy-launch` branch in S4.1, including a stalled `agy models` (5-second deadline) with a saved list; S2 pin reads for suffixed pins with and without effort, with and without a saved list.
 - `node connectors/export.js --check`.
 - `node --test viewer/test/model-options.test.js viewer/test/app-settings.test.js viewer/test/app-hub.test.js viewer/test/worker-effort-membership.test.js` with new cases for S3.4 (including a suffixed id normalized before the check), S5.1 (lines present when Antigravity takes workers, absent when it is off or not in the worker order; Settings' escalation text unchanged) and S6.
 - `npm --prefix viewer run test:browser -- --grep 'effort'` with new cases for S3.2, S3.3 and S3.5.
-- `node --test machine/test/project-mcp-agy.test.js` with new assertions (using a fake `agy-launch` or fake `agy` listing): a base id with a session effort gives `--model <base> --effort <e>`; a model with no session effort gives no `--effort`; a legacy suffixed id with a different effort gives the base and that effort; a failing `agy-launch` gives the inputs unchanged.
+- `node --test machine/test/project-mcp-agy.test.js` with new assertions (using a fake `agy-launch` or fake `agy` listing): a base id with a session effort gives `--model <base> --effort <e>`; a model with no session effort gives no `--effort`; a legacy suffixed id with a different effort gives the base and that effort; a failing `agy-launch` gives the inputs unchanged. Plus a targeted machine-service start (fake `agy-launch` output) asserting the argv sent to tmux carries the fixed-up model and effort, for a new and a resumed launch.
 - `bash install/test/run.sh` (shipped default pins).
 
 ## Accepted Risks
@@ -188,6 +188,24 @@ Antigravity installed only on a computer other than the hub's (Decision 12): Set
 **Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
 
 **Changed since Round 3:** Decision 12 and "Not changing" (Antigravity on the hub's computer only); S1.6 failure back-off; S4.1 refresh step in `agy-launch`; S4.2 asynchronous preparation before the synchronous builder; S5.1 skip rule; S3.5 save-then-refresh failure; S6 scout member id; new S7 (USAGE, `codex/AGENTS.md`).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | `prepareLaunch` name clashes; use existing `launchContext`. | upheld | S4.2. |
+| intent | minor | Where the fixed-up effort lives on the machine. | upheld | S4.2: launch extras, not `session.effort`. |
+| intent | minor | Refresh on every launch for unlisted model or level. | upheld | S4.1: only when the list is over 30 s old. |
+| intent | minor | S1.6 sentence belongs to S1.5. | upheld | Moved. |
+| mechanics | blocking | `agy-launch` and its inner `agy models` share a 10 s deadline. | upheld | S4.2: 5 s inside, 15 s outside; test. |
+| mechanics | major | S2 caps the effort before dispatch, losing the request. | upheld | S2.1: cap only for Settings. |
+| mechanics | major | Scout suffix built when the list failed. | upheld | S6: only a member id the list contains. |
+| mechanics | minor | Skip rule ignores the effort ceiling. | upheld | S5.1. |
+| mechanics | minor | No machine-service-level launch test. | upheld | Validation. |
+
+### Round 5 — 2026-11-27
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 4:** S2.1 caps only for Settings, start readers uncapped; S4.1 refresh only when the list is over 30 s old (or over an hour); S4.2 uses the existing `launchContext` hook and launch extras, 5 s / 15 s deadlines; S5.1 skip rule respects the effort ceiling; S6 member id only when listed; validation additions.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
