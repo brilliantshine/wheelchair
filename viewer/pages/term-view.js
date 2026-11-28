@@ -80,8 +80,8 @@
       notice.hidden = !enabled;
       if (term) {
         if (enabled) {
-          const cursor = getComputedStyle(document.documentElement).getPropertyValue('--warn').trim();
-          term.options.theme = { ...term.options.theme, cursor };
+          // The terminal stays dark in every theme, so the page's --warn would be unreadable here.
+          term.options.theme = { ...term.options.theme, cursor: '#d9a441' };
         } else {
           term.options.theme = { ...term.options.theme, cursor: defaultCursor };
         }
@@ -166,7 +166,8 @@
       active = true; previous = null; polling = false;
       container.classList.add('tv-view');
       container.append(notice, host, keys);
-      term = new window.Terminal({ fontSize: 13, cols: 80, rows: 24, scrollback: 2000, cursorBlink: false, convertEol: false });
+      term = new window.Terminal({ fontSize: 13, cols: 80, rows: 24, scrollback: 2000, cursorBlink: false, convertEol: false,
+        theme: { background: '#0c0e10', foreground: '#e6e8ec', cursor: '#e6e8ec' } });
       term.open(host);
       defaultCursor = term.options.theme.cursor;
       dataSubscription = term.onData(onData);

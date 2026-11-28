@@ -91,7 +91,7 @@
 .tv-view.tv-typing { border-color: var(--warn); }
 .tv-switch[aria-pressed="true"] { color: var(--warn); border-color: var(--warn); background: var(--warn-bg); }
 .tv-notice { color: var(--warn); padding: 4px 8px 0; font-size: 13px; }
-.tv-host { flex: 1; min-height: 0; overflow: auto; background: var(--term-bg); padding: 4px; }
+.tv-host { flex: 1; min-height: 0; overflow: auto; background: #0c0e10; color: #e6e8ec; color-scheme: dark; padding: 4px; }
 .tv-keys { display: none; gap: 6px; flex-wrap: wrap; }
 .tv-keys button { flex: 1 1 56px; min-height: 44px; }
 @media (pointer: coarse), (max-width: 600px) { .tv-typing .tv-keys { display: flex; } }
@@ -148,7 +148,7 @@
 .agents-deck::before, .agents-deck::after { content: ''; position: absolute; inset: 0; z-index: -1; border: 1px dashed var(--line-2); border-radius: 8px; background: var(--panel-3); pointer-events: none; }
 .agents-deck::before { transform: translate(5px, 5px); }
 .agents-deck::after { transform: translate(10px, 10px); z-index: -2; }
-.agents-deck[aria-expanded="true"] { border-color: var(--accent); }
+.agents-deck[aria-expanded="true"] { border-color: var(--accent-vis); }
 .agents-deck-head { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 8px; }
 .agents-deck-count { padding: 1px 7px; border-radius: 9px; background: var(--panel-2); font-family: var(--mono); font-size: 11px; color: var(--ink); }
 .deck-pop { position: fixed; z-index: 40; overflow: auto; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--panel); color: var(--ink); box-shadow: 0 12px 32px rgba(0,0,0,.5); font-size: 13px; }
@@ -166,7 +166,7 @@
 .agents-tree > .agents-branch { margin: 0 auto; flex-shrink: 0; }
 .agents-branch { display: flex; flex-direction: column; align-items: center; min-width: 190px; }
 .agents-box { width: 190px; min-height: 112px !important; display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 7px; padding: 14px !important; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; color: var(--ink); overflow-wrap: anywhere; }
-.agents-box.selected { border-color: var(--accent); background: var(--accent-soft); }
+.agents-box.selected { border-color: var(--accent-vis); background: var(--accent-soft); }
 .agents-box.state-finished, .agents-box.state-not-started { border-style: dashed; }
 .agents-role { text-transform: uppercase; letter-spacing: .07em; color: var(--dim); font-size: 10px; font-weight: 700; }
 .agents-box-title { font-size: 13px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
@@ -234,19 +234,20 @@
 @keyframes activity-flow { to { stroke-dashoffset: -24; } }
 @media (prefers-reduced-motion: reduce) { .activity-flow { animation: none; } }
 .activity-trail { fill: none; stroke: var(--accent-hi); stroke-opacity: .4; stroke-dasharray: 2 3; }
+html[data-theme-mode="light"] .activity-trail { stroke-opacity: .75; }
 .activity-ring-base, .activity-ring { fill: none; stroke: var(--line-2); stroke-width: 4; }
-.activity-ring { stroke: var(--accent); stroke-linecap: round; }
+.activity-ring { stroke: var(--accent-vis); stroke-linecap: round; }
 .activity-ring.warn { stroke: var(--warn); }
 .activity-ring.high { stroke: var(--bad-text); }
 .activity-center, .activity-spot { fill: var(--panel); stroke: var(--line-2); }
-.activity-center, .activity-spot.current { stroke: var(--accent); stroke-width: 2; }
+.activity-center, .activity-spot.current { stroke: var(--accent-vis); stroke-width: 2; }
 .activity-center-text, .activity-label { fill: var(--ink-2); font-size: 10px; }
 .activity-count, .activity-now { fill: var(--dim); font: 9px var(--mono); }
 .activity-now { fill: var(--accent-hi); }
 .agents-latest { display: grid; gap: 6px; font-size: 12px; }
 .agents-latest-row { display: grid; grid-template-columns: 12px 38px 1fr; gap: 8px; }
 .agents-latest-row time { color: var(--dim); font-family: var(--mono); }
-.latest-running { color: var(--accent); } .latest-done { color: var(--good-text); } .latest-failed { color: var(--bad-text); }
+.latest-running { color: var(--accent-text); } .latest-done { color: var(--good-text); } .latest-failed { color: var(--bad-text); }
 .agents-box.question-path { border-left: 3px solid var(--warn); }
 .agents-sizer { position: relative; }
 .agents-path-overlay { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }

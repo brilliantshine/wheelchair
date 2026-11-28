@@ -1,6 +1,8 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/wheelchair/assets/pages/theme-palette.js"></script>
+<script src="/wheelchair/assets/pages/theme.js"></script>
 <link rel="stylesheet" href="/wheelchair/assets/pages/background.css">
 <script src="/wheelchair/assets/pages/background.js" defer></script>
 <title>plan documents</title>
@@ -9,7 +11,9 @@
   :root {
     --bg: #14161a; --panel: #1c1f25; --panel-2: #23262d; --line: #2a2f38;
     --ink: #e6e8ec; --dim: #8b929e;
-    --danger: #c4645f; --accent: #5b9dd9;
+    --danger: #c4645f; --accent: #5b9dd9; --accent-text: #7fb4e6; --accent-hi: #a9cdf0; --accent-vis: #5b9dd9;
+    --accent-ink: #0e1114; --accent-hover: #a9cdf0; --accent-hover-ink: #0e1114;
+    --bad-bg: #2a1a19; --bad: #c4645f; --bad-text: #e09a96;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink);
@@ -42,7 +46,7 @@
   main#doc { flex: 1; min-width: 0; width: 100%; }
 
   #error-banner { margin-bottom: 14px; padding: 8px 12px; border-radius: 6px; font-size: 12px;
-    background: #3a1f1f; border: 1px solid var(--danger); color: #f2d4d1; }
+    background: var(--bad-bg); border: 1px solid var(--bad); color: var(--bad-text); }
 
   #frontmatter { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
     padding: 10px 14px; margin-bottom: 18px; font-size: 12px; }
@@ -63,7 +67,8 @@
   #content pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
     padding: 10px 12px; overflow-x: auto; }
   #content pre code { background: none; padding: 0; }
-  #content a { color: var(--accent); }
+  #content a { color: var(--accent-text); }
+  #content a:hover { color: var(--accent-hi); }
   #content .table-wrap { overflow-x: auto; margin: .8em 0; border: 1px solid var(--line);
     border-radius: 6px; }
   #content table { border-collapse: collapse; font-size: 12.5px; width: max-content; }
