@@ -40,7 +40,7 @@ Line numbers are at the feature branch tip that carries this file. Worker report
 | S4.4 README `launchContext` row; machine API text | this run (T2) | `connectors/README.md:95`, `machine/API.md:10` | read in diff review |
 | S5.1 sub-lead per-tier Antigravity level lines, only when Antigravity takes workers | this run (T3) | `viewer/app/settings.js:459`–`488` (`levelLines`), `:237`; `viewer/app/sessions.js:367` | `viewer/test/app-settings.test.js:552`–`590` (present, absent when off or not in worker order, escalation text unchanged) |
 | S5.2 `protocol/app/sub-lead.md` unchanged | this run | — | `git diff 2c18acc4 -- protocol/app/sub-lead.md` is empty |
-| S6 scout line names `<model>-<effort>` only when the group lists it | this run (T3) | `viewer/app/sessions.js:119`–`130` | `viewer/test/app-hub.test.js` scout cases (listed, unlisted level, no effort, unlisted model, single model) |
+| S6 scout line names `<model>-<effort>` only when the group lists it | this run (T3) | `viewer/app/sessions.js:119`–`130` | `viewer/test/app-settings.test.js:589` scout cases (listed, unlisted level, no effort, unlisted model, single model) |
 | S7 USAGE and `codex/AGENTS.md` | this run (T1) | `codex/model.sh:41`, `codex/AGENTS.md:13` | read in diff review |
 | Validation: round trip without host agy | this run (T2) | `machine/test/helpers/model-roundtrip.js:15` (`WHEELCHAIR_AGY: ''`) | `node --test machine/test/connectors-model-roundtrip-real.test.js` |
 
