@@ -2,7 +2,13 @@
 slug: theme-options
 date: 2026-11-28
 implemented-by: standard / gpt-6.1-terra (T1), standard / claude-sonnet-5-5 (T2, T3), light / gpt-6-luna (T4)
-verified-by: []
+verified-by:
+  - round: 1
+    lane: heavy / claude-opus-5-5
+    checks: standard / gpt-6.1-terra (T1), standard / claude-sonnet-5-5 (T2, T3), light / gpt-6-luna (T4)
+  - round: 1
+    lane: heavy / gpt-6.2-sol
+    checks: standard / gpt-6.1-terra (T1), standard / claude-sonnet-5-5 (T2, T3), light / gpt-6-luna (T4)
 ---
 
 # Completion Report — Custom accent color and theme options
@@ -52,4 +58,13 @@ Build screenshots posted as `image` cards comparing against the three agreed moc
 
 ## Remediation rounds
 
-(None yet.)
+### Remediation 1 (`docs/plans/theme-options/REMEDIATION-1.md`, commit `354c2148`, `standard / claude-sonnet-5-5`)
+
+Addressed all three genuine Attempt 1 verification gaps:
+1. **`viewer/pages/views.css:119`:** Changed `.agents-entry.selected` `border-color` from `var(--accent-line)` to `var(--accent-vis)` so the selected Agents sidebar entry border clears `>= 3.0:1` non-text contrast against `--panel-3` and `--accent-soft` even with `#ffffff` / `#000000` accents in light and dark modes (also improves Default Dark border from `#3a5778` to `#5b9dd9`).
+2. **`viewer/test/theme-rendering.spec.js:22-26`:** Guarded `test.afterEach` by navigating to `about:blank` before `page.unrouteAll({ behavior: 'ignoreErrors' })` (both with `.catch(() => {})`) to prevent Firefox's intermittent `NS_BINDING_ABORTED` teardown race when `seedThread`'s chat-polling route is mid-flight.
+3. **`viewer/test/theme-rendering.spec.js:54-67`:** Made `textContrast` and the new `.agents-entry.selected` border contrast check poll and skip detached DOM nodes (`!n.isConnected`), preventing `NaN` contrast results when background polling replaces a node mid-read.
+
+Validation after Remediation 1:
+- `npm --prefix viewer run test:browser -- test/theme-rendering.spec.js` — 24/24 pass across Chromium and Firefox (3 consecutive runs by worker + 1 independent re-run by sub-lead, all exit 0).
+- `node --test machine/test/name-guard.test.js` — 2/2 pass (exit 0).
