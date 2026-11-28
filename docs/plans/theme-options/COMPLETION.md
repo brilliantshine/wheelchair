@@ -15,6 +15,12 @@ verified-by:
   - round: 2
     lane: heavy / gpt-6.2-sol
     checks: standard / claude-sonnet-5-5 (R1-1)
+  - round: 3
+    lane: heavy / claude-opus-5-5
+    checks: standard / claude-sonnet-5-5 (R2-1)
+  - round: 3
+    lane: heavy / gpt-6.2-sol
+    checks: standard / claude-sonnet-5-5 (R2-1)
 ---
 
 # Completion Report — Custom accent color and theme options
@@ -83,4 +89,14 @@ Addressed the single Attempt 2 verification gap (`wc-11c53653de4e-verifier-3` pa
 
 Validation after Remediation 2:
 - `npm --prefix viewer run test:browser -- test/theme-rendering.spec.js` — 26/26 pass across Chromium and Firefox (exit 0).
+- `node --test machine/test/name-guard.test.js` — 2/2 pass (exit 0).
+
+### Remediation 3 (`docs/plans/theme-options/REMEDIATION-3.md`, commit `b8bc971e`, `standard / claude-sonnet-5-5`)
+
+Addressed the Attempt 3 verification gap (`wc-11c53653de4e-verifier-5` passed; `wc-11c53653de4e-verifier-6` reported hovered recommended option border contrast):
+1. **`viewer/pages/thread.css:138,348`:** Changed `.opt:hover:not(:disabled)` and `a.sent-file:hover` `border-color` from `var(--accent-line)` to `var(--accent-vis)` so hovering `.opt.lean` or `.opt` / `.sent-file` keeps `>= 3.0:1` non-text contrast with `#ffffff` / `#000000` accents.
+2. **`viewer/test/theme-rendering.spec.js:327-345`:** Added regression test verifying hovered `.opt.lean` keeps `>= 3.0:1` border contrast against both `--panel` and `--accent-soft` composited over `--panel` in Default Light with `#ffffff` accent (fails at 1.20:1 on `--accent-line`).
+
+Validation after Remediation 3:
+- `npm --prefix viewer run test:browser -- test/theme-rendering.spec.js` — 28/28 pass across Chromium and Firefox (exit 0).
 - `node --test machine/test/name-guard.test.js` — 2/2 pass (exit 0).
