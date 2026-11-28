@@ -1515,7 +1515,7 @@ test('folder tools show mixed and empty states', async ({ page }) => {
   const list = page.locator('.pt-folder-tools');
   await expect(list).toContainText('search');
   await expect(list).toContainText('Working');
-  await expect(list).toContainText("server tools don't work on Kimi, Pi or sandboxed Codex");
+  await expect(list).toContainText("server tools don't work on Kimi or Pi");
   await expect(list).toContainText('bad<b>');
   await expect(list).toContainText('bad <b>reason</b>');
   await expect(list.locator('b')).toHaveCount(0);
@@ -1562,7 +1562,7 @@ test('folder key status refresh preserves drafts and conflict retry uses the new
   ], notes: [] }, key_info: [info] }), replies: [
     [409, { outcome: 'refused', reason: 'changed elsewhere' }],
     [200, { outcome: 'saved', key_revision: 3, keys: ['API_KEY', 'WEATHER_TOKEN'] }],
-  ], keyStatus: n => ({ key_revision: n + 1, keys: ['API_KEY', 'WEATHER_TOKEN'], key_info: [info], folder_tools: { rows: [{ ...folder, key_missing: n === 1, key_lines: n === 1 ? folder.key_lines : ['uses keys: not available to sandboxed Codex, Kimi or Pi'] }], notes: [] } }) });
+  ], keyStatus: n => ({ key_revision: n + 1, keys: ['API_KEY', 'WEATHER_TOKEN'], key_info: [info], folder_tools: { rows: [{ ...folder, key_missing: n === 1, key_lines: n === 1 ? folder.key_lines : ['uses keys: not available over MCP on Kimi or Pi'] }], notes: [] } }) });
   await expect(page.getByText(folder.key_lines[0])).toBeVisible();
   await expect(keyRow(page, 'WEATHER_TOKEN')).toContainText('used by weather');
   await expect(keyRow(page, 'WEATHER_TOKEN')).toContainText("can't be used by folder tools: value too short");

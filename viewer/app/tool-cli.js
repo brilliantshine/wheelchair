@@ -7,6 +7,7 @@ const { execFileSync } = require('node:child_process');
 const { NAME_RE, RESERVED, discover } = require('../../machine/lib/folder-tools');
 const { toolEnv, runScript, installExitHandlers } = require('../../machine/lib/tool-run');
 const { handshake } = require('../../machine/lib/mcp-stdio');
+const { httpHandshake } = require('../../machine/lib/mcp-http');
 
 const unreachable = "couldn't reach the machine service; the tool did not run";
 const lost = "lost the connection to the machine before the tool's result arrived; the tool may already have run, so check before running it again";
@@ -30,6 +31,11 @@ function runRequest(urlText, token, body) {
     req.on('error', error => { if (!(connected && flushed)) fail(error); else reject(new Error(lost)); });
     req.end(payload);
   });
+}
+
+function onWsl() {
+  try { return process.platform === 'linux' && /microsoft/i.test(fs.readFileSync('/proc/version', 'utf8')); }
+  catch { return false; }
 }
 
 async function roots(request) {
@@ -127,12 +133,21 @@ async function main(args, io = {}) {
       for (const row of rows) {
         if (row.status !== 'ok') { out.write(`${row.name}: ${row.reason}\n`); failed = true; continue; }
         if (row.kind !== 'server') { out.write(`${row.name}: ok${row.tool.keys.length ? ' (validated without using keys)' : ''}\n`); continue; }
+        const remote = row.tool.transport === 'http';
+        if (remote && row.tool.windows === true && onWsl()) { out.write(`${row.name}: ok (Windows localhost HTTP tool — live check runs through the Windows forward at session start)\n`); continue; }
         const remaining = deadline - Date.now();
         if (remaining <= 0) { out.write(`${row.name}: check deadline exceeded\n`); failed = true; continue; }
-        const [program, ...argv] = row.tool.start;
-        const env = toolEnv(process.env, worktree);
-        for (const key of row.tool.keys) delete env[key];
-        const result = await handshake({ command: program.includes('/') ? path.resolve(row.dir, program) : program, args: argv, cwd: row.dir, env, timeoutMs: remaining, signal: controller.signal });
+        let result;
+        if (remote) {
+          const headers = Object.fromEntries(Object.entries(row.tool.headers || {}).filter(([, value]) => !value.includes('${')));
+          // Time out just before the deadline's abort, which would skip closing the server's session.
+          result = await httpHandshake({ url: row.tool.url, headers, timeoutMs: Math.max(1, remaining - 100), signal: controller.signal });
+        } else {
+          const [program, ...argv] = row.tool.start;
+          const env = toolEnv(process.env, worktree);
+          for (const key of row.tool.keys) delete env[key];
+          result = await handshake({ command: program.includes('/') ? path.resolve(row.dir, program) : program, args: argv, cwd: row.dir, env, timeoutMs: remaining, signal: controller.signal });
+        }
         if (!result.ok) { out.write(`${row.name}: ${result.error}\n${row.tool.keys.length ? 'it ran without its keys; that may be why\n' : ''}`); failed = true; }
         else out.write(`${row.name}: ${result.serverInfo?.name || '(unnamed server)'}${result.tools === null ? '' : ` tools: ${result.tools.join(', ')}`}${row.tool.keys.length ? ' (checked without its keys)' : ''}\n`);
       }

@@ -475,7 +475,7 @@ test('folder key status and key-only refresh use the selected store', async () =
   let status = (await f.tools.keyStatus(input)).body; assert.equal(status.key_revision, 1); assert.equal(status.key_info[0].folder_usable, false); assert.equal(status.source, undefined); assert.deepEqual(Object.keys(status).sort(), ['folder_tools', 'key_info', 'key_revision', 'keys']); assert.equal(status.key_info[0].reason, 'value too short (under 8 characters)'); assert(!JSON.stringify(status).includes('zq7'));
   const read2 = (await f.tools.read(input)).body;
   await f.tools.save({ ...input, token: read2.token, tools: null, keys: { TOKEN: 'longvalue' } });
-  status = (await f.tools.keyStatus(input)).body; assert.deepEqual(status.folder_tools.rows[0].key_lines, ['uses keys: not available to sandboxed Codex, Kimi or Pi']);
+  status = (await f.tools.keyStatus(input)).body; assert.deepEqual(status.folder_tools.rows[0].key_lines, ['uses keys: not available over MCP on Kimi or Pi']);
   const own = (await f.tools.keyStatus({ ...input, shared_tools: { repo: 'OWNER/NAME', candidates: [] } })).body;
   assert.equal(own.folder_tools.rows[0].key_store, 'shared'); assert.equal(own.folder_tools.rows[0].key_lines[0], 'needs key TOKEN, not set on this machine; set it in Settings, Shared tools, Shared keys'); assert.deepEqual(own.key_info[0].tools, []);
   await require('../lib/shared-keys').writeSharedKeys(path.join(f.root, 'state'), { set: { TOKEN: 'sharedvalue' } });
@@ -491,6 +491,17 @@ test('keyed server shows its key status on the Tools page', async () => {
   assert.deepEqual(row.key_lines, ['needs key TOKEN, not set on this machine']); assert.equal(row.key_store, 'project');
   await f.tools.save({ ...input, token: read.token, tools: null, keys: { TOKEN: 'longvalue' } });
   const set = (await f.tools.keyStatus(input)).body.folder_tools.rows[0]; assert.equal(set.key_missing, false); assert.deepEqual(set.key_lines, []);
+});
+
+test('HTTP folder server in the Git tree is listed without a program', async () => {
+  const f = await fixture(), dir = path.join(f.repo, '.wheelchair/tools/web'); await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'web', description: 'Web', kind: 'server', url: 'https://example.test/mcp', headers: { Authorization: 'Bearer ${TOKEN}' }, keys: ['TOKEN'] }));
+  git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'web'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const body = (await f.tools.read({ path: f.repo })).body;
+  assert.deepEqual(body.folder_tools.notes, []);
+  const [row] = body.folder_tools.rows;
+  assert.equal(row.status, 'ok', row.reason); assert.equal(row.reason, null); assert.equal(row.kind, 'server'); assert.equal(row.tool.transport, 'http'); assert.equal(row.tool.url, 'https://example.test/mcp');
+  assert.deepEqual(row.key_lines, ['needs key TOKEN, not set on this machine']);
 });
 
 test('multiple missing project keys are named in order', async () => {

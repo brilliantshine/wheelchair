@@ -99,7 +99,7 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
           }
         }
       }
-      if (row.status === 'ok') {
+      if (row.status === 'ok' && row.tool.transport !== 'http') {
         const program = row.kind === 'script' ? row.tool.run[0] : row.tool.start[0];
         let found;
         let notExecutable = false;
@@ -157,7 +157,7 @@ function createProjectTools({ commandAsync, stateDir, wsl = () => false, id = ()
       const source = keyStore === 'shared' ? shared : store;
       const missing = names.filter(name => !Object.hasOwn(source.keys, name) || usableReason(source.keys[name]));
       row.keys = names; row.key_store = keyStore; row.key_missing = !!missing.length;
-      row.key_lines = missing.length ? [`needs ${missing.length === 1 ? 'key' : 'keys'} ${missing.join(', ')}, not set on this machine${ownShared ? '; set it in Settings, Shared tools, Shared keys' : ''}`] : row.status === 'ok' && row.kind === 'script' ? ['uses keys: not available to sandboxed Codex, Kimi or Pi'] : [];
+      row.key_lines = missing.length ? [`needs ${missing.length === 1 ? 'key' : 'keys'} ${missing.join(', ')}, not set on this machine${ownShared ? '; set it in Settings, Shared tools, Shared keys' : ''}`] : row.status === 'ok' && row.kind === 'script' ? ['uses keys: not available over MCP on Kimi or Pi'] : [];
       if (keyStore === 'project') for (const name of names) { if (!declarations.has(name)) declarations.set(name, []); declarations.get(name).push(row.name); }
     }
     return [...new Set([...Object.keys(store.keys), ...declarations.keys()])].sort().map(name => {

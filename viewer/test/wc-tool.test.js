@@ -36,7 +36,7 @@ test('server languages and new argument validation', () => {
     assert.equal(manifest.name, name);
     if (name !== 'node') {
       assert.deepEqual(manifest.start, ['python3', 'server.py']);
-      assert.equal(fs.statSync(path.join(folder, 'server.py')).mode & 0o777, 0o755);
+      assert.equal(fs.statSync(path.join(folder, 'server.py')).mode & 0o755, 0o755);
       assert.match(fs.readFileSync(path.join(folder, 'server.py'), 'utf8'), new RegExp(`"name": "${name}"`));
       assert.equal(fs.existsSync(path.join(folder, 'mcp-stdio.js')), false);
       const check = run(dir, ['check', name]); assert.equal(check.status, 0, check.stderr); assert.match(check.stdout, /echo/);
@@ -154,6 +154,90 @@ test('keyed check and run describe key handling while preserving caller environm
   const result = run(dir, ['run', 'keyed'], { WC_TEST_ABSENT_KEY: undefined, WC_TEST_PRESENT: 'present' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, 'Ran without folder-tool keys; variables already in your environment were passed as usual. Keyed tools get their keys through MCP, from the next call in a session that offered them.\nunset|present');
+});
+
+async function httpTool(handler = null) {
+  const seen = [];
+  const server = http.createServer((req, res) => {
+    let data = ''; req.on('data', chunk => { data += chunk; }); req.on('end', () => {
+      if (req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+      const message = JSON.parse(data); seen.push({ method: message.method, headers: req.headers });
+      if (handler) { handler(req, res); return; }
+      if (message.id === undefined) { res.writeHead(202); res.end(); return; }
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: message.method === 'initialize' ? { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'web-fixture' } } : { tools: [{ name: 'lookup' }] } }));
+    });
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  return { seen, url: `http://127.0.0.1:${server.address().port}/mcp`, close: () => new Promise(r => { server.close(r); server.closeAllConnections(); }) };
+}
+
+test('check handshakes unkeyed and keyed HTTP servers and list reports transport', async () => {
+  const dir = repo(), web = await httpTool();
+  try {
+    tool(dir, 'open', { kind: 'server', url: web.url, headers: { 'X-Plain': 'literal' } });
+    tool(dir, 'locked', { kind: 'server', url: web.url, keys: ['WC_TEST_HTTP_KEY'], headers: { Authorization: 'Bearer ${WC_TEST_HTTP_KEY}', 'X-Plain': 'literal' } });
+    tool(dir, 'local', { kind: 'server', start: ['node'] });
+    for (const [name, expected] of [['open', 'open: web-fixture tools: lookup\n'], ['locked', 'locked: web-fixture tools: lookup (checked without its keys)\n']]) {
+      web.seen.length = 0;
+      const result = await done(child(dir, ['check', name], { WC_TEST_HTTP_KEY: 'secretvalue123' }));
+      assert.equal(result.code, 0, result.stderr); assert.equal(result.stdout, expected);
+      assert.deepEqual(web.seen.map(x => x.method), ['initialize', 'notifications/initialized', 'tools/list']);
+      for (const { headers } of web.seen) { assert.equal(headers['x-plain'], 'literal'); assert.equal(headers.authorization, undefined); }
+    }
+    const rows = JSON.parse(run(dir, ['list', '--json']).stdout);
+    assert.deepEqual(rows.map(row => [row.name, row.kind, row.tool.transport]), [['local', 'server', 'stdio'], ['locked', 'server', 'http'], ['open', 'server', 'http']]);
+  } finally { await web.close(); }
+});
+
+test('check reports HTTP server failures with the keyed note only for keyed tools', async () => {
+  const dir = repo(), web = await httpTool((req, res) => { res.writeHead(401); res.end(); });
+  try {
+    tool(dir, 'open', { kind: 'server', url: web.url });
+    tool(dir, 'locked', { kind: 'server', url: web.url, keys: ['TOKEN'], headers: { Authorization: 'Bearer ${TOKEN}' } });
+    const open = await done(child(dir, ['check', 'open']));
+    assert.notEqual(open.code, 0); assert.equal(open.stdout, 'open: HTTP server returned status 401\n');
+    const locked = await done(child(dir, ['check', 'locked']));
+    assert.notEqual(locked.code, 0); assert.equal(locked.stdout, 'locked: HTTP server returned status 401\nit ran without its keys; that may be why\n');
+  } finally { await web.close(); }
+});
+
+test('check deadline on a stalled HTTP server reports a timeout and closes its session', async () => {
+  const dir = repo(); let deleted = 0;
+  const server = http.createServer((req, res) => {
+    if (req.method === 'DELETE') { deleted++; res.writeHead(204); res.end(); return; }
+    let data = ''; req.on('data', chunk => { data += chunk; }); req.on('end', () => {
+      const message = JSON.parse(data); res.setHeader('mcp-session-id', 'session');
+      if (message.method === 'tools/list') return;
+      if (message.id === undefined) { res.writeHead(202); res.end(); return; }
+      res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { capabilities: { tools: {} } } }));
+    });
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  try {
+    tool(dir, 'stall', { kind: 'server', url: `http://127.0.0.1:${server.address().port}/mcp` });
+    const result = await done(child(dir, ['check', 'stall'], { WHEELCHAIR_TOOL_CHECK_DEADLINE_MS: '2000' }));
+    assert.notEqual(result.code, 0); assert.match(result.stdout, /^stall: /); assert.doesNotMatch(result.stdout, /cancelled/); assert.equal(deleted, 1);
+  } finally { server.close(); server.closeAllConnections(); }
+});
+
+test('check skips the live handshake only for Windows HTTP servers on WSL', async () => {
+  const dir = repo(), web = await httpTool();
+  const stub = (name, version) => { const file = path.join(dir, `${name}.js`); fs.writeFileSync(file, `const fs = require('fs'), read = fs.readFileSync; fs.readFileSync = (target, ...rest) => target === '/proc/version' ? ${JSON.stringify(version)} : read(target, ...rest);`); return { NODE_OPTIONS: `--require ${JSON.stringify(file)}` }; };
+  try {
+    tool(dir, 'win', { kind: 'server', url: web.url, windows: true });
+    tool(dir, 'plain', { kind: 'server', url: web.url });
+    const wsl = stub('wsl', 'Linux version 5.15.0-microsoft-standard-WSL2');
+    let result = await done(child(dir, ['check', 'win'], wsl));
+    if (process.platform === 'linux') {
+      assert.equal(result.code, 0, result.stderr); assert.equal(result.stdout, 'win: ok (Windows localhost HTTP tool — live check runs through the Windows forward at session start)\n'); assert.equal(web.seen.length, 0);
+    }
+    for (const [name, extra] of [['plain', wsl], ['win', stub('linux', 'Linux version 6.1.0')]]) {
+      web.seen.length = 0;
+      result = await done(child(dir, ['check', name], extra));
+      assert.equal(result.code, 0, result.stderr); assert.equal(result.stdout, `${name}: web-fixture tools: lookup\n`); assert.equal(web.seen.length, 3);
+    }
+  } finally { await web.close(); }
 });
 
 test('bridge reports keys added after the tool was offered', async () => {
