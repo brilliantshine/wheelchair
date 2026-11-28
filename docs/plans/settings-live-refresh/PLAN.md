@@ -1,6 +1,6 @@
 ---
 slug: settings-live-refresh
-status: implementing
+status: verifying
 created: 2026-11-28
 ---
 
@@ -479,7 +479,7 @@ Targeted commands covering all touched files (full-run is handled before push pe
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Add hub per-boot revision tracking (`settings`, `diagram`, `shared_keys`), `GET /wheelchair/api/settings/revision`, pre-`describe` `settings_revision` stamp on `GET /settings`, API docs, and Node tests (Spec §1 & §4.1) | `viewer/app/hub.js`, `viewer/app/settings.js`, `viewer/app/routes.js`, `viewer/app/diagram-sensitivity.js`, `viewer/app/API.md`, `viewer/test/app-settings.test.js`, `viewer/test/app-diagram-sensitivity.test.js` | standard / gpt / gpt-6.1-terra | `wc-72ca062b2848-worker` | `node --test viewer/test/app-settings.test.js viewer/test/app-diagram-sensitivity.test.js machine/test/name-guard.test.js` | done |
-| T2 | Implement Settings page live-refresh polling, monotonic snapshot reconciliation, focus/dirty guards, `.stale-banner` / `Load latest` UI, and Playwright browser tests (Spec §2, §3 & §4.2) — `tricky` | `viewer/pages/settings.js`, `viewer/pages/settings.css`, `viewer/test/app-settings.spec.js`, `viewer/test/app-accounts.spec.js`, `viewer/test/app-lessons.spec.js`, `viewer/test/app-diagram-sensitivity.spec.js`, `viewer/test/background-editor.spec.js` | standard / claude / claude-sonnet-5-5 | `wc-72ca062b2848-worker-2` | `npm --prefix viewer run test:browser -- viewer/test/app-settings.spec.js viewer/test/app-accounts.spec.js viewer/test/app-lessons.spec.js viewer/test/app-diagram-sensitivity.spec.js viewer/test/background-editor.spec.js` | in_progress |
+| T2 | Implement Settings page live-refresh polling, monotonic snapshot reconciliation, focus/dirty guards, `.stale-banner` / `Load latest` UI, and Playwright browser tests (Spec §2, §3 & §4.2) — `tricky` | `viewer/pages/settings.js`, `viewer/pages/settings.css`, `viewer/test/app-settings.spec.js`, `viewer/test/app-accounts.spec.js`, `viewer/test/app-lessons.spec.js`, `viewer/test/app-diagram-sensitivity.spec.js`, `viewer/test/background-editor.spec.js` | standard / claude / claude-sonnet-5-5 | `wc-72ca062b2848-worker-2` | `npm --prefix viewer run test:browser -- viewer/test/app-settings.spec.js viewer/test/app-accounts.spec.js viewer/test/app-lessons.spec.js viewer/test/app-diagram-sensitivity.spec.js viewer/test/background-editor.spec.js` | done |
 
 ## Log
 
@@ -499,3 +499,21 @@ Targeted commands covering all touched files (full-run is handled before push pe
 - 2026-11-28: Round 9 clean (0 upheld blocking/major; 4 minor upheld, 1 blocking downgraded to minor and fixed, 2 rare-path accepted-risk). Added Spec Mermaid diagram, set `status: approved`, verified Ready check (`wc.js session list` ok, `codex/preflight.sh` fresh 131h remaining), and posted `approval` card.
 - 2026-11-28: Build accepted: approval 825360b2-9343-4bac-8e24-b0bdb3dddcaf
 - 2026-11-28 — T1 accepted (band: scout): merged wc-72ca062b2848-w1 (commit 6fd08a20); 37/37 Node tests passed; choices: none.
+- 2026-11-28 — Choice: T2, `settings.js` `readSettingsAfterWrite`: a save's own reread (`reload`, `refreshModels`, legacy "Use") overtaken by another write retries up to 3 times rather than only dropping, so a just-saved template isn't left missing from `data`.
+- 2026-11-28 — Choice: T2, `settings.js` `showHarnesses`: an awaited status read after picking a machine repaints even while the machine picker has focus (departing from §3.4's focus defer so "Checking…" doesn't stick until blur; focus preserved via `repaint`).
+- 2026-11-28 — Choice: T2, `settings.js` `reconcileVisibleBlocks`: when only `reserved_provider` changed, Balancing updates its reserve words in place with no banner or full repaint, even with a draft.
+- 2026-11-28 — Choice: T2, `settings.js` `quietDeferred`: a late initial shared-project lookup held back by a typed key never turns into "Updated elsewhere.", not on typing or blur.
+- 2026-11-28 — Choice: T2, `settings.js` shared keys: cached last keys and machine list draw immediately on repaint so focus survives; a refresh reading identical keys changes nothing.
+- 2026-11-28 — Choice: T2, `settings.js` shared keys: local save, remove, and Load latest read the hub revision first and acknowledge it as seen, and save/remove run inside `withLocalWrite`.
+- 2026-11-28 — Choice: T2, `settings.js` `sharedMachine`: starts as `null` (hub default machine) rather than `'hub'`.
+- 2026-11-28 — Choice: T2, `settings.js` `syncBackground`: no stale mark while the page's own background save is in flight; a refused save is checked again afterwards.
+- 2026-11-28 — Choice: T2, `settings.js` `lessonAction`: runs inside `withLocalWrite`, passes `OWN_TEMPLATES` on 409 reload, and clears stale banner when the editor ends up clean.
+- 2026-11-28 — Choice: T2, `settings.js` `saveLessons`: added `lessonEdit === edit` guard referenced by Accepted Risks.
+- 2026-11-28 — Choice: T2, `settings.js` `paint`: Accounts and Harnesses hold no copy of values, so a clean repaint of either drops its stale banner.
+- 2026-11-28 — Choice: T2, `settings.js` `toggleInUse`: kept existing function name (`toggleInUse`); an untouched draft takes the fresh template after toggle.
+- 2026-11-28 — Choice: T2, `settings.js` `swapKeepingFocus`: requires `found.length === 1` so a repeated label never moves focus to another row.
+- 2026-11-28 — Choice: T2, `settings.js` `focusout`: uses `relatedTarget` and waits for `pointerup` mid-press so a deferred repaint never shifts a button under a click.
+- 2026-11-28 — Choice: T2, `settings.js` panel events: `change` is handled alongside `input` because `<select>` updates drafts on `change`.
+- 2026-11-28 — Choice: T2, `settings.js` `stable()`: slice/draft comparisons ignore object key order; `renderedSlice` is not recorded for untracked blocks.
+- 2026-11-28 — Choice: T2, `settings.js` `paintHarnesses` & `loadLessonThreads`: routed through `repaint` so they keep focus too.
+- 2026-11-28 — T2 accepted (band: self): merged wc-72ca062b2848-w2 (commit 94ac06e6); Playwright browser specs verified (worker: 378 passed, 2 skipped; sub-lead spot-check: all live-refresh + background-editor specs passed).
