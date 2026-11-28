@@ -29,6 +29,7 @@ test('templates work, reject existing folders and names, and use checkout top', 
 
 test('server languages and new argument validation', () => {
   const dir = repo();
+  const hasPython3 = spawnSync('python3', ['--version'], { stdio: 'ignore' }).status === 0;
   for (const [name, flags] of [['python', ['--kind', 'server', '--lang', 'python']], ['ordered', ['--lang', 'python', '--kind', 'server']], ['node', ['--kind', 'server', '--lang', 'node']]]) {
     const created = run(dir, ['new', name, ...flags]); assert.equal(created.status, 0, created.stderr);
     const folder = path.join(dir, '.wheelchair/tools', name);
@@ -39,7 +40,7 @@ test('server languages and new argument validation', () => {
       assert.equal(fs.statSync(path.join(folder, 'server.py')).mode & 0o755, 0o755);
       assert.match(fs.readFileSync(path.join(folder, 'server.py'), 'utf8'), new RegExp(`"name": "${name}"`));
       assert.equal(fs.existsSync(path.join(folder, 'mcp-stdio.js')), false);
-      const check = run(dir, ['check', name]); assert.equal(check.status, 0, check.stderr); assert.match(check.stdout, /echo/);
+      if (hasPython3) { const check = run(dir, ['check', name]); assert.equal(check.status, 0, check.stderr); assert.match(check.stdout, /echo/); }
     } else assert.equal(fs.existsSync(path.join(folder, 'mcp-stdio.js')), true);
   }
   for (const [flags, error] of [
