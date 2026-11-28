@@ -49,8 +49,8 @@ test('valid JSON size boundary', async () => {
 });
 test('entry shapes and input schema', () => {
   const root=path.resolve('/tmp/project'), rows=[{name:'a',dir:'/tmp/a'},{name:'b',dir:'/tmp/b'}];
-  assert.deepEqual(f.bridgeEntry(root,rows),{name:'wheelchair-tools',folder:'bridge',entry:{type:'stdio',command:process.execPath,args:[path.resolve(__dirname,'../lib/tool-bridge.js'),'--project-dir',root,'--tool','/tmp/a','--tool','/tmp/b'],env:{}}});
-  assert.deepEqual(f.serverEntry(root,rows[0]),{name:'a',folder:'server',entry:{type:'stdio',command:process.execPath,args:[path.resolve(__dirname,'../lib/tool-launch.js'),'--project-dir',root,'--tool','/tmp/a'],env:{}}});
+  assert.deepEqual(f.bridgeEntry(root,rows),{name:'wheelchair-tools',folder:'bridge',windows:false,wrapped:false,entry:{type:'stdio',command:process.execPath,args:[path.resolve(__dirname,'../lib/tool-bridge.js'),'--project-dir',root,'--tool','/tmp/a','--tool','/tmp/b'],env:{}}});
+  assert.deepEqual(f.serverEntry(root,rows[0]),{name:'a',folder:'server',windows:false,wrapped:false,unity:false,entry:{type:'stdio',command:process.execPath,args:[path.resolve(__dirname,'../lib/tool-launch.js'),'--project-dir',root,'--tool','/tmp/a'],env:{}}});
   const inputs=Object.fromEntries(['string','number','boolean','object','array'].map((type,i)=>[type,{type,description:`desc ${type}`,required:i%2===0}]));
   assert.deepEqual(f.inputSchema(inputs),{type:'object',properties:Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,{type:v.type,description:v.description}])),required:['string','boolean','array']});
   assert.deepEqual(f.inputSchema({x:{type:'string',description:'X',required:false}}),{type:'object',properties:{x:{type:'string',description:'X'}}});

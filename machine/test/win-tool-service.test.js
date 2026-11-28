@@ -81,11 +81,14 @@ test('folder entries detect symlinked Windows programs and carry proxy options',
 test('folder servers and scripts receive Windows wiring at service launch', async () => {
   const f = fixture(); try {
     const exe = path.join(process.env.WC_FAKE_MOUNT, 'c/tools/tool.exe');
-    for (const [name, details] of Object.entries({ normal: { kind: 'server', start: [exe, 'serve'] }, unity: { kind: 'server', start: [exe, 'mcp-for-unity'] }, script: { kind: 'script', run: [exe], inputs: {} } })) write(path.join(f.worktree, '.wheelchair/tools', name, 'tool.json'), JSON.stringify({ name, description: name, ...details }));
+    const { projectIdentity, writeKeyStore } = require('../lib/project-keys');
+    await writeKeyStore(f.machine.stateDir, await projectIdentity(f.worktree), { set: { TOKEN: 'secretvalue' } });
+    for (const [name, details] of Object.entries({ normal: { kind: 'server', start: [exe, 'serve'] }, keyed: { kind: 'server', start: [exe], keys: ['TOKEN'] }, unity: { kind: 'server', start: [exe, 'mcp-for-unity'], keys: ['TOKEN'] }, script: { kind: 'script', run: [exe], inputs: {} } })) write(path.join(f.worktree, '.wheelchair/tools', name, 'tool.json'), JSON.stringify({ name, description: name, ...details }));
     await start(f);
     const entries = JSON.parse(fs.readFileSync(f.config)).mcpServers;
     assert.ok(entries.normal.args.includes('--win-list-cache')); assert.ok(entries.normal.args.includes('--win-ready-file'));
-    assert.ok(entries.unity.args.includes('--win')); assert.ok(!entries.unity.args.includes('--win-ready-file'));
+    assert.ok(entries.keyed.args.includes('--win-ready-file')); assert.ok(!entries.keyed.args.includes('--win-list-cache'));
+    assert.ok(entries.unity.args.includes('--key')); assert.ok(entries.unity.args.includes('--win')); assert.ok(!entries.unity.args.includes('--win-ready-file'));
     assert.ok(entries['wheelchair-tools'].args.includes('--win-ready-file')); assert.ok(entries['wheelchair-tools'].args.includes('--win'));
     await f.machine.stop(f.name);
   } finally { await finish(f); }
@@ -95,10 +98,14 @@ test('Windows HTTP folder tools forward without WSL interop', async () => {
   const f = fixture(); try {
     f.machine.win.detected.wsl = false;
     f.machine.win.forwards.get = async port => { assert.equal(port, 3210); return 4321; };
+    const { projectIdentity, writeKeyStore } = require('../lib/project-keys');
+    await writeKeyStore(f.machine.stateDir, await projectIdentity(f.worktree), { set: { TOKEN: 'secretvalue' } });
+    write(path.join(f.worktree, '.wheelchair/tools/keyhttp/tool.json'), JSON.stringify({ name: 'keyhttp', description: 'http', kind: 'server', url: 'http://localhost:3210/mcp', windows: true, keys: ['TOKEN'], headers: { Authorization: 'Bearer ${TOKEN}' } }));
     write(path.join(f.worktree, '.wheelchair/tools/http/tool.json'), JSON.stringify({ name: 'http', description: 'http', kind: 'server', url: 'http://localhost:3210/mcp', windows: true }));
     await start(f);
     const entry = JSON.parse(fs.readFileSync(f.config)).mcpServers.http;
     assert.equal(entry.url, 'http://127.0.0.1:4321/mcp');
+    const keyed = JSON.parse(fs.readFileSync(f.config)).mcpServers.keyhttp; assert.deepEqual(keyed.args.slice(-2), ['--url-override', 'http://127.0.0.1:4321/mcp']);
     await f.machine.stop(f.name);
   } finally { f.release(); f.restore(); }
 });
