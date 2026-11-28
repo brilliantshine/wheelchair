@@ -641,3 +641,50 @@ test('role tiers, ladders and legacy notice normalize and compare cells', () => 
   base.lead_tier_notice_dismissed = true;
   assert.deepEqual(settings.legacyLeadDiffs(base, cells), []);
 });
+
+test('role preferences round trip and validate before dismissing the notice', async () => {
+  await withContext(async c => {
+    const put = body => api(c, '/settings/preferences', { method: 'PUT', body });
+    const initial = (await api(c, '/settings')).body;
+    assert.equal(initial.lead_tier_notice_dismissed, false);
+    assert.deepEqual(initial.legacy_lead_diffs, []);
+    const other_agents = Object.fromEntries(Object.keys(initial.other_agents).map((role, i) => [role, ['light', 'standard', 'heavy', 'critical'][i % 4]]));
+    const provider_orders = Object.fromEntries(Object.keys(initial.provider_orders).map(role => [role, ['lead', 'sub-lead', 'assistant', 'project-lead'].includes(role) ? ['gpt', 'any'] : ['gpt', 'claude']]));
+    const saved = await put({ other_agents, provider_orders, lead_tier_notice_dismissed: false });
+    assert.equal(saved.status, 200); assert.deepEqual(saved.body.other_agents, other_agents); assert.deepEqual(saved.body.provider_orders, provider_orders); assert.equal(saved.body.lead_tier_notice_dismissed, false);
+    const got = (await api(c, '/settings')).body;
+    assert.deepEqual(got.other_agents, other_agents); assert.deepEqual(got.provider_orders, provider_orders); assert.equal(got.lead_tier_notice_dismissed, false);
+    for (const body of [{ other_agents: [] }, { other_agents: { unknown: 'light' } }, { other_agents: { mapper: 'bad' } }, { provider_orders: [] }, { provider_orders: { unknown: 'lead' } }, { provider_orders: { reviewer: ['any'] } }, { provider_orders: { reviewer: [] } }]) assert.equal((await put(body)).status, 400, JSON.stringify(body));
+    assert.equal((await api(c, '/settings')).body.lead_tier_notice_dismissed, false);
+  });
+});
+
+test('notice dismissal follows successful model and role saves', async () => {
+  await withContext(async c => {
+    await fs.writeFile(c.models, 'this is malformed\n');
+    const save = () => api(c, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'light', model: 'gpt-6-sol' } });
+    assert.equal((await save()).status, 400);
+    assert.equal((await api(c, '/settings')).body.lead_tier_notice_dismissed, false);
+    await fs.unlink(c.models);
+    assert.equal((await save()).status, 200);
+    assert.equal((await api(c, '/settings')).body.lead_tier_notice_dismissed, true);
+  });
+  await withContext(async c => {
+    assert.equal((await api(c, '/settings/preferences', { method: 'PUT', body: { other_agents: { mapper: 'heavy' } } })).status, 200);
+    assert.equal((await api(c, '/settings')).body.lead_tier_notice_dismissed, true);
+  });
+});
+
+test('legacy lead comparisons include effort and distinct sub-lead cells', () => {
+  const value = settings.defaults();
+  for (const p of Object.keys(value.harnesses)) value.harnesses[p] = p === 'gpt';
+  const same = { model: 'm', effort: 'high' }, different = { model: 'm', effort: 'low' };
+  const cells = { gpt: { lead: same, 'sub-lead': same, heavy: different, light: different }, claude: { lead: same, heavy: different } };
+  assert.deepEqual(settings.legacyLeadDiffs(value, cells).map(d => d.role), ['lead']);
+  cells.gpt['sub-lead'] = different;
+  assert.deepEqual(settings.legacyLeadDiffs(value, cells).map(d => d.role), ['lead']);
+  cells.gpt['sub-lead'] = { model: 'other', effort: 'high' };
+  assert.deepEqual(settings.legacyLeadDiffs(value, cells).map(d => d.role), ['lead', 'sub-lead']);
+  cells.gpt['sub-lead'] = same; value.other_agents['sub-lead'] = 'light';
+  assert.deepEqual(settings.legacyLeadDiffs(value, cells).map(d => d.role), ['lead', 'sub-lead']);
+});

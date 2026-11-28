@@ -121,7 +121,7 @@ test('switch and balancing writes guard the expanded lead order with the exact m
     assert.equal((await api(c, '/settings/preferences', { method: 'PUT', body: { provider_orders: { reviewer: ['any'] } } })).status, 400);
     assert.equal((await api(c, '/settings/preferences', { method: 'PUT', body: { other_agents: { unknown: 'light' } } })).status, 400);
     await api(c, '/settings/harnesses/claude', { method: 'PUT', body: { enabled: true } });
-    await api(c, '/settings/balancing', { method: 'PUT', body: { lead_order: ['claude'] } });
+    await api(c, '/settings/preferences', { method: 'PUT', body: { provider_orders: { lead: ['claude'] } } });
     r = await api(c, '/settings/harnesses/claude', { method: 'PUT', body: { enabled: false } });
     assert.equal(r.status, 409); assert.equal(r.body.detail, message);
     assert.equal((await api(c, '/settings/harnesses/claude', { method: 'PUT', body: { enabled: 0 } })).status, 400);
@@ -249,7 +249,8 @@ test('a live lead aside fork and an unanswered start retry survive switching off
 test('wc session start prints the left-out waiting reason', async () => {
   const http = require('node:http'); const fs = require('node:fs/promises');
   const brief = path.join(await makeDir('wc-left-out-'), 'brief'); await fs.writeFile(brief, 'work');
-  const server = http.createServer((req, res) => { req.resume(); req.on('end', () => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ session: { status: 'waiting', waiting_until: 'soon', waiting_reason: 'Claude Code is left out in Settings' } })); }); });
+  let reason = 'Claude Code is left out in Settings';
+  const server = http.createServer((req, res) => { req.resume(); req.on('end', () => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ session: { status: 'waiting', waiting_until: 'soon', waiting_reason: reason } })); }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const { spawn } = require('node:child_process');
@@ -257,6 +258,11 @@ test('wc session start prints the left-out waiting reason', async () => {
     let output = ''; child.stdout.on('data', chunk => { output += chunk; });
     assert.equal(await new Promise(resolve => child.on('close', resolve)), 0);
     assert.match(output, /waiting for room until soon\nwaiting: Claude Code is left out in Settings\n/);
+    reason = 'Claude is set to Not used for heavy in Settings → Models';
+    const second = spawn(process.execPath, [path.join(__dirname, '../app/wc.js'), 'session', 'start', '--role', 'worker', '--brief-file', brief, '--attempt', 'y'], { env: { ...process.env, WHEELCHAIR_MACHINE_URL: '', WHEELCHAIR_MACHINE_ORIGIN: `http://127.0.0.1:${server.address().port}`, WHEELCHAIR_SESSION_TOKEN: 'test' } });
+    let next = ''; second.stdout.on('data', chunk => { next += chunk; });
+    assert.equal(await new Promise(resolve => second.on('close', resolve)), 0);
+    assert.ok(next.startsWith(`waiting: ${reason}\n`)); assert.doesNotMatch(next, /waiting for room until/);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
@@ -331,4 +337,14 @@ test('switching a harness off cancels its install on every known machine, withou
   assert.equal(on.status, 200); assert.equal(on.body.harnesses.gpt, true);
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.deepEqual(calls, []);
+});
+
+test('lead diagnostics name the owning ladder and show configuration waits', async () => {
+  const { hub } = await harnessFixture({ hub: statusFor('gpt') });
+  await settings.update(hub, s => { s.worker_order = ['claude']; s.provider_orders.lead = 'worker'; });
+  assert.match((await harnesses.describe(hub)).can_start.lead.reason, /Worker ladder/);
+  await settings.update(hub, s => { s.provider_orders.lead = ['claude']; });
+  assert.match((await harnesses.describe(hub)).can_start.lead.reason, /Leads provider order/);
+  await settings.update(hub, s => { s.harnesses.claude = false; });
+  assert.match((await harnesses.describe(hub)).can_start.lead.reason, /No enabled provider.*in Settings → Models$/);
 });

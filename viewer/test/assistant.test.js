@@ -51,8 +51,10 @@ test('assistant lifecycle, visibility, refusals and fresh context', async () => 
     stored.cards.push({ id: 'q', kind: 'question', question: 'Old?', answered: false }, { id: 'n', kind: 'needs', title: 'Old need', answered: false });
     stored.sent.push({ text: 'secret history', source: 'user' });
     await fs.writeFile(file, JSON.stringify(stored));
+    assert.equal((await api(c, '/settings/preferences', { method: 'PUT', body: { provider_orders: { assistant: ['gpt'] } } })).status, 200);
     assert.equal((await toggle('on')).status, 200);
     const after = JSON.parse(await fs.readFile(file, 'utf8'));
+    assert.equal(after.provider, 'gpt'); assert.equal(after.cli, 'codex');
     const next = after.sessions.at(-1);
     const context = next.queue.find((m) => m.source === 'context').text;
     assert.equal(context, `[wc:context restart] Thread state:\n${JSON.stringify({ thread: id, title: 'Personal assistant', assistant: true })}`);
