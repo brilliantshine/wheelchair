@@ -675,3 +675,97 @@ test.describe('terminal login mode', () => {
     expect(keys[2]).toEqual({ keys: 'Enter' });
   });
 });
+
+// Account changes made elsewhere reach an open Settings page. Unlike mock(), these let account
+// writes reach the real hub, so its settings revision moves.
+test.describe('live refresh', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+  test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'ignoreErrors' }); });
+
+  const send = (page, route, body, method = 'PUT') => page.evaluate(async ([route, body, method]) => {
+    const response = await fetch('/wheelchair/api' + route, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    return response.json();
+  }, [route, body, method]);
+  const refreshed = async (page) => {
+    const answered = page.waitForResponse((r) => r.request().method() === 'GET' && new URL(r.url()).pathname === '/wheelchair/api/settings', { timeout: 15000 });
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await (await answered).finished();
+    await page.waitForTimeout(200);
+  };
+  const acct = (page, id) => page.locator(`.acct[data-account="${id}"]`);
+  const banner = (page) => page.locator('.block[data-block="accounts"] > .stale-banner');
+
+  // Open, with the cards drawn, so a later change is an outside one.
+  const openProviders = async (page) => {
+    await open(page, 'providers');
+    await expect(acct(page, 'default-claude')).toBeVisible();
+  };
+
+  async function stubs(page) {
+    await page.route('**/api/usage', (r) => r.fulfill({ json: { providers: {} } }));
+    await page.route('**/api/harnesses**', (r) => r.fulfill({ json: { threads_using: {}, machines: [], can_start: { machine: 'hub', lead: { ok: true }, worker: { ok: true } } } }));
+    await page.route('**/api/accounts/*/signin', (r) => r.fulfill({ json: {} }));
+    await page.route('**/api/accounts/*/signin/*', (r) => r.fulfill({ json: { state: 'waiting', url: 'https://example.test/login' } }));
+  }
+
+  test('outside account and switch changes repaint, keeping focus on the same button', async ({ page }) => {
+    await stubs(page);
+    await openProviders(page);
+    const pause = acct(page, 'default-claude').getByRole('button', { name: 'Pause' });
+    await pause.focus();
+    await send(page, '/settings/accounts/default-claude', { name: 'Renamed elsewhere' });
+    await refreshed(page);
+    await expect(acct(page, 'default-claude').locator('.acct-name')).toHaveText('Renamed elsewhere');
+    await expect(pause).toBeFocused();
+    await send(page, '/settings/harnesses/kimi', { enabled: false });
+    await refreshed(page);
+    await expect(page.locator('.prov-group[data-provider="kimi"]')).toHaveCount(0);
+    await expect(page.locator('.stale-banner')).toHaveCount(0);
+  });
+
+  test('an open rename keeps what was typed until Load latest', async ({ page }) => {
+    await stubs(page);
+    await openProviders(page);
+    await acct(page, 'default-claude').getByRole('button', { name: 'Rename' }).click();
+    await page.getByLabel('Account name').fill('My draft');
+    await send(page, '/settings/accounts/default-claude', { name: 'Theirs' });
+    await refreshed(page);
+    await expect(banner(page)).toContainText('Updated elsewhere.');
+    await expect(page.getByLabel('Account name')).toHaveValue('My draft');
+    await banner(page).getByRole('button', { name: 'Load latest' }).click();
+    await expect(page.getByLabel('Account name')).toHaveCount(0);
+    await expect(acct(page, 'default-claude').locator('.acct-name')).toHaveText('Theirs');
+    await expect(banner(page)).toHaveCount(0);
+  });
+
+  test('Load latest closes a waiting sign-in card', async ({ page }) => {
+    await stubs(page);
+    await page.route('**/api/usage', (r) => r.fulfill({ json: { providers: { claude: { label: 'Claude', left: null, accounts: [{ id: 'default-claude', provider: 'claude', name: 'default', plan: 'unknown', weight: 1, paused: false, machines: { hub: 'signed_out' }, reading: null, live_sessions: 0 }] } } } }));
+    await openProviders(page);
+    await page.getByRole('button', { name: 'Sign in default on hub' }).click();
+    await expect(page.locator('.signin-card')).toBeVisible();
+    await send(page, '/settings/accounts/default-gpt', { name: 'Theirs' });
+    await refreshed(page);
+    await expect(banner(page)).toContainText('Updated elsewhere.');
+    await expect(page.locator('.signin-card')).toBeVisible();
+    await banner(page).getByRole('button', { name: 'Load latest' }).click();
+    await expect(page.locator('.signin-card')).toHaveCount(0);
+    await expect(banner(page)).toHaveCount(0);
+  });
+
+  test('saving an account change raises no banner, with another form still open', async ({ page }) => {
+    await stubs(page);
+    await openProviders(page);
+    await page.locator('.prov-group[data-provider="gpt"] .add-account').click();
+    await page.locator('#add-name').fill('Second draft');
+    await acct(page, 'default-claude').getByRole('button', { name: 'Pause' }).click();
+    await expect(acct(page, 'default-claude').getByRole('button', { name: 'Resume' })).toBeVisible();
+    await page.waitForTimeout(200);
+    await expect(banner(page)).toHaveCount(0);
+    await page.locator('.add-form').getByRole('button', { name: 'Save' }).click();
+    await expect(page.locator('.add-form')).toHaveCount(0);
+    await expect(page.locator('.acct-name', { hasText: 'Second draft' })).toHaveCount(1);
+    await expect(banner(page)).toHaveCount(0);
+  });
+});

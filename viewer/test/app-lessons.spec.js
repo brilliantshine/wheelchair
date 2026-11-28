@@ -412,3 +412,69 @@ test.describe('phone width', () => {
     if (process.env.LESSON_SHOTS) await page.screenshot({ path: path.join(process.env.LESSON_SHOTS, 'thread-notice.png') });
   });
 });
+
+// Lessons changed elsewhere (an agent, another tab) reach an open editor. The outside changes
+// go through the hub's route, which moves the settings revision.
+test.describe('live refresh', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  const change = (page, edits, removals = []) => page.evaluate(async (body) => {
+    const response = await fetch('/wheelchair/api/settings/lessons/worker', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+  }, { edits, removals });
+  const refreshed = async (page) => {
+    const answered = page.waitForResponse((r) => r.request().method() === 'GET' && new URL(r.url()).pathname === '/wheelchair/api/settings', { timeout: 15000 });
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await (await answered).finished();
+    await page.waitForTimeout(200);
+  };
+  const field = (page, id) => page.locator(`.lesson-row[data-id="${id}"] textarea`);
+  const banner = (page) => page.locator('.block[data-block="templates"] > .stale-banner');
+  // Seeds two lessons and opens their editor, drawn, so a later change is an outside one.
+  const openTwo = async (page) => {
+    await seed({ worker: [lesson('L0000d1', 'One.'), lesson('L0000d2', 'Two.')] });
+    await openSettings(page, '/app/settings#behavior/lessons/worker');
+    await expect(field(page, 'L0000d2')).toHaveValue('Two.');
+  };
+
+  test('a clean editor follows, and saving its own edit raises no banner', async ({ page }) => {
+    await openTwo(page);
+    await change(page, [{ id: 'L0000d2', text: 'Two, elsewhere.' }]);
+    await refreshed(page);
+    await expect(field(page, 'L0000d2')).toHaveValue('Two, elsewhere.');
+    await field(page, 'L0000d1').fill('One, mine.');
+    await page.locator('#save-lessons').click();
+    await expect(page.locator('.note[data-for="section"]')).toHaveText('Saved, applies to new sessions');
+    await expect(field(page, 'L0000d1')).toHaveValue('One, mine.');
+    await expect(banner(page)).toHaveCount(0);
+  });
+
+  test('a typed edit is kept until Load latest', async ({ page }) => {
+    await openTwo(page);
+    await field(page, 'L0000d1').fill('My draft.');
+    await change(page, [{ id: 'L0000d2', text: 'Two, elsewhere.' }]);
+    await refreshed(page);
+    await expect(banner(page)).toContainText('Updated elsewhere.');
+    await expect(field(page, 'L0000d1')).toHaveValue('My draft.');
+    await banner(page).getByRole('button', { name: 'Load latest' }).click();
+    await expect(field(page, 'L0000d1')).toHaveValue('One.');
+    await expect(field(page, 'L0000d2')).toHaveValue('Two, elsewhere.');
+    await expect(banner(page)).toHaveCount(0);
+  });
+
+  test('an edited lesson removed elsewhere stays on screen, and Save still answers 409', async ({ page }) => {
+    await openTwo(page);
+    await field(page, 'L0000d1').fill('My draft.');
+    await change(page, [], ['L0000d1']);
+    await refreshed(page);
+    await expect(banner(page)).toContainText('Updated elsewhere.');
+    // A repaint of the same editor keeps the edited row and its Save button.
+    await page.locator('.lesson-row[data-id="L0000d2"] .remove-lesson').click();
+    await expect(field(page, 'L0000d1')).toHaveValue('My draft.');
+    const refused = page.waitForResponse((r) => r.url().endsWith('/settings/lessons/worker') && r.request().method() === 'PUT');
+    await page.locator('#save-lessons').click();
+    expect((await refused).status()).toBe(409);
+    await expect(page.locator('.lessons-edit .inline-err')).toHaveText('an agent removed a lesson you edited; reload to see the current list');
+    await expect(field(page, 'L0000d1')).toHaveValue('My draft.');
+  });
+});

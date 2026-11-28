@@ -69,12 +69,22 @@ test('clean editor follows shared save and reset; stale draft conflicts then Can
     await page.getByLabel('Visibility').fill('0'); await save(page);
     await other.evaluate(() => window.wcBackground.refresh());
     await expect(other.getByLabel('Visibility')).toHaveValue('100');
+    const banner = other.locator('.block[data-block="background"] > .stale-banner');
+    await expect(banner).toContainText('Updated elsewhere.');
     const conflict = other.waitForResponse(r => r.url().includes('/settings/background') && r.request().method() === 'PUT');
     await other.locator('.background-editor').getByRole('button', { name: 'Save', exact: true }).click();
     expect((await conflict).status()).toBe(409);
     await expect(other.locator('.background-editor').getByRole('alert')).toContainText('changed elsewhere');
     await other.locator('.background-editor').getByRole('button', { name: 'Cancel' }).click();
     await expect(other.getByLabel('Visibility')).toHaveValue('0');
+    await expect(banner).toHaveCount(0);
+    // The banner's own button drops the draft for the saved version.
+    await other.getByLabel('Visibility').fill('80');
+    await page.getByLabel('Visibility').fill('20'); await save(page);
+    await other.evaluate(() => window.wcBackground.refresh());
+    await banner.getByRole('button', { name: 'Load latest' }).click();
+    await expect(other.getByLabel('Visibility')).toHaveValue('20');
+    await expect(banner).toHaveCount(0);
     await page.locator('.background-editor').getByRole('button', { name: 'Remove background' }).click(); await save(page);
     await other.evaluate(() => window.wcBackground.refresh());
     await expect(other.locator('.background-layer')).toHaveCount(0);
@@ -178,4 +188,25 @@ test('representative settings views retain screenshots and restore appearance af
   await page.locator('.background-editor').getByRole('button', { name: 'Remove background' }).click(); await save(page);
   await expect(page.locator('.background-layer')).toHaveCount(0);
   expect(await page.locator('.background-editor .box').evaluate(e => getComputedStyle(e).backgroundColor)).toBe(before);
+});
+
+test('no banner while an image decodes against an unchanged poll, nor for an unrelated setting', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    const read = File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer = function () { return new Promise(resolve => { window.releaseRead = () => resolve(read.call(this)); }); };
+  });
+  const banner = page.locator('.block[data-block="background"] > .stale-banner');
+  await choose(page);
+  await expect(page.getByText('Loading image…')).toBeVisible();
+  await page.evaluate(() => window.wcBackground.accept(window.wcBackground.current().metadata));
+  await expect(banner).toHaveCount(0);
+  await page.evaluate(() => window.releaseRead());
+  await expect(page.locator('.background-layer img')).toHaveCount(1);
+  // Another setting changing elsewhere is not a background change.
+  await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ user_name: 'Robin' }) }));
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.getByLabel('Your name', { exact: true })).toHaveValue('Robin');
+  await expect(page.locator('.stale-banner')).toHaveCount(0);
+  await expect(page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
 });
