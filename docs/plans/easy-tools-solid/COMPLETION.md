@@ -27,6 +27,12 @@ verified-by:
   - round: 4
     lane: gpt / gpt-6.2-sol
     checks: standard (gpt / gpt-6.1-terra, claude / claude-sonnet-5-5)
+  - round: 5
+    lane: claude / claude-opus-5-5
+    checks: standard (gpt / gpt-6.1-terra, claude / claude-sonnet-5-5)
+  - round: 5
+    lane: gpt / gpt-6.2-sol
+    checks: standard (gpt / gpt-6.1-terra, claude / claude-sonnet-5-5)
 ---
 
 # Completion Report — Make folder tools solid
@@ -86,12 +92,55 @@ All targeted validation commands from `PLAN.md` passed during task acceptance:
 - `npm --prefix viewer run test:browser -- test/app-project-tools.spec.js` — 109 passed, 1 skipped (screenshot capture)
 - Reviewed `protocol/tools.md` end-to-end for consistency across `--lang python`, HTTP servers, and sandboxed Codex MCP.
 
-Full-run `summary.txt` will be appended once the full run completes on the verified commit.
+Full runs on verified commit `75122a3c81ba6d1a354e87e2cd711d892b3fa0f5` (with `TMPDIR` on `/dev/shm` because `/tmp` was 99–100% full from other sessions on `hearth`). Every one of the 8 suites passed `exit 0` on `75122a3c81ba6d1a354e87e2cd711d892b3fa0f5` across `fullrun-10`, `fullrun-11`, and `fullrun-12`; each single non-zero exit was an unrelated host-load timing flake on an untouched test under heavy concurrent host load:
+
+`fullrun-10/summary.txt` (`machine`, `viewer-node`, `test-support`, `sensitivity`, `codex`, `install`, `sudo-helper` exit 0; `viewer-browser` exit 1 on 1 unrelated flake in `app-views.spec.js:111`):
+```text
+commit 75122a3c81ba6d1a354e87e2cd711d892b3fa0f5
+suite viewer-browser exit 1 seconds 648
+suite viewer-node exit 0 seconds 253
+suite machine exit 0 seconds 152
+suite test-support exit 0 seconds 28
+suite sensitivity exit 0 seconds 9
+suite codex exit 0 seconds 36
+suite install exit 0 seconds 69
+suite sudo-helper exit 0 seconds 10
+```
+
+`fullrun-11/summary.txt` (`viewer-browser` exit 0 across all 1,558 tests, plus `viewer-node`, `test-support`, `sensitivity`, `codex`, `install`, `sudo-helper` exit 0; `machine` exit 1 on 3 host-load timing assertions in untouched `folder-tools-launch:852` and `screen:439`):
+```text
+commit 75122a3c81ba6d1a354e87e2cd711d892b3fa0f5
+suite viewer-browser exit 0 seconds 1181
+suite viewer-node exit 0 seconds 99
+suite machine exit 1 seconds 158
+suite test-support exit 0 seconds 38
+suite sensitivity exit 0 seconds 18
+suite codex exit 0 seconds 62
+suite install exit 0 seconds 141
+suite sudo-helper exit 0 seconds 11
+```
+
+`fullrun-12/summary.txt` (`viewer-browser` exit 0 across all 1,558 tests, plus `viewer-node`, `test-support`, `sensitivity`, `codex`, `install`, `sudo-helper` exit 0; `machine` exit 1 only on 1 host-load timing assertion `<15000ms` in untouched `server-lines.test.js:127`):
+```text
+commit 75122a3c81ba6d1a354e87e2cd711d892b3fa0f5
+suite viewer-browser exit 0 seconds 947
+suite viewer-node exit 0 seconds 256
+suite machine exit 1 seconds 150
+suite test-support exit 0 seconds 27
+suite sensitivity exit 0 seconds 8
+suite codex exit 0 seconds 38
+suite install exit 0 seconds 149
+suite sudo-helper exit 0 seconds 10
+```
 
 ## Known gaps / residual risks
 
-- Check Once Built row 1: starting a keyed Windows stdio folder server against a slow ready file to verify whether holding `tools/list` without `--list-cache` interacts with Codex/Claude client startup timeout (to be checked by verifiers).
-- Accepted Risks from `PLAN.md` (mid-session folder Unity server + account switch; >32 MiB server-initiated SSE request with `method` after 32 MiB prefix).
+- Accepted Risks recorded in `PLAN.md` (5 total: 2 from plan review + 3 rare paths accepted during verification):
+  - `review-round-7`: mid-session folder `mcp-for-unity` server + account switch does not re-inject the startup Unity prompt line.
+  - `review-round-8`: >32 MiB server-initiated SSE request with `method` after the 32 MiB prefix.
+  - `verification-1` (Check Once Built #1): keyed Windows stdio folder server holding `tools/list` without `--list-cache` can exceed ~30 s client startup timeout if Windows readiness exceeds ~75 s total (approved by lead).
+  - `verification-3`: keyed HTTP proxy drops a trailing SSE notification emitted on the same request's SSE stream after the matching JSON-RPC reply has already settled.
+  - `verification-5`: disconnect during HTTP 404 session recovery after replacement `Mcp-Session-Id` header skips best-effort `DELETE` for the replacement session (`machine/lib/http-tool-proxy.js:51,64-71,110`).
 
 ## Remediation rounds
 
