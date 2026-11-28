@@ -2,7 +2,13 @@
 slug: agent-model-preferences
 date: 2026-11-27
 implemented-by: standard (gpt-6.1-terra, gpt-6.1-terra --effort high, claude-sonnet-5-5)
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5
+    checks: standard (gpt-6.1-terra, gpt-6.1-terra --effort high, claude-sonnet-5-5)
+  - round: 1
+    lane: gpt / gpt-6.2-sol
+    checks: standard (gpt-6.1-terra, gpt-6.1-terra --effort high, claude-sonnet-5-5)
 ---
 
 # Completion Report — Better agent model preferences in Settings
@@ -69,4 +75,18 @@ Inspected `protocol/app/lead.md:93`: `the lead, sub-lead, reviewer, verifier, ma
 
 ## Remediation rounds
 
-None yet.
+### Remediation 1 (after verification attempt 1 on `a2c1f2b4`)
+
+Fixed all 6 distinct gaps from verifiers + `full-run-1` (details in `docs/plans/agent-model-preferences/REMEDIATION-1.md`):
+
+- **R1-A (`5bccbbf9`, `standard / gpt-6.1-terra`):**
+  - Updated `viewer/test/app-openrouter-settings.test.js:29` to match `viewer/pages/settings.js:933` (`text: tool.settings.familyHint`).
+  - Updated `viewer/test/char-hub-dispatch.test.js:221-229` to assert `sub-lead` uses its configured `provider_orders['sub-lead']` ladder and tier instead of locking to `thread.provider`.
+  - Validation: `node --test viewer/test/app-openrouter-settings.test.js viewer/test/char-hub-dispatch.test.js` — **13 passed, 0 failed** (exit 0).
+- **R1-B (`47bb388e`, `standard / claude-sonnet-5-5`):**
+  - Refreshed `legacy_lead_diffs` via `await refreshDiffs(true)` in `headsUpAction()` (`viewer/pages/settings.js:355-363, 678-685`) so switching a GPT heads-up model immediately updates the legacy pin notice without reload.
+  - Fixed `ladderList` `commit()` (`viewer/pages/settings.js:757-765`) using monotonic index capping (`Math.min(all.indexOf(p), total - left.length + k)`) so switched-off providers always preserve their relative order when enabled providers are removed.
+  - Added `flex-wrap: wrap` to `.m-agent-main` (`.m-id { flex: 1 1 240px; min-width: 220px; }`) and `.model-controls` (`viewer/pages/settings.css:332-333, 387`) so previews and effort pills never collapse or clip at 900 px while remaining single-row at 1280 px.
+  - Added `'app-assistant-popup.spec.js'` to `viewer/test/firefox-specs.js` per `CONTRIBUTING.md:93`.
+  - Added three regression tests in `viewer/test/app-settings.spec.js`.
+  - Validation: `npm --prefix viewer run test:browser -- app-settings.spec.js app-assistant-popup.spec.js` — **208 passed, 2 skipped, 0 failed** across Chromium + Firefox (exit 0); `node --test machine/test/name-guard.test.js` — **2 passed, 0 failed** (exit 0).
