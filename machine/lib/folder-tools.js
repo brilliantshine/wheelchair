@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { validateHeaderValue } = require('http');
 const { windowsTarget } = require('./win-mark');
+const { isWindowsProgram } = require('./project-programs');
 const { KEY_NAME, isReserved } = require('./project-keys');
 const NAME_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const RESERVED = 'wheelchair-tools';
@@ -61,10 +62,20 @@ function validateToolJson(folderName, value) {
   }
   return { ok: true, tool };
 }
-function findProgram(argv0, toolDir, pathText) {
+function resolveProgram(argv0, toolDir, pathText) {
   const candidates = argv0.includes('/') ? [path.resolve(toolDir, argv0)] : (pathText || '').split(path.delimiter).map(p => path.resolve(toolDir, p || '.', argv0));
-  return candidates.some(p => { try { return fs.statSync(p).isFile() && (fs.accessSync(p, fs.constants.X_OK), true); } catch { return false; } });
+  for (const candidate of candidates) {
+    try { if (!fs.statSync(candidate).isFile()) continue; fs.accessSync(candidate, fs.constants.X_OK); try { return fs.realpathSync(candidate); } catch { return candidate; } } catch {}
+  }
+  return null;
 }
+function findProgram(argv0, toolDir, pathText) { return !!resolveProgram(argv0, toolDir, pathText); }
+function isWindowsExecutable(row, pathText, mount) {
+  if (!row.tool || (row.tool.kind !== 'script' && (row.tool.kind !== 'server' || row.tool.transport === 'http'))) return false;
+  const argv0 = (row.tool.kind === 'script' ? row.tool.run : row.tool.start)[0];
+  return isWindowsProgram(resolveProgram(argv0, row.dir, pathText) || argv0, mount);
+}
+function shouldWrapWindowsProxy(row, pathText, mount) { return row.tool?.kind === 'server' && row.tool.transport !== 'http' && isWindowsExecutable(row, pathText, mount) && !row.tool.start.slice(1).includes('mcp-for-unity'); }
 async function readToolsDir(root, source) {
   const base = path.resolve(root, '.wheelchair/tools');
   let entries;
@@ -101,13 +112,13 @@ function inputSchema(inputs) {
   for (const [name, input] of Object.entries(inputs)) { Object.defineProperty(properties, name, { value: { type: input.type, description: input.description }, enumerable: true }); if (input.required) required.push(name); }
   return { type: 'object', properties, ...(required.length ? { required } : {}) };
 }
-function bridgeEntry(worktree, rows, { stateDir } = {}) { return { name: RESERVED, folder: 'bridge', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-bridge.js'), '--project-dir', worktree, ...(rows.some(r => r.tool?.keys?.length) ? ['--state-dir', stateDir] : []), ...rows.flatMap(r => ['--tool', r.dir, ...(r.tool?.keys?.length ? ['--key-store', r.key_store, ...r.tool.keys.flatMap(k => ['--key', k])] : [])])], env: {} } }; }
-function serverEntry(worktree, row, { stateDir, urlOverride } = {}) {
+function bridgeEntry(worktree, rows, { stateDir, winReadyFile } = {}) { return { name: RESERVED, folder: 'bridge', windows: !!winReadyFile, wrapped: !!winReadyFile, entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-bridge.js'), '--project-dir', worktree, ...(winReadyFile ? ['--win-ready-file', winReadyFile] : []), ...(rows.some(r => r.tool?.keys?.length) ? ['--state-dir', stateDir] : []), ...rows.flatMap(r => ['--tool', r.dir, ...(r.windows ? ['--win'] : []), ...(r.tool?.keys?.length ? ['--key-store', r.key_store, ...r.tool.keys.flatMap(k => ['--key', k])] : [])])], env: {} } }; }
+function serverEntry(worktree, row, { stateDir, urlOverride, win, winReadyFile, winListCache, unity } = {}) {
   if (row.tool?.transport === 'http') {
     const entry = row.tool.keys.length ? { command: process.execPath, args: [path.join(__dirname, 'http-tool-proxy.js'), '--project-dir', worktree, '--tool', row.dir, '--state-dir', stateDir, '--key-store', row.key_store, ...row.tool.keys.flatMap(k => ['--key', k]), ...(urlOverride ? ['--url-override', urlOverride] : [])], env: {} } : { type: 'http', url: urlOverride || row.tool.url, ...(row.tool.headers ? { headers: row.tool.headers } : {}) };
     return { name: row.name, folder: 'server', windows: false, wrapped: false, entry };
   }
-  return { name: row.name, folder: 'server', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-launch.js'), '--project-dir', worktree, '--tool', row.dir, ...(row.tool?.keys?.length ? ['--state-dir', stateDir, '--key-store', row.key_store, ...row.tool.keys.flatMap(k => ['--key', k])] : [])], env: {} } };
-} 
+  return { name: row.name, folder: 'server', windows: !!win, wrapped: !!winReadyFile, unity: !!unity, entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-launch.js'), '--project-dir', worktree, '--tool', row.dir, ...(win ? ['--win'] : []), ...(winReadyFile ? ['--win-ready-file', winReadyFile] : []), ...(winListCache ? ['--win-list-cache', winListCache] : []), ...(row.tool?.keys?.length ? ['--state-dir', stateDir, '--key-store', row.key_store, ...row.tool.keys.flatMap(k => ['--key', k])] : [])], env: {} } };
+}
 function toolKeyStore(row, ownShared) { return row.source === 'shared' || ownShared ? 'shared' : 'project'; }
-module.exports = { toolKeyStore, NAME_RE, RESERVED, validateToolJson, readToolsDir, findProgram, discover, inputSchema, bridgeEntry, serverEntry };
+module.exports = { toolKeyStore, NAME_RE, RESERVED, validateToolJson, readToolsDir, findProgram, resolveProgram, isWindowsExecutable, shouldWrapWindowsProxy, discover, inputSchema, bridgeEntry, serverEntry };

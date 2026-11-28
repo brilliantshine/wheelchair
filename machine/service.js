@@ -978,6 +978,10 @@ class MachineService {
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
     const context = { resume, wsl, mount, launchExtras: await adapters[input.cli].launchContext?.(this, input, session) || {} };
+    const wrapFolderWindows = wsl && tools && connectors.manifest(input.cli).wrapProjectTools;
+    const readyFile = path.join(this.stateDir, 'win-ready', name);
+    let commonDir = worktree;
+    if (wrapFolderWindows) { const common = await commandAsync('git', ['-C', worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir']); commonDir = common.ok && common.stdout.trim() || worktree; }
     let folder = [], scriptRows = [], validScripts = [], keyedLines = [], hasValidScript = false;
     if (tools) {
       if (!Object.hasOwn(session, 'shared_tools')) {
@@ -999,7 +1003,9 @@ class MachineService {
           }
         }
       }
-      const found = await folderTools.discover({ worktree, shared: session.shared_tools.copy, path: await this.tmuxPath() });
+      const pathText = await this.tmuxPath();
+      const found = await folderTools.discover({ worktree, shared: session.shared_tools.copy, path: pathText });
+      const skippedWindows = row => { folder.push({ names: [row.name], text: `tool ${row.name}: skipped in sandboxed Codex (Windows programs cannot run inside Codex's Linux sandbox; set Codex to unrestricted in Settings to use it)` }); };
       folder = [...found.problems];
       if (session.shared_tools.reason) folder.push({ names: [], text: session.shared_tools.reason });
       for (const row of found.rows) row.key_store = folderTools.toolKeyStore(row, !!session.shared_tools.own);
@@ -1010,7 +1016,8 @@ class MachineService {
       const reason = adapter.keyedToolsReason?.(session) || null;
       if (adapter.shellToolsOnly?.(session) && !machineKeys) keyedLines = validScripts.filter(row => row.tool.keys.length).map(row => ({ names: [row.name], text: `tool ${row.name} needs keys, which ${reason}` }));
       scriptRows = [];
-      for (const row of found.usable.filter(row => row.kind === 'script')) {
+      for (let row of found.usable.filter(row => row.kind === 'script')) {
+        if (wrapFolderWindows && folderTools.isWindowsExecutable(row, pathText, mount)) { if (adapter.sandboxed?.(session)) { skippedWindows(row); continue; } row = { ...row, windows: true }; }
         if (row.tool.keys.length && adapter.shellToolsOnly?.(session) && !machineKeys) continue;
         if (row.tool.keys.length) {
           try {
@@ -1023,6 +1030,7 @@ class MachineService {
       }
       const servers = [];
       for (const row of found.usable.filter(row => row.kind === 'server').sort((a, b) => a.name.localeCompare(b.name))) {
+        if (wrapFolderWindows && adapter.sandboxed?.(session) && folderTools.isWindowsExecutable(row, pathText, mount)) { skippedWindows(row); continue; }
         if (row.tool.keys.length && !adapter.shellToolsOnly?.(session)) {
           try {
             const store = row.key_store === 'shared' ? await readSharedKeys(this.stateDir) : await readKeyStore(this.stateDir, await projectIdentity(worktree));
@@ -1030,9 +1038,20 @@ class MachineService {
             if (missing.length) { folder.push({ names: [row.name], text: `${row.source === 'shared' ? 'shared tool' : 'tool'} ${row.name} needs ${missing.length === 1 ? 'key' : 'keys'} ${missing.join(', ')}, not set on this machine` }); continue; }
           } catch (error) { folder.push({ names: [row.name], text: error.message }); continue; }
         }
-        servers.push(row);
+        const options = { stateDir: this.stateDir };
+        if (this.win?.detected?.kernel && connectors.manifest(input.cli).wrapProjectTools && row.tool.transport === 'http' && row.tool.windows === true) {
+          try { const target = windowsTarget({ type: 'http', url: row.tool.url }); if (!target) throw new Error('invalid Windows tool address'); const port = await this.win.forwards.get(target.port); options.urlOverride = rewriteUrl(row.tool.url, port); if (options.urlOverride === null) throw new Error('invalid Windows tool address'); }
+          catch (error) { folder.push({ names: [row.name], text: `tool ${row.name}: couldn't reach Windows (${error.message || String(error)}); left out of this session` }); continue; }
+        } else if (wrapFolderWindows && folderTools.isWindowsExecutable(row, pathText, mount)) {
+          options.win = true; options.unity = row.tool.start.slice(1).includes('mcp-for-unity');
+          if (folderTools.shouldWrapWindowsProxy(row, pathText, mount)) {
+            options.winReadyFile = readyFile;
+            if (!row.tool.keys.length) options.winListCache = path.join(this.stateDir, 'win-tool-lists', `${cacheKey(commonDir, row.name, { command: folderTools.resolveProgram(row.tool.start[0], row.dir, pathText) || row.tool.start[0], args: row.tool.start.slice(1) })}.json`);
+          }
+        }
+        servers.push(folderTools.serverEntry(worktree, row, options));
       }
-      const entries = [...(scriptRows.length ? [folderTools.bridgeEntry(worktree, scriptRows, { stateDir: this.stateDir })] : []), ...servers.map(row => folderTools.serverEntry(worktree, row, { stateDir: this.stateDir }))];
+      const entries = [...(scriptRows.length ? [folderTools.bridgeEntry(worktree, scriptRows, { stateDir: this.stateDir, ...(scriptRows.some(row => row.windows) ? { winReadyFile: readyFile } : {}) })] : []), ...servers];
       context.extraServers = entries.filter(entry => {
         if (!mcp?.names.includes(entry.name)) return true;
         folder.push({ names: [entry.name], text: `tool ${entry.name}: hidden by the .mcp.json server of the same name` });
@@ -1040,8 +1059,6 @@ class MachineService {
       });
     }
     if (wsl && tools && mcp && connectors.manifest(input.cli).wrapProjectTools) {
-      const common = await commandAsync('git', ['-C', worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
-      const commonDir = common.ok && common.stdout.trim() || worktree;
       context.replaceEntries = wrapEntries({ servers: mcp.servers, wsl, mount,
         readyFile: path.join(this.stateDir, 'win-ready', name),
         cacheFile: (n, e) => path.join(this.stateDir, 'win-tool-lists', `${cacheKey(commonDir, n, e)}.json`) });
