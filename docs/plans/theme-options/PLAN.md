@@ -15,14 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: Which pages and surfaces should follow your theme?
-- **Context:** Main app pages share `viewer/pages/app.css`. The graph viewer (`viewer/index.html`), standalone doc page (`viewer/doc.html`), embedded terminal (`xterm.js` in `viewer/pages/term-view.js`), and sign-in page (`viewer/signin.html`) currently use their own palettes or defaults.
-- **Options:**
-  - `all-app`: All signed-in pages, graph viewer, standalone doc, and terminal (sign-in stays default).
-  - `app-and-graph`: All signed-in pages, standalone doc, and graph viewer, while keeping the terminal dark so CLI ANSI colors stay readable.
-  - `app-only`: Main app shell pages only, leaving the graph viewer and terminal unchanged.
-- **Recommendation:** `app-and-graph` — keeps everything in Wheelchair cohesive without making terminal ANSI colors unreadable in light mode.
-
 ### Q2: Should theme settings sync across devices or stay per browser?
 - **Context:** Background settings are stored in hub `settings.json` and synced across devices, whereas browser-local storage lets each device keep its own theme.
 - **Options:**
@@ -57,10 +49,18 @@ Log and is deleted from here.
 | 1 | Automatically derive the 7-token accent family (`--accent`, `--accent-ink`, `--accent-soft`, `--accent-line`, `--accent-text`, `--accent-hi`, `--accent-chip`) from one chosen base hex color and active color mode, enforcing readable WCAG AA text contrast and replacing hardcoded blue literals (`assistant-popup.css`, etc.). | Users should pick one accent color, not 7 CSS tokens; automatic contrast derivation keeps buttons, links, and chips legible in both light and dark modes. | defaulted |
 | 2 | Place Theme controls in Settings → You alongside Background, using a browser-cached pre-paint bootstrap so signed-in pages do not flash the wrong color mode on load. | Matches the existing Appearance/You home in Settings and prevents light/dark FOUC on page load. | defaulted |
 | 3 | Leave `signin.html` on the default theme. | Unauthenticated browsers cannot fetch user settings, and sign-in is a one-time gate. | defaulted |
+| 4 | Apply theme (color mode, preset, custom accent color) to all signed-in app pages, standalone doc (`viewer/doc.html`), and graph viewer (`viewer/index.html` + `picture-export.js`), while keeping the embedded terminal (`xterm.js` in `viewer/pages/term-view.js`) dark. | Keeps all Wheelchair UI and diagrams cohesive without making CLI ANSI colors unreadable in light mode. | user |
 
 ## Spec
 
-To be filled as Open Questions are settled.
+### 1. Themed surfaces
+- All signed-in app pages (`threads`, `thread`, `agents`, `settings`, `features`, `terminal`, `pages/doc`, `pages/file`), the standalone doc page (`viewer/doc.html`), and the graph viewer (`viewer/index.html`, including SVG nodes/edges/selection and PNG export via `viewer/pages/picture-export.js`) follow the active theme (color mode, preset, and custom accent color).
+- The embedded terminal (`viewer/pages/term-view.js` / xterm.js) stays dark in all color modes so CLI ANSI colors remain legible.
+- The sign-in page (`viewer/signin.html`) stays on the default dark theme.
+- Hardcoded blue literals (such as `#23303f` in `viewer/pages/assistant-popup.css` and `rgba(91, 157, 217, .12)` in `viewer/index.html`) are replaced with theme CSS custom properties.
+
+### 2. Accent color derivation
+- A single chosen hex accent color (or the active preset's default accent) derives the full 7-token accent family (`--accent`, `--accent-ink`, `--accent-soft`, `--accent-line`, `--accent-text`, `--accent-hi`, `--accent-chip`) for the resolved light or dark mode, maintaining WCAG AA contrast for `--accent-ink` on `--accent` and for `--accent-text`/`--accent-hi` on panel/page surfaces.
 
 ## Accepted Risks
 
