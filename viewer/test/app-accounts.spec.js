@@ -123,8 +123,14 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       const gemini = page.locator('.prov-group[data-provider="gemini"]');
       await expect(gemini).toContainText('Antigravity supports one account per machine');
       await expect(gemini.locator('.acct[data-account="default-gemini"]')).toHaveCount(1);
-      await page.getByRole('button', { name: 'Add account' }).click();
+      await expect(gemini.getByRole('button', { name: 'Add account' })).toHaveCount(0);
+      await claude.getByRole('button', { name: 'Add account' }).click();
+      await expect(claude.locator('.add-form')).toHaveCount(1);
+      await expect(page.locator('#add-provider')).toHaveValue('claude');
       await expect(page.locator('.add-form select').first().locator('option')).not.toContainText(['Antigravity']);
+      await page.locator('.prov-group[data-provider="gpt"]').getByRole('button', { name: 'Add account' }).click();
+      await expect(page.locator('.prov-group[data-provider="gpt"] .add-form')).toHaveCount(1);
+      await expect(page.locator('#add-provider')).toHaveValue('gpt');
       const first = claude.locator('.acct[data-account="default-claude"]');
       await expect(first).toContainText('Max 5x');
       await expect(first).toContainText('in use · 2 agents');
@@ -238,7 +244,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       const state = {};
       await mock(page, state);
       await open(page, 'providers');
-      await page.locator('#add-account').click();
+      await page.locator('.prov-group[data-provider="claude"] .add-account').click();
       await page.locator('#add-name').fill('Spare');
       await page.getByRole('button', { name: 'Save' }).click();
       await expect(page.locator('#claude-warning')).toContainText("Anthropic's terms say plan limits assume ordinary, individual use. Several Claude accounts behind one setup may get flagged.");
@@ -246,7 +252,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await expect(page.locator('.add-form')).toHaveCount(0);
       expect(state.calls.filter((c) => c[1] === '/settings/accounts')).toHaveLength(0);
       // Again, and this time Add anyway.
-      await page.locator('#add-account').click();
+      await page.locator('.prov-group[data-provider="claude"] .add-account').click();
       await page.locator('#add-name').fill('Spare');
       await page.getByRole('button', { name: 'Save' }).click();
       state.usage = usageBody();
@@ -263,8 +269,8 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       const state = {};
       await mock(page, state);
       await open(page, 'providers');
-      await page.locator('#add-account').click();
-      await page.locator('#add-provider').selectOption('gpt');
+      await page.locator('.prov-group[data-provider="gpt"] .add-account').click();
+      await expect(page.locator('#add-provider')).toHaveValue('gpt');
       await page.locator('#add-name').fill('Second GPT');
       await page.locator('#add-plan').selectOption('pro');
       await page.getByRole('button', { name: 'Save' }).click();

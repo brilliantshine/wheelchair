@@ -644,7 +644,8 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
       await stubAccounts(page, s, posts);
       await openPage(page, context, '/app/settings#providers');
-      await page.locator('#add-account').click();
+      await expect(page.locator('.prov-group[data-provider="claude"]')).toHaveCount(0);
+      await page.locator('.prov-group[data-provider="gpt"] .add-account').click();
       await expect(page.locator('#add-provider')).toHaveValue('gpt');
       await page.locator('#add-name').fill('Spare');
       const reloaded = settingsGet(page);
@@ -661,8 +662,8 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         put: (r) => { s.switches.gpt = false; return json(r, { harnesses: { ...s.switches } }); } });
       await stubAccounts(page, s, posts);
       await openPage(page, context, '/app/settings#providers');
-      await page.locator('#add-account').click();
-      await page.locator('#add-provider').selectOption('gpt');
+      await page.locator('.prov-group[data-provider="gpt"] .add-account').click();
+      await expect(page.locator('#add-provider')).toHaveValue('gpt');
       await page.locator('#add-name').fill('Spare');
       await switchOff(page, s, 'Codex', 'gpt');
       await goTo(page, 'providers');

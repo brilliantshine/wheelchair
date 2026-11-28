@@ -1030,7 +1030,7 @@ test.describe('one place for sign-in, usage and each draft', () => {
     // The browser's own scroll anchoring would sometimes hide a missing hold.
     await page.addStyleTag({ content: '* { overflow-anchor: none !important; }' });
     await expect(acct(page, 'default-claude')).toBeVisible();
-    await page.locator('#add-account').click();
+    await page.locator('.add-account').last().click();
     const cancel = page.locator('.add-form').getByRole('button', { name: 'Cancel' });
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     expect(await page.locator('[data-block="harnesses"]').evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThan(0);
@@ -1212,8 +1212,8 @@ test.describe('one place for sign-in, usage and each draft', () => {
     await expect(status).toHaveText('Signed in');
     await acct(page, 'default-gpt').getByRole('button', { name: 'Pause' }).click();
     await expect(status).toHaveText('Installed 1');
-    await page.locator('#add-account').click();
-    await page.locator('#add-provider').selectOption('gpt');
+    await page.locator('.prov-group[data-provider="gpt"] .add-account').click();
+    await expect(page.locator('#add-provider')).toHaveValue('gpt');
     await page.locator('#add-name').fill('Spare');
     await page.locator('.add-form button[type="submit"]').click();
     await expect(status).toHaveText('Signed in');
