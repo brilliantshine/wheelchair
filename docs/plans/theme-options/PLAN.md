@@ -99,7 +99,7 @@ None.
 
 - **Shared semantic status tokens** per resolved mode (dark matches `viewer/pages/app.css:18-21` verbatim):
   - **Dark:** `--good: #4ea87b`, `--good-ink: #0c1410`, `--good-bg: #172019`, `--good-line: #3f7a5c`, `--good-soft: #1d2a23`, `--good-text: #8fd0ad`, `--warn: #d9a441`, `--warn-bg: #241f15`, `--warn-line: #5c4a24`, `--warn-tint: #1a1813`, `--bad: #c4645f`, `--bad-text: #e09a96`, `--bad-bg: #2a1a19`.
-  - **Light:** `--good: #1f8a54`, `--good-ink: #ffffff`, `--good-bg: #e8f5ee`, `--good-line: #8bc9a8`, `--good-soft: #eef8f2`, `--good-text: #15693e`, `--warn: #9a6700`, `--warn-bg: #fdf5e6`, `--warn-line: #e2c27d`, `--warn-tint: #faf4e8`, `--bad: #c23b3b`, `--bad-text: #a32626`, `--bad-bg: #fdeeee`.
+  - **Light:** `--good: #197a48`, `--good-ink: #ffffff`, `--good-bg: #e8f5ee`, `--good-line: #8bc9a8`, `--good-soft: #eef8f2`, `--good-text: #15693e`, `--warn: #7c5000`, `--warn-bg: #fdf5e6`, `--warn-line: #e2c27d`, `--warn-tint: #faf4e8`, `--bad: #c23b3b`, `--bad-text: #a32626`, `--bad-bg: #fdeeee`.
 - **Quick accent swatches** exported as `QUICK_ACCENTS`: `['#5b9dd9', '#10b981', '#d6a53b', '#e06c75', '#a78bfa', '#94a3b8']`.
 - **Accent derivation (`deriveAccent(hex, resolvedMode, surfaces, presetId)`):**
   - Special-case exact Wheelchair Default in dark mode (`presetId === 'default' && resolvedMode === 'dark' && hex === '#5b9dd9'`): returns exact original tokens (`--accent: #5b9dd9`, `--accent-ink: #0e1114`, `--accent-hover: #a9cdf0`, `--accent-hover-ink: #0e1114`, `--accent-soft: #1a2230`, `--accent-line: #3a5778`, `--accent-text: #7fb4e6`, `--accent-hi: #a9cdf0`, `--accent-chip: #1f2b3a`, `--human: #23303f`) so existing default appearance is pixel-identical.
@@ -116,7 +116,7 @@ None.
     - `--accent-hi`: hover/highlight text accent derived from `--accent-text` (slightly lighter in dark mode, slightly darker in light mode) while maintaining `>= 4.5:1` contrast against all five surfaces (`--bg`, `--panel`, `--panel-2`, `--accent-soft`, `--accent-chip`).
     - `--human`: RGB mix of `--accent` (16% in dark, 12% in light) over `surfaces['--panel-2']` (verified `>= 4.5:1` with `surfaces['--ink']`; if a very bright/dark accent lowers contrast below 4.5:1, reduce mix weight until `>= 4.5:1`).
 - **Spinner SVG derivation (`buildSpinnerUrls(ink, idle, accent, surfaces, resolvedMode)`):**
-  - Derives `spinnerAccent` from `accent` by stepping HSL lightness (lighter in dark mode, darker in light mode) only if needed so its WCAG 2.1 non-text contrast ratio against `--bg` and `--panel` is `>= 3.0:1` (unchanged exact `accent` whenever it already clears `3.0:1`, including Default Dark `#5b9dd9`).
+  - Derives `spinnerAccent` from `accent` by stepping HSL lightness (lighter in dark mode, darker in light mode) only if needed so its WCAG 2.1 non-text contrast ratio against `--bg`, `--panel`, `--panel-2`, and `--panel-3` is `>= 3.0:1` (unchanged exact `accent` whenever it already clears `3.0:1`, including Default Dark `#5b9dd9`).
   - Builds the two `url("data:image/svg+xml,...")` strings (normal speed and `prefers-reduced-motion` speed, matching `viewer/pages/app.css:204,206`) with `%23` URI-encoded `ink`, `idle`, and `spinnerAccent` hex values, exposed as `--spinner-svg` and `--spinner-svg-reduced` in `vars`.
 - **`resolveTheme(theme, prefersLight)`**: accepts `{ mode, preset, accent }` (normalizing invalid values to defaults) and boolean `prefersLight`, returns `{ mode, preset, accent, resolvedMode: 'light' | 'dark', effectiveAccent, vars }`.
 - **`parseHexColor(input)`**: trims whitespace, accepts optional leading `#`, accepts 3-digit (`#abc` → `#aabbcc`) or 6-digit hex, returns lowercase `#rrggbb` or `null`.
@@ -153,7 +153,7 @@ None.
 ### 4. Settings → You Theme editor (`viewer/pages/theme-editor.js`, `viewer/pages/settings.js`, `viewer/pages/settings.css`)
 
 - Isolated in `viewer/pages/theme-editor.js` (loaded by `viewer/pages/settings.html` via `<script defer>`) exposing `window.wcThemeEditor`.
-- `viewer/pages/settings.js` makes minimal wiring changes in the `You` section: adds a `theme` block right above `background` that mounts `window.wcThemeEditor.render(...)` and calls `window.wcThemeEditor.discard()` whenever leaving the `You` section (desktop sidebar navigation, phone Back link, and `window` `pagehide` so bfcache navigation away from Settings releases the preview token and clears unsaved drafts, matching `settings.js:2385-2388,2879-2889`). Does not alter Settings polling or other blocks.
+- `viewer/pages/settings.js` makes minimal wiring changes in the `You` section: adds a `theme` block right above `background` that mounts `window.wcThemeEditor.render(...)` and calls `window.wcThemeEditor.discard()` whenever leaving the `You` section (desktop sidebar navigation, phone Back link, and `window` `pagehide` so bfcache navigation away from Settings releases the preview token and clears unsaved drafts, matching `settings.js:2385-2388,2879-2889`). On `window` `pageshow` (including bfcache restore), `theme-editor.js` repaints the mounted Theme block from the current saved `wcTheme.current().metadata` so restored DOM inputs and buttons never show stale draft values or disabled states. Does not alter Settings polling or other blocks.
 - **Visit, draft baseline, and in-flight ownership:**
   - Each `You` section visit owns a `visit` state `{ generation, dirty, baseRevision, op, saving, token, draft, hexText, hexError, conflict, error, status }` (matching `backgroundVisit`).
   - When `dirty` transitions `false → true`, capture `visit.baseRevision = wcTheme.current().metadata.revision` and acquire `visit.token = wcTheme.acquire()`. Subsequent hub polls or storage events do not mutate `visit.baseRevision` or `visit.draft` while dirty.
@@ -193,16 +193,18 @@ None.
    - `viewer/pages/background.css`: verify opaque content surfaces remain opaque using `var(--bg)` / `var(--panel)` in light mode when a background image is active.
 2. **Graph viewer (`viewer/index.html`) and PNG export (`viewer/pages/picture-export.js`, `viewer/pages/picture.js`):**
    - Load `theme-palette.js` and `theme.js` in `viewer/index.html` `<head>`.
-   - Align `viewer/index.html`'s `:root` variables with the shared palette (`--bg`, `--panel`, `--panel-2`, `--line`, `--ink`, `--dim`, `--accent`, `--accent-ink`, `--accent-text`, `--accent-soft`, `--warn`, `--good`, `--bad`, keeping existing dark defaults as fallbacks).
-   - Replace literal dark SVG fills and raw-accent text in `viewer/index.html`:
+   - Align `viewer/index.html`'s `:root` variables with the shared palette (`--bg`, `--panel`, `--panel-2`, `--line`, `--line-2`, `--ink`, `--dim`, `--accent`, `--accent-ink`, `--accent-hover`, `--accent-hover-ink`, `--accent-text`, `--accent-soft`, `--warn`, `--good`, `--good-text`, `--bad`, `--bad-text`, `--bad-bg`, `--warn-bg`, `--warn-line`, and map `--success: var(--good-text); --danger: var(--bad-text);`, keeping existing dark defaults as fallbacks).
+   - Audit all literal dark colors in `viewer/index.html` and replace them with theme tokens:
+     - `#controls button:hover:not(:disabled)` (`viewer/index.html:31`): `background: var(--panel-2); border-color: var(--line-2); color: var(--ink);` (instead of `#2b3542`).
+     - Active/selected accent-filled toolbar toggle buttons (`viewer/index.html:29-36`): `background: var(--accent); border-color: var(--accent); color: var(--accent-ink);` and their `:hover:not(:disabled)` state uses `background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-hover-ink);`.
+     - Error and notice banners (`viewer/index.html:55-59`): error uses `background: var(--bad-bg); border-color: var(--bad); color: var(--bad-text);`; notice uses `background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn);`.
      - `.node .node-box`: `fill: var(--panel); stroke: var(--line-2);` (instead of `#21252c`).
      - `.node.selected .node-box`: `fill: var(--accent-soft); stroke: var(--accent);` (instead of `#2b3140`).
-     - `.node .node-fork` and inferred-edge detail (`viewer/index.html:109,205-208`): `fill: var(--warn);` / `color: var(--warn);` (instead of `#d8b45f`).
+     - `.node .node-fork` (`viewer/index.html:109`) and `.detail .detail-inferred` (`viewer/index.html:208`): `fill: var(--warn);` (instead of `#d8b45f`).
      - `.open-child .open-child-bg`: `fill: var(--panel-2); stroke: var(--accent-line);` (instead of `#2c3340`).
      - `.open-child .open-child-label` and `.status-tag.status-in-progress`: `fill: var(--accent-text);` (instead of `var(--accent)`).
      - Edge-label background pill (if literal dark fill) → `fill: var(--bg);`.
-     - Selection box `rgba(91, 157, 217, .12)` (`viewer/index.html:219`) → `color-mix(in srgb, var(--accent) 14%, transparent)` (with `var(--accent-soft)` fallback).
-     - Active/selected accent-filled toolbar toggle buttons (`viewer/index.html:29-36`): `background: var(--accent); border-color: var(--accent); color: var(--accent-ink);` and their `:hover` state uses `background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-hover-ink);` (overriding the generic `#2b3542` hover fill).
+     - Selection box `#marquee` (`viewer/index.html:219`): `fill: color-mix(in srgb, var(--accent) 14%, transparent);` (with `var(--accent-soft)` fallback).
    - **PNG export document ownership (`viewer/pages/picture-export.js`, `viewer/pages/picture.js`):**
      - Graph export (`exportGraphPng` / SVG clone from iframe): capture the iframe's computed background color (`getComputedStyle(iframe.contentDocument.documentElement).getPropertyValue('--bg')` or `getComputedStyle(svg).backgroundColor`) from the **iframe document** at the same time SVG computed styles are inlined, and pass that captured background into the canvas fill so a live theme update on the parent page cannot produce a mismatched background.
      - Form export (`exportFormPng`): reads computed palette tokens from the Picture page's own `document.documentElement` (which loads `theme-palette.js` + `theme.js`).
@@ -230,8 +232,8 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 
 1. **Theme unit & API tests (`viewer/test/theme.test.js`):**
    - Covers `theme-palette.js` WCAG 2.1 contrast (`>= 4.5:1`) for:
-     - `--ink`, `--ink-2`, `--dim` against `--bg`, `--panel`, and `--panel-2` for all 6 presets in both `light` and `dark` modes.
-     - `--accent-ink` on `--accent`, `--accent-hover-ink` on `--accent-hover`, `--accent-text` and `--accent-hi` on `--bg`/`--panel`/`--panel-2`/`--accent-soft`/`--accent-chip`, `--ink` on `--human`, and `spinnerAccent` (`>= 3.0:1` non-text contrast on `--bg`/`--panel`) across all 6 presets, both modes, and edge hex colors (`#000000`, `#777777`, `#8d8d8d`, `#ffffff`, `#ffff00`, `#ff0000`, `#00ff00`, `#5b9dd9`, `#d6a53b`).
+     - `--ink`, `--ink-2`, `--dim` against `--bg`, `--panel`, and `--panel-2`, plus `--good-ink` on `--good`, and `--good-text`, `--warn`, `--bad-text` against `--bg`, `--panel`, `--panel-2`, and `--accent-soft` for all 6 presets in both `light` and `dark` modes.
+     - `--accent-ink` on `--accent`, `--accent-hover-ink` on `--accent-hover`, `--accent-text` and `--accent-hi` on `--bg`/`--panel`/`--panel-2`/`--accent-soft`/`--accent-chip`, `--ink` on `--human`, and `spinnerAccent` (`>= 3.0:1` non-text contrast on `--bg`/`--panel`/`--panel-2`/`--panel-3`) across all 6 presets, both modes, and edge hex colors (`#000000`, `#777777`, `#8d8d8d`, `#8f8f8f`, `#ffffff`, `#ffff00`, `#ff0000`, `#00ff00`, `#5b9dd9`, `#d6a53b`).
      - Exact pixel-identical default dark tokens and `--spinner-svg` / `--spinner-svg-reduced` color injection.
    - Covers `GET /wheelchair/api/settings/theme` and `PUT /wheelchair/api/settings/theme`: defaults, malformed `theme` field normalization vs unparseable `settings.json` returning 500 without overwriting, valid save + revision increment, idempotent no-op save, 400 invalid input (`{ error }`), 409 revision conflict (`{ error, mode, preset, accent, revision }`), 413 oversized payload, preservation across unrelated `settings.update()` calls.
    - Command: `node --test viewer/test/theme.test.js`
@@ -315,7 +317,7 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 
 ### Round 3 — 2026-11-28
 
-**Lanes:** pending.
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 2:**
 - Ordered `--accent-soft` and `--accent-chip` before `--accent-text`/`--accent-hi` and required >= 4.5:1 against all five surfaces (`--bg`, `--panel`, `--panel-2`, `--accent-soft`, `--accent-chip`), adding `#8d8d8d` and chip/soft pairs to §7.1.
@@ -327,6 +329,14 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Generic graph toolbar button `:hover` (`index.html:31`) keeps `#2b3542` fill under dark light-mode ink (1.39:1) | upheld | Updated Spec §5.2 to re-token `#controls button:hover:not(:disabled)` to `--panel-2` / `--line-2` / `--ink` and audit all literal colors in `viewer/index.html` |
+| intent | minor | Graph `--success` and `--danger` (`index.html:10`) not mapped to light-mode status tokens | upheld | Mapped `--success: var(--good-text)` and `--danger: var(--bad-text)` in Spec §5.2 |
+| intent | minor | Graph error and notice banners (`index.html:55-59`) remain dark literal slabs in light mode | upheld | Tokenized error and notice banners with `--bad-*` and `--warn-*` in Spec §5.2 |
+| mechanics | blocking | `.detail .detail-inferred` (`index.html:208`) is SVG text painted with `fill`, not `color` | upheld | Specified unambiguous `fill: var(--warn);` for `.node .node-fork` and `.detail .detail-inferred` in Spec §5.2 |
+| mechanics | blocking | Light-mode `--warn: #9a6700` on `--accent-soft: #e6e6e6` (black accent) is 3.90:1 | upheld | Darkened light-mode `--warn` to `#7c5000` (>= 5.3:1 on `#e6e6e6`) and added status-on-surface contrast tests in §7.1 |
+| mechanics | blocking | Light-mode `--good: #1f8a54` with `--good-ink: #ffffff` is 4.35:1 (< 4.5:1) | upheld | Darkened light-mode `--good` to `#197a48` (5.29:1 with `#ffffff`) and added `--good-ink` on `--good` to §7.1 |
+| mechanics | minor | `spinnerAccent` check omitted `--panel-3` (desktop aside surface) | upheld | Extended `spinnerAccent` >= 3.0:1 check to `--bg`, `--panel`, `--panel-2`, `--panel-3` and added `#8f8f8f` to §7.1 |
+| mechanics | minor | `pagehide` discards visit, but bfcache `pageshow` can leave stale DOM values/disabled controls in Theme block | upheld | Added `pageshow` repaint from saved `wcTheme.current().metadata` in Spec §4 |
 
 ## Prior Work
 
