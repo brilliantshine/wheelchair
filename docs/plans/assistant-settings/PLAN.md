@@ -1,6 +1,6 @@
 ---
 slug: assistant-settings
-status: ready-for-review
+status: approved
 created: 2026-11-28
 ---
 
@@ -40,6 +40,21 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 13 | Supersedes #8 and the live-refresh part of #12: split automatic live refresh on an already-open Settings page into its own follow-up thread ("Auto-refresh an open Settings page when settings change"); this thread ships assistant-controlled settings (Settings page shows changes on reload or next visit) | Ships the core feature cleanly without Settings-page draft/refresh edge cases holding it up | idea-change |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  A["Collin asks in assistant chat"] --> B{"Manual-only setting?"}
+  B -- yes --> C["Tell Collin which Settings category to use"]
+  B -- no --> D["Read current settings from hub"]
+  D --> E{"Risky, destructive, or ambiguous?"}
+  E -- yes --> F["Ask Collin with a question card"]
+  F -- cancelled --> G["Change nothing"]
+  F -- confirmed --> H["Write setting via hub settings handler"]
+  E -- no --> H
+  H --> I{"Allowed by hub?"}
+  I -- "no (e.g. assistant off, bad key, stale revision)" --> J["Report refusal or conflict to Collin"]
+  I -- yes --> K["Report before and after; remind to reload open Settings page"]
+```
 
 ### 1. Overview & Boundaries
 
@@ -144,14 +159,15 @@ Update `protocol/app/assistant.md`:
     - `model`: read the current slot first; when changing only `model` for a provider that supports effort, carry forward the slot's existing `effort` if compatible with the new model (or omit/adjust only if incompatible, and say so); when changing only `effort`, carry forward the slot's existing `model`.
     - `style`: read current `style` first and send the full style object with only the requested field(s) changed.
     - `balancing`: send only the changed balancing key(s); when changing one role in `held_back`, send the full five-role `held_back` object preserving the other roles.
-    - `template-update`: send `id` plus the changed top-level field(s). Because `switches` is replaced as a whole object, when changing any switch read the current template first and send the full `switches` object preserving untouched switches; when changing `role` away from `worker` (even if Collin asked only to change the role), always include the full saved `switches` object with the worker-only `unsettled` field removed so the validator accepts it.
+    - `template-update`: send `id` plus the changed top-level field(s). Because `switches` is replaced as a whole object, when changing any switch read the current template first and send the full `switches` object preserving untouched switches; when changing `role` away from `worker` (even if Collin asked only to change the role), always include the full saved `switches` object with the worker-only `unsettled` field removed so the validator accepts it. When activating a template or moving an active template into a `(role, scope)` that already has an active template, disclose in the reply (or confirmation) that the previously active template will be turned off.
+    - `account-update`: changing an account's `plan` without sending `weight` resets `weight` to the new plan's default (matching the Settings page); if Collin asks to keep a custom weight, pass `weight` explicitly alongside `plan`, otherwise mention the weight reset when it changes.
     - `preferences`: send only the changed key(s).
   - **Confirm first with a `question` card** (naming the exact change and its effect) before applying:
     - Loosening session permissions (`permission_mode: "bypass"`, `codex_mode: "unrestricted"`) or broadening aside access (`aside_access: "full"`).
     - Turning on `auto_merge: "on"` or `auto_merge_delete_branch: "on"`.
     - Turning off `project_leads: "off"` (stops live project-lead sessions) or disabling an AI provider (`harness` with `enabled: false`).
     - Adding an account for a provider that has a provider warning (`accountWarning`, such as Claude) when at least one account for that provider already exists — quote the warning (matching the Settings page's "Add anyway" warning).
-    - Pausing an account (`account-update` with `paused: true`) or clearing a model pin (`model` with `model: null`), which could leave the assistant or leads without an eligible account or model on restart.
+    - Pausing an account (`account-update` with `paused: true`), clearing a model pin (`model` with `model: null` or `"none"`, or `models-heads-up switch` to `"none"`), or changing a role's tier or provider order so it has no usable model on its ladder, any of which could leave the assistant or leads unable to start on restart.
     - Removing an account (`account-remove`), deleting a template (`template-delete`), removing a lesson (`lessons-update` with non-empty `removals`), discarding a waiting lesson (`lesson-waiting` with `action: "discard"`), removing the background image (`background` with `action: "remove"`, passing the `revision` read before the card — if the CLI returns `{"ok":false,"error":"Background changed elsewhere"}` because a new image was uploaded meanwhile, re-read `settings` and ask again), or resetting model pins (`models-heads-up` with `action: "reset"`).
     - Any ambiguous request where more than one setting or value could match.
   - Apply other hub setting changes immediately and confirm what changed.
@@ -183,9 +199,9 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
   Required assertions (in `machine/test/assistant.test.js`): partial `diagram-sensitivity` result (`{ ok: false, error, result: { machines } }`) passes through `/v1/agent/assistant` intact, and a fresh assistant session's composed startup prompt includes the Settings action rules and scratch-file rule and no longer contains `"Do not change Settings."`.
 - **Hub settings adapter, routes, and assistant actions (`viewer/app/routes.js`, `viewer/app/assistant-actions.js`):**
   ```bash
-  node --test viewer/test/assistant.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js
+  node --test viewer/test/assistant.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js viewer/test/app-diagram-sensitivity.test.js viewer/test/background.test.js
   ```
-  Required assertions: live personal assistant reads settings (omitting `lesson_history` by default, including it with `include_history: true`) and writes across supported targets, with independent browser-facing read-backs confirming persisted state (`GET /wheelchair/api/settings` for hub settings, `GET /wheelchair/api/settings/background` for background changes, and `GET /wheelchair/api/settings/diagram-sensitivity` for diagram sensitivity); `project-lead-actions.dispatch` rejects `settings`/`setting` with 400 and `assistant-actions.run` without `allowSettings` rejects with 403; `preferences` containing `assistant` is refused with 403; `preferences` containing an unknown or excluded key (such as `enter_to_send`) or empty object is refused with 400; unknown target is refused with 400; `diagram-sensitivity` partial machine failure returns `{ ok: false, error, result: { machines } }`; `background` `remove` requires `revision` and returns 409 (`Background changed elsewhere`) on stale revision.
+  Required assertions: live personal assistant reads settings (omitting `lesson_history` by default, including it with `include_history: true`) and writes across supported targets, with independent browser-facing read-backs confirming persisted state (`GET /wheelchair/api/settings` for hub settings — including seeding a model notice before `models-heads-up skip`, confirming it appears before the write and disappears after — `GET /wheelchair/api/settings/background` for background changes, and `GET /wheelchair/api/settings/diagram-sensitivity` for diagram sensitivity); `project-lead-actions.dispatch` rejects `settings`/`setting` with 400 and `assistant-actions.run` without `allowSettings` rejects with 403; `preferences` containing `assistant` is refused with 403; `preferences` containing an unknown or excluded key (such as `enter_to_send`) or empty object is refused with 400; unknown target is refused with 400; `diagram-sensitivity` partial machine failure returns `{ ok: false, error, result: { machines } }`; `background` `remove` requires `revision` and returns 409 (`Background changed elsewhere`) on stale revision.
 - **Assistant popup UI (`viewer/test/app-assistant-popup.spec.js`):**
   ```bash
   npm --prefix viewer run test:browser -- app-assistant-popup.spec.js
@@ -327,9 +343,20 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 
 ### Round 6 — 2026-11-28
 
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
+
 **Changed since Round 5:**
 - Updated Spec §5 (`protocol/app/assistant.md`): added one-line reload reminder for open Settings pages; required sending full saved `switches` without `unsettled` whenever changing a template's `role` away from `worker`; added `account-update` (`paused: true`) and `model` (`model: null`) to the confirmation list; scoped `accountWarning` confirmation to when at least one account for that provider already exists; added `viewer/app/API.md` update for `settings` and `setting` (including partial diagram failure in HTTP 200).
 - Updated Spec §6 validation assertions to include independent read-backs from `GET /wheelchair/api/settings/background` and `GET /wheelchair/api/settings/diagram-sensitivity`, plus `viewer/app/API.md` check.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|---|---|---|---|---|
+| mechanics | major | Literal `"none"` can also clear a model pin via `model` or `models-heads-up switch` | downgraded | Minor (assistant clears pins via `model: null` per `routes.js:356` and picks real models from `heads_up`); still added `"none"` to the confirmation list in Spec §5 |
+| mechanics | major | Changing a role's tier or provider order to one with no usable model on its ladder can leave it unable to start | downgraded | Minor (reversible setting change requested by Collin, loses no user work); still added to the confirmation list in Spec §5 |
+| mechanics | major | Moving an active template into an occupied `(role, scope)` deactivates the incumbent | downgraded | Minor (`routes.js:542` enforces one active template per role/scope without deleting the incumbent, matching Settings UI); still added disclosure rule in Spec §5 |
+| mechanics | major | Changing an account's `plan` without `weight` resets `weight` to the new plan's default | downgraded | Minor (matches `routes.js:339` and Settings UI `settings.js:1971`); still added explicit weight-preservation / disclosure guidance in Spec §5 |
+| mechanics | minor | Seed a model notice before `models-heads-up skip` read-back assertion so persistence is observable | upheld | Added seeded notice check to Spec §6 |
+| mechanics | minor | Include `viewer/test/app-diagram-sensitivity.test.js` and `viewer/test/background.test.js` in targeted validation | upheld | Added both suites to Spec §6 |
 
 ## Prior Work
 
@@ -348,3 +375,6 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 - 2026-11-28: Round 1 triaged (18 findings upheld: 1 blocking, 8 major, 9 minor; 0 declined). All 18 resolved in Spec and logged; starting Round 2.
 - 2026-11-28: Round 2 triaged (17 findings upheld: 2 blocking, 7 major, 8 minor; 0 declined). Simplified Spec §4 & §5 (Decision 12) and resolved all 17 findings; starting Round 3.
 - 2026-11-28: Round 3 hit review budget (17 findings upheld). Collin chose to split automatic live refresh into its own follow-up thread (Decision 13). Resolved all remaining findings, posted live-refresh stub, budget reset, starting Round 4.
+- 2026-11-28: Round 4 triaged (6 upheld, 1 rare-path accepted-risk); resolved and started Round 5.
+- 2026-11-28: Round 5 triaged (6 upheld); resolved and started Round 6.
+- 2026-11-28: Round 6 clean (intent: No findings; mechanics: 4 downgraded to minor and fixed, 2 minor upheld and fixed). Drew Spec Mermaid diagram, set `status: approved`. Ready check passed: `wc.js session list` ok, `codex/preflight.sh` fresh (134h remaining), Claude/GPT/Gemini CLIs working.
