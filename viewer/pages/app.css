@@ -1,5 +1,5 @@
 /* Shared by every app page (features, threads, thread, sessions, terminal).
-   Dark only, the palette and type of docs/proposals/app-shell/design. Every colour in the app's
+   Dark defaults, the palette and type of docs/proposals/app-shell/design; theme.js overrides them. Every colour in the app's
    three stylesheets comes from the variables below, defined once. */
 @font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap;
   src: url('/wheelchair/assets/fonts/inter-400.woff2') format('woff2'); }
@@ -15,6 +15,7 @@
   --ink: #e6e8ec; --ink-2: #c5cad3; --dim: #8b929e;
   --accent: #5b9dd9; --accent-ink: #0e1114; --accent-soft: #1a2230; --accent-line: #3a5778;
   --accent-text: #7fb4e6; --accent-hi: #a9cdf0; --accent-chip: #1f2b3a;
+  --accent-hover: #a9cdf0; --accent-hover-ink: #0e1114; --accent-vis: #5b9dd9;
   --good: #4ea87b; --good-ink: #0c1410; --good-bg: #172019; --good-line: #3f7a5c;
   --good-soft: #1d2a23; --good-text: #8fd0ad;
   --warn: #d9a441; --warn-bg: #241f15; --warn-line: #5c4a24; --warn-tint: #1a1813;
@@ -26,7 +27,9 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink);
-  font: 14px/1.45 var(--sans); overflow-x: clip; color-scheme: dark; }
+  font: 14px/1.45 var(--sans); overflow-x: clip; }
+html { color-scheme: dark; }
+html[data-theme-mode="light"], html[data-theme-mode="light"] body { color-scheme: light; }
 [hidden] { display: none !important; }
 a { color: var(--accent-text); }
 a:hover { color: var(--accent-hi); }
@@ -41,7 +44,7 @@ code, .mono { font-family: var(--mono); }
   border-bottom: 1px solid var(--line); }
 #app-nav a { text-decoration: none; }
 #app-nav .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); }
-#app-nav .logo { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: var(--bg);
+#app-nav .logo { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: var(--accent-ink);
   display: flex; align-items: center; justify-content: center; flex: none; }
 #app-nav .brand-name { font-weight: 700; font-size: 16px; letter-spacing: -.01em; }
 #app-nav .hubline { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--line);
@@ -67,7 +70,7 @@ button, .btn { font: inherit; font-size: 13px; min-height: 36px; padding: 7px 14
   text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 button:hover, .btn:hover { border-color: var(--line-2); color: var(--ink); }
 button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
-button.primary:hover, .btn.primary:hover { background: var(--accent-hi); border-color: var(--accent-hi); color: var(--accent-ink); }
+button.primary:hover, .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-hover-ink); }
 button.go, .btn.go { background: var(--good); border-color: var(--good); color: var(--good-ink); font-weight: 600; }
 button.go:hover, .btn.go:hover { background: var(--good-text); border-color: var(--good-text); color: var(--good-ink); }
 button.danger { color: var(--bad-text); border-color: var(--line); background: transparent; }
@@ -79,7 +82,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 input, select, textarea { font: inherit; font-size: 13px; padding: 8px 10px; border-radius: 8px; min-height: 38px;
   border: 1px solid var(--line); background: var(--bg); color: var(--ink); max-width: 100%; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 1px; }
+  outline: 2px solid var(--accent-vis); outline-offset: 1px; }
 label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; }
 
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
@@ -97,12 +100,12 @@ label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; 
   background: var(--bad-bg); border: 1px solid var(--bad); }
 .dotmark { width: 7px; height: 7px; border-radius: 50%; background: var(--idle); flex: none; display: inline-block; }
 .dotmark.amber { background: var(--warn); }
-.dotmark.blue { background: var(--accent); }
+.dotmark.blue { background: var(--accent-vis); }
 .dotmark.green { background: var(--good); }
 /* A thread whose lead is mid-turn: the dot pulses. */
 .dotmark.working { animation: dot-pulse 1.4s ease-in-out infinite; }
-.dotmark.working:not(.amber):not(.green) { background: var(--accent); }
-@keyframes dot-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); } 70% { box-shadow: 0 0 0 5px transparent; } }
+.dotmark.working:not(.amber):not(.green) { background: var(--accent-vis); }
+@keyframes dot-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-vis) 60%, transparent); } 70% { box-shadow: 0 0 0 5px transparent; } }
 @media (prefers-reduced-motion: reduce) { .dotmark.working { animation: none; } }
 
 /* ---- the Threads shell: thread list | main | side, used by the Threads and thread pages ---- */
@@ -119,7 +122,7 @@ label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; 
 .col-list #new-toggle { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 32px;
   border-radius: 8px; background: var(--accent); border: 1px solid var(--accent);
   color: var(--accent-ink); font-weight: 600; font-size: 13px; text-decoration: none; }
-.col-list #new-toggle:hover { background: var(--accent-hi); color: var(--accent-ink); }
+.col-list #new-toggle:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-hover-ink); }
 /* Archived: a switch at the foot of the list between your threads and only the archived ones. */
 .col-list .list-archived { position: sticky; bottom: -16px; z-index: 2; margin: auto -12px -16px; padding: 10px 16px; min-height: 0;
   border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--bg); color: var(--dim);
@@ -138,7 +141,7 @@ ul#list li.row.current, ul#list li.row.current:hover { background: var(--panel-2
 ul#list li.row a.row-link { color: inherit; text-decoration: none; }
 ul#list li.row a.row-link::after { content: ''; position: absolute; inset: 0; border-radius: 8px; }
 .lead-chip { display: inline-block; max-width: 100%; padding: 1px 6px; border: 1px solid var(--line);
-  border-radius: 999px; color: var(--accent); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+  border-radius: 999px; color: var(--accent-text); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 a.lead-chip { position: relative; z-index: 1; text-decoration: none; }
 a.lead-chip:hover { text-decoration: underline; }
 ul#list li.row.current .title { font-weight: 600; }
@@ -201,9 +204,10 @@ ul#list li.row.current .title { font-weight: 600; }
    page's reduced-motion setting, so the slow copy (4s and 1.3s, as in the source file) is
    swapped in from here. */
 .spinner { display: inline-block; width: 1.25em; height: 1.25em; vertical-align: -0.3em; flex: none;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E %3Cstyle%3E @keyframes spin { to { transform: rotate(360deg) } } .wheel { transform-box: view-box; transform-origin: 26px 42px; animation: spin 1.2s linear infinite } .caster { transform-box: view-box; transform-origin: 52px 57px; animation: spin 0.4s linear infinite } @media (prefers-reduced-motion: reduce) { .wheel { animation-duration: 4s } .caster { animation-duration: 1.3s } } %3C/style%3E %3Cg class='wheel'%3E %3Ccircle cx='26' cy='42' r='17' stroke='%23e6e8ec' stroke-width='3.5'/%3E %3Cpath d='M26 25v34M11.3 33.5l29.4 17M11.3 50.5l29.4-17' stroke='%236b7280' stroke-width='1.8'/%3E %3Cpath d='M26 25A17 17 0 0 1 43 42' stroke='%235b9dd9' stroke-width='4'/%3E %3Ccircle cx='26' cy='42' r='2.6' fill='%23e6e8ec'/%3E %3C/g%3E %3Cg class='caster'%3E %3Ccircle cx='52' cy='57' r='3.6' stroke='%23e6e8ec' stroke-width='2.4'/%3E %3Cpath d='M52 53.4v1.4' stroke='%235b9dd9' stroke-width='2.4'/%3E %3C/g%3E %3Cpath d='M13 6l4 2 5 22h22l2 16h8M46 46l5 7.5' stroke='%23e6e8ec' stroke-width='3.5'/%3E %3C/svg%3E") center / contain no-repeat; }
+  background-image: var(--spinner-svg, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E %3Cstyle%3E @keyframes spin { to { transform: rotate(360deg) } } .wheel { transform-box: view-box; transform-origin: 26px 42px; animation: spin 1.2s linear infinite } .caster { transform-box: view-box; transform-origin: 52px 57px; animation: spin 0.4s linear infinite } @media (prefers-reduced-motion: reduce) { .wheel { animation-duration: 4s } .caster { animation-duration: 1.3s } } %3C/style%3E %3Cg class='wheel'%3E %3Ccircle cx='26' cy='42' r='17' stroke='%23e6e8ec' stroke-width='3.5'/%3E %3Cpath d='M26 25v34M11.3 33.5l29.4 17M11.3 50.5l29.4-17' stroke='%236b7280' stroke-width='1.8'/%3E %3Cpath d='M26 25A17 17 0 0 1 43 42' stroke='%235b9dd9' stroke-width='4'/%3E %3Ccircle cx='26' cy='42' r='2.6' fill='%23e6e8ec'/%3E %3C/g%3E %3Cg class='caster'%3E %3Ccircle cx='52' cy='57' r='3.6' stroke='%23e6e8ec' stroke-width='2.4'/%3E %3Cpath d='M52 53.4v1.4' stroke='%235b9dd9' stroke-width='2.4'/%3E %3C/g%3E %3Cpath d='M13 6l4 2 5 22h22l2 16h8M46 46l5 7.5' stroke='%23e6e8ec' stroke-width='3.5'/%3E %3C/svg%3E"));
+  background-position: center; background-size: contain; background-repeat: no-repeat; }
 .spinner.big { width: 28px; height: 28px; }
-@media (prefers-reduced-motion: reduce) { .spinner { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E %3Cstyle%3E @keyframes spin { to { transform: rotate(360deg) } } .wheel { transform-box: view-box; transform-origin: 26px 42px; animation: spin 4s linear infinite } .caster { transform-box: view-box; transform-origin: 52px 57px; animation: spin 1.3s linear infinite } @media (prefers-reduced-motion: reduce) { .wheel { animation-duration: 4s } .caster { animation-duration: 1.3s } } %3C/style%3E %3Cg class='wheel'%3E %3Ccircle cx='26' cy='42' r='17' stroke='%23e6e8ec' stroke-width='3.5'/%3E %3Cpath d='M26 25v34M11.3 33.5l29.4 17M11.3 50.5l29.4-17' stroke='%236b7280' stroke-width='1.8'/%3E %3Cpath d='M26 25A17 17 0 0 1 43 42' stroke='%235b9dd9' stroke-width='4'/%3E %3Ccircle cx='26' cy='42' r='2.6' fill='%23e6e8ec'/%3E %3C/g%3E %3Cg class='caster'%3E %3Ccircle cx='52' cy='57' r='3.6' stroke='%23e6e8ec' stroke-width='2.4'/%3E %3Cpath d='M52 53.4v1.4' stroke='%235b9dd9' stroke-width='2.4'/%3E %3C/g%3E %3Cpath d='M13 6l4 2 5 22h22l2 16h8M46 46l5 7.5' stroke='%23e6e8ec' stroke-width='3.5'/%3E %3C/svg%3E"); } }
+@media (prefers-reduced-motion: reduce) { .spinner { background-image: var(--spinner-svg-reduced, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E %3Cstyle%3E @keyframes spin { to { transform: rotate(360deg) } } .wheel { transform-box: view-box; transform-origin: 26px 42px; animation: spin 4s linear infinite } .caster { transform-box: view-box; transform-origin: 52px 57px; animation: spin 1.3s linear infinite } @media (prefers-reduced-motion: reduce) { .wheel { animation-duration: 4s } .caster { animation-duration: 1.3s } } %3C/style%3E %3Cg class='wheel'%3E %3Ccircle cx='26' cy='42' r='17' stroke='%23e6e8ec' stroke-width='3.5'/%3E %3Cpath d='M26 25v34M11.3 33.5l29.4 17M11.3 50.5l29.4-17' stroke='%236b7280' stroke-width='1.8'/%3E %3Cpath d='M26 25A17 17 0 0 1 43 42' stroke='%235b9dd9' stroke-width='4'/%3E %3Ccircle cx='26' cy='42' r='2.6' fill='%23e6e8ec'/%3E %3C/g%3E %3Cg class='caster'%3E %3Ccircle cx='52' cy='57' r='3.6' stroke='%23e6e8ec' stroke-width='2.4'/%3E %3Cpath d='M52 53.4v1.4' stroke='%235b9dd9' stroke-width='2.4'/%3E %3C/g%3E %3Cpath d='M13 6l4 2 5 22h22l2 16h8M46 46l5 7.5' stroke='%23e6e8ec' stroke-width='3.5'/%3E %3C/svg%3E")); } }
 .waiting { display: flex; align-items: center; gap: 8px; }
 
 /* Attachment chips, shared by the thread composer and the New thread screen */
