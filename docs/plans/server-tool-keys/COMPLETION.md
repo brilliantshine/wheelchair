@@ -2,7 +2,16 @@
 slug: server-tool-keys
 date: 2026-11-27
 implemented-by: "standard (gpt-6.1-terra): T1, T2, T3, T4; light (gpt-6-luna): T5, T6; sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra, gpt-6-luna
+  - round: 2
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra, gpt-6-luna
+  - round: 3
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra, gpt-6-luna
 ---
 
 # Completion Report — Keys for server tools
@@ -80,7 +89,7 @@ $ grep -n -i "never print or log a key" protocol/tools.md
 70:In script output, keys printed as-is ... Never print or log a key in any form. ...
 ```
 
-`bash machine/test/run.sh` on T1's branch: 906 tests, 904 pass, 0 fail. The full run (`test-support/full-run.sh`) result is appended below once it finishes.
+`bash machine/test/run.sh` on T1's branch: 906 tests, 904 pass, 0 fail. The full-run result is under Full run below.
 
 Sub-lead measurement: a 2.6 MiB reply of 100,000 short strings each holding `\n`, two absent keys: 4.5 s before T6, 0.18 s after.
 
@@ -105,3 +114,25 @@ See `REMEDIATION-1.md`. Verifier gap (post-exit deadline counts stderr-paused ti
 ### Remediation 2 (after verification attempt 2, `ad3730d8`: PASS, no gaps)
 
 See `REMEDIATION-2.md`. The full run on `ad3730d8` failed only `viewer-browser`: the committed-graph arrow guard tripped on this plan's diagram. R3 (standard / gpt-6.1-terra; asked for Claude, which was unavailable) laid the diagram out with the viewer's layout, keeping the same nodes, edges and labels. `npm --prefix viewer run test:browser -- -g "no drawn arrow's line passes through either box"` gives 2 passed (chromium, firefox).
+
+### Verification attempt 3 (`74502fc3`): PASS
+
+The verifier found no gaps. Check Once Built rows 1 and 2 hold.
+
+## Full run
+
+`bash test-support/full-run.sh` on the reported commit, `summary.txt`:
+
+```text
+commit 74502fc34160502ed9898a5ea6ca3bd0bdaea41c
+suite viewer-browser exit 0 seconds 398
+suite viewer-node exit 0 seconds 101
+suite machine exit 0 seconds 137
+suite test-support exit 0 seconds 27
+suite sensitivity exit 0 seconds 4
+suite codex exit 0 seconds 13
+suite install exit 0 seconds 39
+suite sudo-helper exit 0 seconds 9
+```
+
+The only commits after `74502fc3` touch this COMPLETION.md and PLAN.md.
