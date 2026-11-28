@@ -707,3 +707,58 @@ test('legacy lead comparisons include effort and distinct sub-lead cells', () =>
   cells.gpt['sub-lead'] = same; value.other_agents['sub-lead'] = 'light';
   assert.deepEqual(settings.legacyLeadDiffs(value, cells).map(d => d.role), ['lead', 'sub-lead']);
 });
+
+test('settings revisions track successful writes by domain and change on hub restart', async () => {
+  await withContext(async (context) => {
+    const revision = async () => (await api(context, '/settings/revision')).body;
+    const initial = await revision();
+    assert.deepEqual(Object.keys(initial).sort(), ['diagram', 'settings', 'shared_keys']);
+    for (const token of Object.values(initial)) assert.match(token, /^[0-9a-f]{12}:0$/);
+    const boot = initial.settings.split(':')[0];
+    assert.deepEqual(initial, { settings: `${boot}:0`, diagram: `${boot}:0`, shared_keys: `${boot}:0` });
+    let seq = 0;
+    for (const [route, method, body] of [
+      ['/settings/preferences', 'PUT', { codex_mode: 'unrestricted' }],
+      ['/settings/models/heads-up', 'POST', { action: 'skip', model: 'gpt-6-astra' }],
+      ['/settings/models/heads-up', 'POST', { action: 'reset' }],
+    ]) {
+      assert.equal((await api(context, route, { method, body })).status, 200);
+      assert.deepEqual(await revision(), { ...initial, settings: `${boot}:${++seq}` });
+    }
+    for (const action of ['save', 'remove']) {
+      context.machine.sharedKeysReplies[action] = { status: 409, body: { error: 'conflict' } };
+      assert.equal((await api(context, `/shared-keys/${action}`, { method: 'POST', body: {} })).status, 409);
+      assert.equal((await revision()).shared_keys, `${boot}:${action === 'save' ? 0 : 1}`);
+      context.machine.sharedKeysReplies[action] = { status: 200, body: {} };
+      assert.equal((await api(context, `/shared-keys/${action}`, { method: 'POST', body: {} })).status, 200);
+      assert.deepEqual(await revision(), { settings: `${boot}:${seq}`, diagram: `${boot}:0`, shared_keys: `${boot}:${action === 'save' ? 1 : 2}` });
+    }
+    const { Hub } = require('../app/hub.js');
+    const restarted = new Hub({ stateDir: context.state, codeVersion: '' });
+    assert.notEqual(restarted.settingsRevisions().settings.split(':')[0], boot);
+  });
+});
+
+test('settings snapshot keeps the revision from before describe starts', async () => {
+  const { Hub } = require('../app/hub.js');
+  const { invokeSettings } = require('../app/routes.js');
+  const usage = require('../app/usage.js');
+  const hub = new Hub({ stateDir: await makeTemp('revision-snapshot-'), codeVersion: '' });
+  await hub.state.init();
+  const originalDescribe = settings.describe;
+  const originalAccounts = usage.machineAccounts;
+  const before = hub.settingsRevisions().settings;
+  settings.describe = async () => {
+    await settings.update(hub, (value) => { value.codex_mode = 'unrestricted'; });
+    return {};
+  };
+  usage.machineAccounts = async () => ({});
+  try {
+    const result = await invokeSettings(hub, 'GET', '');
+    assert.equal(result.body.settings_revision, before);
+    assert.notEqual(hub.settingsRevisions().settings, before);
+  } finally {
+    settings.describe = originalDescribe;
+    usage.machineAccounts = originalAccounts;
+  }
+});
