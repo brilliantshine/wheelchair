@@ -25,6 +25,7 @@ The Settings page now has nine categories with many controls. When Collin knows 
 
 - Reworking or reorganizing the Settings page layout again.
 - General hardening of the personal assistant itself (tracked in the separate "Make the personal assistant solid" stub).
+- Automatic live refresh of an already-open Settings page without reloading (split into the follow-up stub "Auto-refresh an open Settings page when settings change").
 
 ## Constraints
 
