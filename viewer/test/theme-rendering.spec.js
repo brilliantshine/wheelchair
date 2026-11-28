@@ -247,17 +247,28 @@ test('keyboard focus rings on the composer, answer box and mockup comment box st
     await page.locator('.spot-layer').evaluate((n) => n.scrollIntoView({ block: 'center' }));
     await page.locator('.spot-layer').click({ position: { x: 40, y: 40 } });
     const vis = await rgbOf(page, await cssVar(page, '--accent-vis'));
-    for (const selector of ['#composer textarea', '.own-words textarea', '.spot-box .spot-text']) {
-      const box = page.locator(selector).first();
-      await box.focus();
-      const label = `${selector} ${accent}`;
-      await expect(box, label).toHaveCSS('outline-style', 'solid');
-      await expect(box, label).toHaveCSS('outline-width', '2px');
-      await expect(box, label).toHaveCSS('outline-color', vis);
-      expect(await box.evaluate((n) => {
+    for (const [focusSelector, ringSelector] of [
+      ['#composer textarea', '#composer .composer-box'],
+      ['.own-words textarea', '.own-words textarea'],
+      ['.spot-box .spot-text', '.spot-box .spot-text'],
+    ]) {
+      const input = page.locator(focusSelector).first();
+      const ring = page.locator(ringSelector).first();
+      await input.focus();
+      const label = `${ringSelector} ${accent}`;
+      await expect(ring, label).toHaveCSS('outline-style', 'solid');
+      await expect(ring, label).toHaveCSS('outline-width', '2px');
+      await expect(ring, label).toHaveCSS('outline-color', vis);
+      expect(await ring.evaluate((n) => {
         const { parse, ratio, behind } = window.__color;
         return ratio(parse(getComputedStyle(n).outlineColor), behind(n.parentElement));
       }), label).toBeGreaterThanOrEqual(3);
+      if (focusSelector !== ringSelector) {
+        await expect(input, `${focusSelector} no inner ring ${accent}`).toHaveCSS('outline-style', 'none');
+        const [inRect, ringRect] = await Promise.all([input.boundingBox(), ring.boundingBox()]);
+        expect(inRect.x - ringRect.x, `${focusSelector} left inset`).toBeGreaterThanOrEqual(10);
+        expect(inRect.y - ringRect.y, `${focusSelector} top inset`).toBeGreaterThanOrEqual(10);
+      }
     }
     // The comment box sits on the figure surface, the hardest one for a mid grey.
     await expect(page.locator('.card-diagram .spot-box')).toHaveCSS('background-color', await rgbOf(page, await cssVar(page, '--figure')));
