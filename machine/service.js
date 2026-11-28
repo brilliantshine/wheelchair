@@ -977,7 +977,7 @@ class MachineService {
     const thread = tools && this.threadWorktree(input, worktree);
     let programs = [];
     if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath(), wsl, mount });
-    const context = { resume, wsl, mount, launchExtras: await adapters[input.cli].launchContext?.(this) || {} };
+    const context = { resume, wsl, mount, launchExtras: await adapters[input.cli].launchContext?.(this, input, session) || {} };
     let folder = [], scriptRows = [], validScripts = [], keyedLines = [], hasValidScript = false;
     if (tools) {
       if (!Object.hasOwn(session, 'shared_tools')) {
