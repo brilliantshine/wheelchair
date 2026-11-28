@@ -27,6 +27,11 @@ test.afterAll(async () => { await context.server.stop(); });
 const KEYS = ['you', 'providers', 'usage', 'models', 'leads', 'threads', 'behavior', 'tools', 'shared-tools'];
 const TITLES = ['You', 'AI providers', 'Usage and balancing', 'Models', 'Assistant and project leads', 'Threads', 'Agent behavior', 'Project tools', 'Shared tools'];
 const settings = (page) => page.evaluate(async () => (await fetch('/wheelchair/api/settings')).json());
+const tab = (page, name) => page.getByRole('tab', { name, exact: true }).click();
+const pills = (page, cell) => page.getByRole('radiogroup', { name: `${cell} effort`, exact: true });
+const pill = (page, cell, value) => pills(page, cell).getByRole('radio', { name: value, exact: true });
+const checked = (group) => group.locator('[aria-checked="true"]');
+const tier = (page, role, name) => page.getByRole('radiogroup', { name: `${role} tier`, exact: true }).getByRole('radio', { name, exact: true });
 const noSideScroll = async (page) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
@@ -61,12 +66,12 @@ test.describe('desktop', () => {
     await expect(page.locator('.covers')).not.toContainText('Phone notifications');
   });
 
-  test('the Kimi row has no effort select while Claude keeps one', async ({ page }) => {
+  test('the Kimi tab has no effort pills while Claude keeps them', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
+    await expect(pills(page, 'Claude standard')).toHaveCount(1);
+    await tab(page, 'Kimi Code');
     await expect(page.getByLabel('Kimi Code standard model', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('Kimi Code standard effort', { exact: true })).toHaveCount(0);
-    await expect(page.locator('tr[data-provider="kimi"] select.effort')).toHaveCount(0);
-    await expect(page.getByLabel('Claude standard effort', { exact: true })).toHaveCount(1);
+    await expect(page.locator('#tier-panel .effort')).toHaveCount(0);
   });
 
   test('permission labels name the tools in their groups', async ({ page }) => {
@@ -79,7 +84,7 @@ test.describe('desktop', () => {
 
   test('a slashed Kimi alias saves through Other, survives a reload, and other providers refuse a slash', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
-    await expect(page.locator('tr[data-provider="kimi"]')).toContainText('Kimi Code');
+    await tab(page, 'Kimi Code');
     const standard = page.getByLabel('Kimi Code standard model', { exact: true });
     await expect(standard).toHaveValue('kimi-code/k3');
     await standard.selectOption('__other');
@@ -91,7 +96,9 @@ test.describe('desktop', () => {
     await expect(page.locator('.note').first()).toHaveText('Saved, applies to new sessions');
     await expect.poll(async () => (await settings(page)).models.kimi.standard.model).toBe('kimi-code/k3-preview');
     await page.reload();
+    await tab(page, 'Kimi Code');
     await expect(page.getByLabel('Kimi Code standard model', { exact: true })).toHaveValue('kimi-code/k3-preview');
+    await tab(page, 'GPT');
     const light = page.getByLabel('GPT light model', { exact: true });
     await light.selectOption('__other');
     await page.getByLabel('GPT light model, other').fill('gpt/x');
@@ -101,6 +108,7 @@ test.describe('desktop', () => {
 
   test('editing a table cell saves, and Not used saves null', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
+    await tab(page, 'GPT');
     const light = page.getByLabel('GPT light model', { exact: true });
     await expect(light).toHaveValue('gpt-6-luna');
     await light.selectOption('__other');
@@ -113,11 +121,12 @@ test.describe('desktop', () => {
     await expect(page.getByLabel('GPT light model', { exact: true })).toHaveValue('gpt-6-luna-2');
     expect((await settings(page)).models.gpt.light.model).toBe('gpt-6-luna-2');
 
+    await tab(page, 'Claude');
     await page.getByLabel('Claude standard model', { exact: true }).selectOption('__none');
-    await expect(page.getByLabel('Claude standard effort')).toBeDisabled();
+    await expect(pill(page, 'Claude standard', 'high')).toBeDisabled();
     await expect.poll(async () => (await settings(page)).models.claude.standard).toBeNull();
 
-    await page.getByLabel('Claude heavy effort').selectOption('high');
+    await pill(page, 'Claude heavy', 'high').click();
     await expect.poll(async () => (await settings(page)).models.claude.heavy.effort).toBe('high');
 
     await page.locator('#sections a[data-section="threads"]').click();
@@ -128,56 +137,46 @@ test.describe('desktop', () => {
     await expect.poll(async () => (await settings(page)).codex_mode).toBe('unrestricted');
     await expect(page.getByText(/it can change anything on the machine/)).toBeVisible();
     await page.locator('#sections a[data-section="models"]').click();
-    await page.getByLabel('Checker', { exact: true }).selectOption('critical');
+    await tier(page, 'Checker', 'Critical').click();
     await expect.poll(async () => (await settings(page)).other_agents.verifier).toBe('critical');
 
     await page.reload();
     await expect(page.getByLabel('Claude standard model', { exact: true })).toHaveValue('__none');
-    await expect(page.getByLabel('Checker', { exact: true })).toHaveValue('critical');
+    await expect(tier(page, 'Checker', 'Critical')).toHaveAttribute('aria-checked', 'true');
     await page.locator('#sections a[data-section="threads"]').click();
     await expect(page.getByRole('radio', { name: 'Bypass' })).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByRole('radio', { name: 'Unrestricted' })).toHaveAttribute('aria-checked', 'true');
   });
 
-  test('effort selects: GPT tier and both leads save; GPT has no max', async ({ page }) => {
+  test('effort pills offer each provider its levels and save at once', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
-    await expect(page.locator('tr[data-provider="gemini"]')).toContainText('Antigravity');
-    await expect(page.getByLabel('Antigravity light model')).toBeVisible();
-    await expect(page.getByLabel('Antigravity light effort').locator('option')).toContainText(['max']);
-    await expect(page.getByLabel('Antigravity lead model')).toBeVisible();
-    const gptStd = page.getByLabel('GPT standard effort', { exact: true });
-    await expect(gptStd.locator('option')).toHaveText(['CLI default', 'low', 'medium', 'high', 'xhigh']);
-    await expect(page.getByLabel('Claude heavy effort', { exact: true }).locator('option')).toHaveText(['CLI default', 'low', 'medium', 'high', 'xhigh', 'max']);
-    await gptStd.selectOption('high');
+    await expect(page.getByLabel('Claude heavy model', { exact: true })).toBeVisible();
+    await expect(pills(page, 'Claude heavy').getByRole('radio')).toHaveText(['CLI default', 'low', 'medium', 'high', 'xhigh', 'max']);
+    await tab(page, 'Antigravity');
+    await expect(pills(page, 'Antigravity light').getByRole('radio', { name: 'max' })).toBeVisible();
+    await tab(page, 'GPT');
+    await expect(pills(page, 'GPT standard').getByRole('radio')).toHaveText(['CLI default', 'low', 'medium', 'high', 'xhigh']);
+    const request = page.waitForRequest((r) => r.url().endsWith('/api/settings/models') && r.method() === 'PUT');
+    await pill(page, 'GPT standard', 'high').click();
+    expect((await request).postDataJSON()).toMatchObject({ provider: 'gpt', slot: 'standard', effort: 'high' });
     await expect.poll(async () => (await settings(page)).models.gpt.standard.effort).toBe('high');
-    await page.getByLabel('GPT lead effort', { exact: true }).selectOption('medium');
-    await expect.poll(async () => (await settings(page)).models.gpt.lead.effort).toBe('medium');
-    await page.getByLabel('Claude lead effort', { exact: true }).selectOption('max');
-    await expect.poll(async () => (await settings(page)).models.claude.lead.effort).toBe('max');
+    await expect(page.getByRole('tab', { name: 'GPT' })).toHaveAttribute('aria-selected', 'true');
     await page.reload();
-    await expect(page.getByLabel('GPT standard effort', { exact: true })).toHaveValue('high');
-    await expect(page.getByLabel('Claude lead effort', { exact: true })).toHaveValue('max');
+    await tab(page, 'GPT');
+    await expect(checked(pills(page, 'GPT standard'))).toHaveText('high');
   });
 
-  test('sub-lead models and scout tiers render and save independently', async ({ page }) => {
+  test('no Lead or Sub-lead pickers remain, and the scout tiers save independently', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
-    for (const provider of ['Claude', 'GPT', 'Antigravity', 'Kimi Code', 'OpenRouter']) {
-      await expect(page.getByLabel(`${provider} lead model`, { exact: true })).toBeVisible();
-      await expect(page.getByLabel(`${provider} sub-lead model`, { exact: true })).toBeVisible();
-    }
-    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(5);
-    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(5);
-    const modelRequest = page.waitForRequest((request) => request.url().endsWith('/api/settings/models') && request.method() === 'PUT');
-    await page.getByLabel('GPT sub-lead effort', { exact: true }).selectOption('high');
-    expect((await modelRequest).postDataJSON()).toMatchObject({ provider: 'gpt', slot: 'sub-lead', effort: 'high' });
-    await expect.poll(async () => (await settings(page)).models.gpt['sub-lead'].effort).toBe('high');
-
-    await expect(page.getByLabel('Scout', { exact: true }).locator('option:checked')).toHaveText('Light');
-    await expect(page.getByLabel('Scout for bigger changes', { exact: true }).locator('option:checked')).toHaveText('Standard');
-    const preferenceRequest = page.waitForRequest((request) => request.url().endsWith('/api/settings/preferences') && request.method() === 'PUT');
-    await page.getByLabel('Scout for bigger changes', { exact: true }).selectOption('heavy');
-    expect((await preferenceRequest).postDataJSON()).toEqual({ other_agents: { 'scout-heavy': 'heavy' } });
+    await expect(page.getByLabel('Claude light model', { exact: true })).toBeVisible();
+    await expect(page.getByLabel(/ (sub-)?lead model$/)).toHaveCount(0);
+    await expect(checked(page.getByRole('radiogroup', { name: 'Scout tier', exact: true }))).toHaveText('Light');
+    await expect(checked(page.getByRole('radiogroup', { name: 'Scout for bigger changes tier', exact: true }))).toHaveText('Standard');
+    const request = page.waitForRequest((r) => r.url().endsWith('/api/settings/preferences') && r.method() === 'PUT');
+    await tier(page, 'Scout for bigger changes', 'Heavy').click();
+    expect((await request).postDataJSON()).toEqual({ other_agents: { 'scout-heavy': 'heavy' } });
     await expect.poll(async () => (await settings(page)).other_agents['scout-heavy']).toBe('heavy');
+    expect((await settings(page)).other_agents.scout).toBe('light');
   });
 
   test('Escalation: default text, Model first, Highest tier Heavy', async ({ page }) => {
@@ -389,7 +388,7 @@ test.describe('phone', () => {
     }
   }
 
-  test('the Escalation section fits a phone and the effort selects stay usable', async ({ page }) => {
+  test('the Escalation section fits a phone and the effort pills stay usable', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
     const section = page.locator('#escalation');
     await section.scrollIntoViewIfNeeded();
@@ -400,7 +399,8 @@ test.describe('phone', () => {
     await expect.poll(async () => (await settings(page)).escalation.ask_before).toBe('any');
     await page.getByRole('radiogroup', { name: 'Ask me before' }).getByRole('radio', { name: 'Critical', exact: true }).click();
     await expect.poll(async () => (await settings(page)).escalation.ask_before).toBe('critical');
-    const sel = page.getByLabel('GPT heavy effort', { exact: true });
+    await tab(page, 'GPT');
+    const sel = pills(page, 'GPT heavy');
     await sel.scrollIntoViewIfNeeded();
     const box = await sel.boundingBox();
     expect(box.x).toBeGreaterThanOrEqual(0);
@@ -658,7 +658,8 @@ test('the preview panes carry the mockup\u2019s text and are its height at 390px
 test('Models fits at 390px', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openPage(page, context, '/app/settings#models');
-  await expect(page.locator('tr[data-provider="gemini"]')).toBeVisible();
+  await tab(page, 'Antigravity');
+  await expect(page.getByLabel('Antigravity light model', { exact: true })).toBeVisible();
   await noSideScroll(page);
 });
 
@@ -736,8 +737,8 @@ test.describe('categories', () => {
     const found = {
       you: [page.getByRole('textbox', { name: 'Your name' }), page.locator('#style-text'), radios('Diagram sensitivity'), radios('Enter to send'), page.getByLabel('Choose background image')],
       providers: [page.locator('.h-row[data-provider="claude"]'), page.locator('.acct[data-account="default-claude"]')],
-      usage: [page.locator('[data-order="lead_order"]'), page.locator('#bal-save')],
-      models: [page.getByLabel('Claude standard model', { exact: true }), page.getByLabel('Claude lead model', { exact: true }), page.getByLabel('Checker', { exact: true }), radios('What steps up first')],
+      usage: [page.locator('.usage-bars'), page.locator('#bal-save')],
+      models: [radios('Checker tier'), page.locator('[data-order="lead_order"]'), page.locator('[data-order="worker_order"]'), page.getByLabel('Claude standard model', { exact: true }), radios('What steps up first'), radios('Personal assistant tier')],
       leads: [radios('Personal assistant'), radios('Project leads')],
       threads: [radios('Tool steps'), radios('Merge pull requests when done'), radios('Delete the branch after merging'), page.getByLabel('Default project folder', { exact: true }), radios('Aside access'), page.getByRole('combobox', { name: 'Lead names' })],
       behavior: [page.getByRole('button', { name: '+ New template' }), page.locator('#export-lessons')],
@@ -748,9 +749,9 @@ test.describe('categories', () => {
       for (const control of controls) await expect(control, key).toBeVisible();
     }
     await page.locator('#sections a[data-section="usage"]').click();
-    const order = await page.locator('[data-order="lead_order"]').boundingBox();
-    const balancing = await page.locator('.balancing').boundingBox();
-    expect(order.y + order.height).toBeLessThan(balancing.y);
+    await expect(page.locator('#bal-save')).toBeVisible();
+    await expect(page.locator('[data-order]')).toHaveCount(0);
+    await expect(page.getByText('Workers try first')).toHaveCount(0);
   });
 
   test('Diagrams choices show in You', async ({ page }) => {
@@ -1102,34 +1103,21 @@ test.describe('one place for sign-in, usage and each draft', () => {
     expect(preserved).toEqual({ card: true, field: true, focus: true, key: 'sk-or-test-2' });
   });
 
-  for (const first of ['lead-order', 'balancing']) {
-    test(`pressing the ${first} Save keeps the other box's unsaved edit and updates the reserve label`, async ({ page }) => {
-      const saved = [];
-      await patchSettings(page, () => ({ harnesses: allOn(), lead_order: ['claude', 'gpt', 'any'], leave: 10, reserved_provider: 'Claude' }));
-      await page.route('**/api/settings/balancing', (r) => { const body = r.request().postDataJSON(); saved.push(body); return r.fulfill({ json: { ...body, reserved_provider: 'GPT' } }); });
-      await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody('signed_in', ['hub']) }));
-      await openPage(page, context, '/app/settings#usage');
-      const leads = page.locator('[data-order="lead_order"]');
-      const order = () => leads.locator('li span').allTextContents();
-      await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save Claude for leads');
-      await expect(page.locator('.usage-bars .usage-prov')).toHaveCount(2);
-      await leads.getByRole('button', { name: 'Move Claude down' }).click();
-      await page.locator('#bal-leave').fill('33');
-      const [one, other] = first === 'lead-order' ? ['#lead-order-save', '#bal-save'] : ['#bal-save', '#lead-order-save'];
-      await page.locator(one).click();
-      await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save GPT for leads');
-      await expect(page.locator('.balancing')).toContainText('When GPT is projected to have less than this left at refill');
-      await expect(page.locator('.balancing')).toContainText('Held back when GPT runs short');
-      await expect(page.locator('#bal-leave')).toHaveValue('33');
-      expect(await order()).toEqual(['GPT', 'Claude']);
-      expect(Object.hasOwn(saved[0], 'lead_order')).toBe(first === 'lead-order');
-      expect(Object.hasOwn(saved[0], 'leave')).toBe(first === 'balancing');
-      await page.locator(other).click();
-      await expect.poll(() => saved.length).toBe(2);
-      if (first === 'lead-order') expect(saved[1].leave).toBe(33);
-      else expect(saved[1].lead_order).toEqual(['gpt', 'claude', 'any']);
-    });
-  }
+  test('the balancing Save sends no provider order and updates the reserve label', async ({ page }) => {
+    const saved = [];
+    await patchSettings(page, () => ({ harnesses: allOn(), lead_order: ['claude', 'gpt', 'any'], leave: 10, reserved_provider: 'Claude' }));
+    await page.route('**/api/settings/balancing', (r) => { const body = r.request().postDataJSON(); saved.push(body); return r.fulfill({ json: { ...body, reserved_provider: 'GPT' } }); });
+    await page.route('**/api/usage', (r) => r.fulfill({ json: usageBody('signed_in', ['hub']) }));
+    await openPage(page, context, '/app/settings#usage');
+    await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save Claude for leads');
+    await page.locator('#bal-leave').fill('33');
+    await page.locator('#bal-save').click();
+    await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save GPT for leads');
+    await expect(page.locator('.balancing')).toContainText('When GPT is projected to have less than this left at refill');
+    await expect(page.locator('.balancing')).toContainText('Held back when GPT runs short');
+    await expect(page.locator('#bal-leave')).toHaveValue('33');
+    expect(Object.keys(saved[0]).sort()).toEqual(['held_back', 'leave', 'margin', 'notify_below', 'save_for_leads', 'within']);
+  });
 
   test('opening Usage and balancing re-reads the reserved provider and keeps what was typed', async ({ page }) => {
     let reserved = 'Claude';
@@ -1342,11 +1330,15 @@ test.describe('Antigravity levels', () => {
   test.afterAll(async () => { await agy.server.stop(); });
 
   const model = (page) => page.getByLabel('Antigravity light model', { exact: true });
-  const effort = (page) => page.getByLabel('Antigravity light effort', { exact: true });
+  const effort = (page) => pills(page, 'Antigravity light');
+  const levels = (page) => effort(page).getByRole('radio');
+  const chosen = (page) => checked(effort(page));
+  const setEffort = (page, value) => pill(page, 'Antigravity light', value).click();
   const saved = async (page) => (await settings(page)).models.gemini.light;
   async function open(page, pin) {
     await fs.writeFile(agy.models, `gemini.light = ${pin}\n`);
     await openPage(page, agy, '/app/settings#models');
+    await tab(page, 'Antigravity');
     await expect(model(page)).toBeVisible();
   }
   async function other(page, value) {
@@ -1358,29 +1350,29 @@ test.describe('Antigravity levels', () => {
   test('effort choices are the chosen model\'s levels, and a level it has is kept', async ({ page }) => {
     await open(page, 'gemini-3.8-flash @medium');
     await expect(model(page).locator('option:checked')).toHaveText('Gemini 3.8 Flash · gemini-3.8-flash');
-    await expect(effort(page).locator('option')).toHaveText(THREE);
+    await expect(levels(page)).toHaveText(THREE);
     await model(page).selectOption('gemini-4-hydrogen');
-    await expect(effort(page).locator('option')).toHaveText(FOUR);
-    await expect(effort(page)).toHaveValue('medium');
+    await expect(levels(page)).toHaveText(FOUR);
+    await expect(chosen(page)).toHaveText('medium');
     await expect.poll(() => saved(page)).toEqual({ model: 'gemini-4-hydrogen', effort: 'medium' });
   });
 
   test('effort resets to CLI default when the new model lacks the level', async ({ page }) => {
     await open(page, 'gemini-4-hydrogen @xhigh');
-    await expect(effort(page)).toHaveValue('xhigh');
+    await expect(chosen(page)).toHaveText('xhigh');
     await model(page).selectOption('gemini-3.8-flash');
-    await expect(effort(page).locator('option')).toHaveText(THREE);
-    await expect(effort(page)).toHaveValue('');
+    await expect(levels(page)).toHaveText(THREE);
+    await expect(chosen(page)).toHaveText('CLI default');
     await expect.poll(() => saved(page)).toEqual({ model: 'gemini-3.8-flash', effort: null });
     await expect(page.locator('.inline-err')).toHaveCount(0);
   });
 
   test('effort is disabled at CLI default for a model with no levels', async ({ page }) => {
     await open(page, 'gemini-3.8-flash @high');
-    await expect(effort(page)).toBeEnabled();
+    await expect(levels(page).first()).toBeEnabled();
     await model(page).selectOption('orchestrator');
-    await expect(effort(page)).toBeDisabled();
-    await expect(effort(page).locator('option')).toHaveText(['CLI default']);
+    await expect(levels(page)).toHaveText(['CLI default']);
+    await expect(levels(page)).toBeDisabled();
     await expect.poll(() => saved(page)).toEqual({ model: 'orchestrator', effort: null });
     await expect(page.locator('.inline-err')).toHaveCount(0);
   });
@@ -1388,9 +1380,9 @@ test.describe('Antigravity levels', () => {
   test('effort offers every level for a typed model with unknown levels', async ({ page }) => {
     await open(page, 'gemini-3.8-flash @high');
     await other(page, 'gemini-9');
-    await expect(effort(page).locator('option')).toHaveText(ALL);
-    await expect(effort(page)).toHaveValue('high');
-    await expect(effort(page)).toBeEnabled();
+    await expect(levels(page)).toHaveText(ALL);
+    await expect(chosen(page)).toHaveText('high');
+    await expect(levels(page).first()).toBeEnabled();
     await expect.poll(() => saved(page)).toEqual({ model: 'gemini-9', effort: 'high' });
   });
 
@@ -1398,8 +1390,8 @@ test.describe('Antigravity levels', () => {
     await open(page, 'gemini-4-hydrogen @high');
     await other(page, 'gemini-3.8-flash-low');
     await expect(model(page)).toHaveValue('gemini-3.8-flash');
-    await expect(effort(page)).toHaveValue('low');
-    await expect(effort(page).locator('option')).toHaveText(THREE);
+    await expect(chosen(page)).toHaveText('low');
+    await expect(levels(page)).toHaveText(THREE);
     await expect.poll(() => saved(page)).toEqual({ model: 'gemini-3.8-flash', effort: 'low' });
   });
 
@@ -1412,20 +1404,19 @@ test.describe('Antigravity levels', () => {
       body.model_options.gemini.push({ value: 'gemini-new', label: 'Newly listed', efforts: ['low'] });
       await route.fulfill({ response, json: body });
     });
-    await effort(page).selectOption('high');
+    await setEffort(page, 'high');
     await expect(model(page).locator('option[value="gemini-new"]')).toHaveCount(1);
     await expect(page.getByText('Saved; the list could not be refreshed')).toHaveCount(0);
     // Another cell is left as drawn, and takes the new list the next time it is drawn.
-    const lead = page.getByLabel('Antigravity lead model', { exact: true });
-    await expect(lead.locator('option[value="gemini-new"]')).toHaveCount(0);
-    await page.getByLabel('Antigravity lead effort', { exact: true }).selectOption('low');
-    await expect(lead.locator('option[value="gemini-new"]')).toHaveCount(1);
+    const other = page.getByLabel('Antigravity standard model', { exact: true });
+    await expect(other.locator('option[value="gemini-new"]')).toHaveCount(0);
+    await pill(page, 'Antigravity standard', 'low').click();
+    await expect(other.locator('option[value="gemini-new"]')).toHaveCount(1);
   });
 
-  test('effort save leaves the drafts typed in other cells, in both blocks', async ({ page }) => {
+  test('effort save leaves the drafts typed in other cells', async ({ page }) => {
     await open(page, 'gemini-3.8-flash @low');
-    // One draft in the saved cell's own block and one in the other block.
-    const drafts = [['Claude heavy model', 'claude-draft-tier'], ['Claude lead model', 'claude-draft-lead']];
+    const drafts = [['Antigravity heavy model', 'agy-draft-heavy'], ['Antigravity critical model', 'agy-draft-critical']];
     for (const [label, text] of drafts) {
       await page.getByLabel(label, { exact: true }).selectOption('__other');
       await page.getByLabel(`${label}, other`).fill(text);
@@ -1436,7 +1427,7 @@ test.describe('Antigravity levels', () => {
       body.model_options.gemini.push({ value: 'gemini-new', label: 'Newly listed', efforts: ['low'] });
       await route.fulfill({ response, json: body });
     });
-    await effort(page).selectOption('high');
+    await setEffort(page, 'high');
     await expect(model(page).locator('option[value="gemini-new"]')).toHaveCount(1);
     for (const [label, text] of drafts) {
       await expect(page.getByLabel(`${label}, other`)).toHaveValue(text);
@@ -1448,9 +1439,9 @@ test.describe('Antigravity levels', () => {
     await open(page, 'gemini-3.8-flash @low');
     const held = [];
     await page.route('**/api/settings', (route) => { held.push(route); });
-    await effort(page).selectOption('high');
+    await setEffort(page, 'high');
     await expect.poll(() => held.length).toBe(1);
-    await page.getByLabel('Antigravity lead effort', { exact: true }).selectOption('low');
+    await pill(page, 'Antigravity standard', 'low').click();
     await expect.poll(() => held.length).toBe(2);
     for (const route of held) {
       const response = await route.fetch();
@@ -1459,18 +1450,245 @@ test.describe('Antigravity levels', () => {
       await route.fulfill({ response, json: body });
     }
     await expect(model(page).locator('option[value="gemini-new"]')).toHaveCount(1);
-    await expect(page.getByLabel('Antigravity lead model', { exact: true }).locator('option[value="gemini-new"]')).toHaveCount(1);
+    await expect(page.getByLabel('Antigravity standard model', { exact: true }).locator('option[value="gemini-new"]')).toHaveCount(1);
   });
 
   test('effort stays saved, and says so, when the list cannot be re-read after a save', async ({ page }) => {
     await open(page, 'gemini-3.8-flash @low');
     await page.route('**/api/settings', (route) => route.abort());
-    await effort(page).selectOption('high');
+    await setEffort(page, 'high');
     await expect(page.locator('[data-cell="tiers:gemini:light"]').getByText('Saved; the list could not be refreshed', { exact: true })).toBeVisible();
-    await expect(effort(page)).toHaveValue('high');
+    await expect(chosen(page)).toHaveText('high');
     await expect(page.locator('.inline-err')).toHaveCount(0);
     await expect(page.locator('.note').first()).toHaveText('Saved, applies to new sessions');
     await page.unroute('**/api/settings');
     expect((await saved(page)).effort).toBe('high');
+  });
+});
+
+test.describe('Models: tiers, ladders and notices', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+  test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'ignoreErrors' }); });
+  let own;
+  test.beforeEach(async () => {
+    const state = await makeDir('app-settings-models-');
+    const models = path.join(state, 'models');
+    const cache = path.join(state, 'models-cache.json');
+    await fs.writeFile(cache, JSON.stringify({ models: [] }));
+    const server = await startServer({ stateDir: state, env: { WHEELCHAIR_AGY: '', WHEELCHAIR_MODELS: models, WHEELCHAIR_MODELS_CACHE: cache } });
+    own = { state, server, models, cache };
+  });
+  test.afterEach(async () => { await own.server.stop(); });
+
+  const call = (page, route, body) => page.evaluate(async ([r, b]) => {
+    const res = await fetch('/wheelchair/api' + r, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
+    if (!res.ok) throw new Error(r + ' ' + res.status + ' ' + await res.text());
+  }, [route, body]);
+  // Claude, GPT and Antigravity on, with ladders that differ from each other.
+  async function seed(page) {
+    await openPage(page, own, '/app/settings#you');
+    for (const provider of ['kimi', 'openrouter']) await call(page, `/settings/harnesses/${provider}`, { enabled: false });
+    await call(page, '/settings/balancing', { lead_order: ['claude', 'gpt', 'any'], worker_order: ['gpt', 'claude', 'gemini'] });
+  }
+  const open = async (page) => { await page.goto(`${own.server.url}/app/settings#models`); await page.reload(); await expect(page.locator('.m-agent')).toHaveCount(10); };
+  const row = (page, role) => page.locator(`.m-agent[data-row="${role}"]`);
+  const preview = (page, role) => row(page, role).locator('.m-preview');
+  const disclosure = (page, role) => row(page, role).locator('details.m-order');
+  const mode = (page, role, name) => disclosure(page, role).getByRole('radio', { name, exact: true });
+  const items = (list) => list.locator('li > span');
+  const orders = async (page) => (await settings(page)).provider_orders;
+
+  test('ten roles in order, each tier saving at once with its model preview following', async ({ page }) => {
+    await seed(page);
+    await open(page);
+    await expect(page.locator('.m-agent .m-role')).toHaveText(['Leads', 'Sub-leads', 'Plan reviewers', 'Checker', 'Code mapping', 'Mockups', 'Scout', 'Scout for bigger changes', 'Personal assistant', 'Project leads']);
+    await expect(page.locator('[data-block="agents"] .m-box > *').nth(4)).toContainText('Reviewers and checkers');
+    await expect(row(page, 'scout')).toContainText("Runs on the lead's or sub-lead's provider");
+    await expect(row(page, 'scout-heavy')).toContainText("Runs on the sub-lead's provider");
+    await expect(disclosure(page, 'scout')).toHaveCount(0);
+    await expect(disclosure(page, 'scout-heavy')).toHaveCount(0);
+    const models = (await settings(page)).models;
+    // The preview follows the role's ladder order: Lead for Leads, Worker for the reviewers.
+    await expect(preview(page, 'lead')).toHaveText(new RegExp(`^Claude: ${models.claude.heavy.model}.* · GPT: ${models.gpt.heavy.model}.* · Antigravity: `));
+    await expect(preview(page, 'reviewer')).toHaveText(new RegExp(`^GPT: ${models.gpt.heavy.model}`));
+    for (const [role, title] of [['lead', 'Leads'], ['sub-lead', 'Sub-leads'], ['reviewer', 'Plan reviewers'], ['verifier', 'Checker'], ['mapper', 'Code mapping'], ['designer', 'Mockups'], ['scout', 'Scout'], ['scout-heavy', 'Scout for bigger changes'], ['assistant', 'Personal assistant'], ['project-lead', 'Project leads']]) {
+      const before = (await settings(page)).other_agents[role];
+      const next = before === 'critical' ? 'Light' : 'Critical';
+      await tier(page, title, next).click();
+      await expect(tier(page, title, next)).toHaveAttribute('aria-checked', 'true');
+      await expect.poll(async () => (await settings(page)).other_agents[role]).toBe(next.toLowerCase());
+      await expect(preview(page, role)).toContainText(`Claude: ${models.claude.critical.model}`);
+    }
+    // A model edit reaches every preview on that tier, and a "Not used" provider is left out.
+    await page.getByLabel('Claude critical model', { exact: true }).selectOption('__none');
+    await expect(preview(page, 'lead')).not.toContainText('Claude');
+    await expect(preview(page, 'lead')).toContainText('GPT');
+    await pill(page, 'Claude heavy', 'low').click();
+    await tier(page, 'Leads', 'Heavy').click();
+    await expect(preview(page, 'lead')).toContainText(`Claude: ${models.claude.heavy.model} (low)`);
+    await call(page, '/settings/preferences', { provider_orders: { mapper: ['claude'] } });
+    await open(page);
+    await expect(preview(page, 'mapper')).toHaveText('No provider set for this tier');
+  });
+
+  test('a refused tier or ladder save puts the choice back and says why on its row', async ({ page }) => {
+    await seed(page);
+    await open(page);
+    await page.route('**/api/settings/preferences', (r) => r.fulfill({ status: 400, json: { error: 'refused here' } }));
+    await tier(page, 'Checker', 'Light').click();
+    await expect(row(page, 'verifier').getByRole('alert')).toHaveText('refused here');
+    await expect(tier(page, 'Checker', 'Heavy')).toHaveAttribute('aria-checked', 'true');
+    await disclosure(page, 'mapper').locator('summary').click();
+    await mode(page, 'mapper', 'Custom').click();
+    await expect(row(page, 'mapper').getByRole('alert')).toHaveText('refused here');
+    await expect(mode(page, 'mapper', 'Default: Worker')).toHaveAttribute('aria-checked', 'true');
+    await expect(disclosure(page, 'mapper').locator('summary')).toContainText('Default: Worker');
+    expect((await orders(page)).mapper).toBe('worker');
+  });
+
+  test('a role ladder shows its default, starts Custom from it and saves each edit while staying open', async ({ page }) => {
+    await seed(page);
+    await open(page);
+    const lead = disclosure(page, 'lead');
+    await expect(lead.locator('summary')).toContainText('Default: Lead');
+    await lead.locator('summary').click();
+    await expect(lead.locator('.order-resolved')).toHaveText('Uses Lead ladder: Claude → GPT → any');
+    await expect(lead).toContainText('Applies to new threads');
+    await mode(page, 'lead', 'Default: Worker').click();
+    await expect(lead.locator('.order-resolved')).toHaveText('Uses Worker ladder: GPT → Claude → Antigravity');
+    await expect.poll(async () => (await orders(page)).lead).toBe('worker');
+    await mode(page, 'lead', 'Default: Lead').click();
+    await expect.poll(async () => (await orders(page)).lead).toBe('lead');
+    // Lead family: Custom copies the Lead ladder as it is, any tail included.
+    await mode(page, 'lead', 'Custom').click();
+    await expect.poll(async () => (await orders(page)).lead).toEqual(['claude', 'gpt', 'any']);
+    await expect(lead).toHaveAttribute('open', '');
+    await expect(lead.getByRole('checkbox')).toBeChecked();
+    await lead.getByRole('button', { name: 'Move Claude down' }).click();
+    await expect(items(lead)).toHaveText(['GPT', 'Claude']);
+    await expect(lead.locator('summary')).toContainText('Custom: GPT → Claude → any');
+    await lead.getByRole('button', { name: '+ Antigravity' }).click();
+    await lead.getByRole('button', { name: 'Leave GPT out' }).click();
+    await lead.getByRole('checkbox').uncheck();
+    await expect.poll(async () => (await orders(page)).lead).toEqual(['claude', 'gemini']);
+    await expect(lead).toHaveAttribute('open', '');
+    await expect(preview(page, 'lead')).not.toContainText('GPT');
+    await lead.getByRole('button', { name: 'Leave Claude out' }).click();
+    await expect(lead.getByRole('button', { name: /^Leave .* out$/ })).toHaveCount(0);
+
+    // Worker family: from the Lead ladder the any tail is spelled out, and there is no tail box.
+    await lead.locator('summary').focus();
+    await page.keyboard.press('Escape');
+    await expect(lead).not.toHaveAttribute('open', '');
+    await disclosure(page, 'reviewer').locator('summary').click();
+    await expect(disclosure(page, 'reviewer')).not.toContainText('Applies to new threads');
+    await mode(page, 'reviewer', 'Default: Lead').click();
+    await expect.poll(async () => (await orders(page)).reviewer).toBe('lead');
+    await mode(page, 'reviewer', 'Custom').click();
+    await expect.poll(async () => (await orders(page)).reviewer).toEqual(['claude', 'gpt', 'gemini']);
+    await expect(disclosure(page, 'reviewer').getByRole('checkbox')).toHaveCount(0);
+    await mode(page, 'reviewer', 'Default: Worker').click();
+    await mode(page, 'reviewer', 'Custom').click();
+    await expect.poll(async () => (await orders(page)).reviewer).toEqual(['gpt', 'claude', 'gemini']);
+
+    // Assistants use the same row, with the tail.
+    await disclosure(page, 'assistant').locator('summary').click();
+    await expect(disclosure(page, 'reviewer')).not.toHaveAttribute('open', '');
+    await mode(page, 'assistant', 'Custom').click();
+    await expect(disclosure(page, 'assistant').getByRole('checkbox')).toBeChecked();
+    await disclosure(page, 'assistant').getByRole('button', { name: 'Move GPT up' }).click();
+    await expect.poll(async () => (await orders(page)).assistant).toEqual(['gpt', 'claude', 'any']);
+  });
+
+  test('a custom order keeps a switched-off provider where it was saved', async ({ page }) => {
+    await seed(page);
+    await call(page, '/settings/preferences', { provider_orders: { mapper: ['claude', 'kimi', 'gpt'] } });
+    await open(page);
+    await expect(disclosure(page, 'mapper').locator('summary')).toContainText('Custom: Claude → GPT');
+    await disclosure(page, 'mapper').locator('summary').click();
+    await disclosure(page, 'mapper').getByRole('button', { name: 'Move GPT up' }).click();
+    await expect.poll(async () => (await orders(page)).mapper).toEqual(['gpt', 'kimi', 'claude']);
+  });
+
+  test('the shared ladders save at once and the role rows follow', async ({ page }) => {
+    await seed(page);
+    await open(page);
+    const lead = page.locator('[data-order="lead_order"]'), worker = page.locator('[data-order="worker_order"]');
+    await expect(worker.getByRole('checkbox')).toHaveCount(0);
+    await disclosure(page, 'reviewer').locator('summary').click();
+    const request = page.waitForRequest((r) => r.url().endsWith('/api/settings/balancing') && r.method() === 'PUT');
+    await worker.getByRole('button', { name: 'Move GPT down' }).click();
+    expect((await request).postDataJSON()).toEqual({ worker_order: ['claude', 'gpt', 'gemini'] });
+    await expect(disclosure(page, 'reviewer').locator('.order-resolved')).toHaveText('Uses Worker ladder: Claude → GPT → Antigravity');
+    await expect(preview(page, 'reviewer')).toHaveText(/^Claude: /);
+    await expect(page.locator('.note[data-for="section"]')).toHaveText('Saved, applies to new sessions');
+    await lead.getByRole('checkbox').uncheck();
+    await lead.getByRole('button', { name: '+ Antigravity' }).click();
+    await lead.getByRole('button', { name: 'Leave Claude out' }).click();
+    await expect.poll(async () => (await settings(page)).lead_order).toEqual(['gpt', 'gemini']);
+    expect((await settings(page)).worker_order).toEqual(['claude', 'gpt', 'gemini']);
+    await page.route('**/api/settings/balancing', (r) => r.fulfill({ status: 409, json: { error: 'no ladder left' } }));
+    await worker.getByRole('button', { name: 'Move Claude down' }).click();
+    await expect(page.locator('[data-row="ladder:worker_order"]').getByRole('alert')).toHaveText('no ladder left');
+    await expect(items(worker)).toHaveText(['Claude', 'GPT', 'Antigravity']);
+  });
+
+  test('tabs list only enabled providers, and a Not used tier disables its pills', async ({ page }) => {
+    await fs.writeFile(own.cache, JSON.stringify({ models: [{ slug: 'gpt-9-sol', visibility: 'list' }] }));
+    await seed(page);
+    await open(page);
+    await expect(page.getByRole('tab')).toHaveText(['Claude', 'GPT', 'Antigravity']);
+    await expect(page.getByRole('tab', { name: 'Claude' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#tier-panel .hu')).toHaveCount(0);
+    await tab(page, 'GPT');
+    await expect(page.locator('.model-row[data-tier="heavy"] .hu')).toContainText('Newer model · gpt-9-sol is available for Heavy.');
+    await page.getByLabel('GPT light model', { exact: true }).selectOption('__none');
+    await expect(pills(page, 'GPT light').getByRole('radio').first()).toBeDisabled();
+    await expect(page.getByRole('tab', { name: 'GPT' })).toHaveAttribute('aria-selected', 'true');
+    await page.locator('.model-row[data-tier="heavy"] .hu').getByRole('button', { name: 'Switch' }).click();
+    await expect(page.getByLabel('GPT heavy model', { exact: true })).toHaveValue('gpt-9-sol');
+    await expect(preview(page, 'lead')).toContainText('GPT: gpt-9-sol');
+  });
+
+  test('the saved Lead models notice recovers a Not used tier only on a press, and Dismiss ends it', async ({ page }) => {
+    await fs.writeFile(own.models, 'claude.heavy = none\nclaude.lead = claude-sonnet-5-5 @medium\ngpt.heavy = gpt-6.1-sol @high\ngpt.lead = gpt-6.1-sol @low\n');
+    await seed(page);
+    await open(page);
+    const notice = page.locator('.m-legacy');
+    await expect(notice).toContainText('Claude lead was claude-sonnet-5-5 (medium); Heavy is Not used');
+    await expect(notice).toContainText('GPT lead was gpt-6.1-sol (low); Heavy is gpt-6.1-sol (high)');
+    // Only the Not used cell offers a recovery, and nothing is written until it is pressed.
+    await expect(notice.getByRole('button', { name: /^Use / })).toHaveText(['Use claude-sonnet-5-5 for Heavy']);
+    expect((await settings(page)).models.claude.heavy).toBeNull();
+    await notice.getByRole('button', { name: 'Use claude-sonnet-5-5 for Heavy' }).click();
+    await expect.poll(async () => (await settings(page)).models.claude.heavy).toEqual({ model: 'claude-sonnet-5-5', effort: 'medium' });
+    await expect(notice).not.toContainText('Claude lead was');
+    await expect(page.getByLabel('Claude heavy model', { exact: true })).toHaveValue('claude-sonnet-5-5');
+    await expect(preview(page, 'lead')).toContainText('Claude: claude-sonnet-5-5 (medium)');
+    expect((await settings(page)).models.gpt.heavy.effort).toBe('high');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(notice).toBeVisible();
+    await noSideScroll(page);
+    await notice.getByRole('button', { name: 'Dismiss' }).click();
+    await expect(notice).toHaveCount(0);
+    await open(page);
+    await expect(notice).toHaveCount(0);
+    expect((await settings(page)).lead_tier_notice_dismissed).toBe(true);
+  });
+
+  test('with every provider on, a phone shows the open ladder without sideways scrolling', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openPage(page, own, '/app/settings#models');
+    await expect(page.getByRole('tab')).toHaveCount(5);
+    await disclosure(page, 'lead').locator('summary').click();
+    await mode(page, 'lead', 'Custom').click();
+    await expect(disclosure(page, 'lead').getByRole('checkbox')).toBeVisible();
+    await noSideScroll(page);
+    const columns = page.locator('.ladder');
+    expect((await columns.nth(1).boundingBox()).y).toBeGreaterThan((await columns.nth(0).boundingBox()).y + 40);
+    for (const name of ['Claude', 'Antigravity']) {
+      await tab(page, name);
+      await noSideScroll(page);
+    }
   });
 });

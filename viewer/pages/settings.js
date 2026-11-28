@@ -11,8 +11,8 @@
   const CATEGORIES = [
     { key: 'you', title: 'You', line: 'Your name, writing style, diagrams and background', lede: 'Your name and preferences for how the app looks and communicates.', note: true, blocks: ['name', 'writing', 'diagrams', 'enter', 'background'] },
     { key: 'providers', title: 'AI providers', line: 'Harnesses and accounts', lede: 'The agent programs wheelchair runs and the logins they use.', blocks: ['harnesses', 'accounts'] },
-    { key: 'usage', title: 'Usage and balancing', line: 'Usage, provider order and reserves', lede: 'What is left this week, and how agents share it.', blocks: ['usage', 'lead-order', 'balancing'] },
-    { key: 'models', title: 'Models', line: 'Tiers, agent models and escalation', lede: 'Who runs what.', note: true, blocks: ['tiers', 'lead-models', 'escalation', 'others'] },
+    { key: 'usage', title: 'Usage and balancing', line: 'Usage and reserves', lede: 'What is left this week, and how agents share it.', blocks: ['usage', 'balancing'] },
+    { key: 'models', title: 'Models', line: 'Agents, provider ladders, tiers and escalation', lede: 'Who runs what.', note: true, blocks: ['agents', 'ladders', 'tiers', 'escalation', 'assistants'] },
     { key: 'leads', title: 'Assistant and project leads', line: 'Personal assistant and project leads', lede: 'Turn on the assistants you can talk to across your work.', note: true, blocks: ['conversations'] },
     { key: 'threads', title: 'Threads', line: 'Display, merging, folders and permissions', lede: 'Display, merging, folders and permissions for your threads.', note: true, blocks: ['thread-view', 'permission', 'lead-names'] },
     { key: 'behavior', title: 'Agent behavior', line: 'Behavior templates and lessons learned', lede: 'How agents work, and what they have learned.', blocks: ['templates'] },
@@ -69,6 +69,9 @@
   let diagramShown = false;
   let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
   let nameDraft = null; // the typed Your name, kept across re-renders until saved
+  let tierTab = null; // the provider tab open in Tier models
+  const openLadders = new Set(); // roles whose provider ladder disclosure is open
+  const saves = {}; // per setting: { queue, ticket, pending, saved } for saves made one after another
   // Lead name saves, kept across re-renders: they run one after another in the order made,
   // `choice` is the list last picked in the dropdown, which a save's answer never undoes, and
   // `reads` counts file picks so only the newest file is saved.
@@ -223,44 +226,67 @@
   }
 
   // Redraw one model cell in place: every other cell keeps what is typed or open in it.
-  function redrawCell(block, provider, slot) {
-    const host = document.querySelector(`[data-cell="${block}:${provider}:${slot}"]`);
-    if (host) host.replaceWith(modelPicker(block, provider, slot, { allowNone: block === 'tiers', withEffort: Boolean(EFFORTS[provider]) }));
+  function redrawCell(provider, slot) {
+    const host = document.querySelector(`[data-cell="tiers:${provider}:${slot}"]`);
+    if (host) swapKeepingFocus(host, () => host.replaceWith(modelPicker(provider, slot)));
   }
 
+  // A repaint replaces what had the keyboard focus; give it back to the same control.
+  function swapKeepingFocus(host, swap) {
+    const focused = document.activeElement;
+    const key = focused && host.contains(focused) ? focused.closest('[data-focus]')?.dataset.focus : null;
+    swap();
+    if (key && !focused.isConnected) panel.querySelector(`[data-focus="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+  }
+  function repaint(...names) {
+    for (const name of names) {
+      const host = blockHost(name);
+      if (host) swapKeepingFocus(host, () => paint(name));
+    }
+  }
+  const repaintPreviews = () => repaint('agents', 'assistants');
+
   // After a save the lists are read again, so the saved cell shows what the hub now holds.
-  async function refreshModels(provider, slot, block) {
+  async function refreshModels(provider, slot) {
     const ticket = ++modelSaves;
-    unreadCells.set(`${block}:${provider}:${slot}`, [block, provider, slot]);
+    unreadCells.set(`${provider}:${slot}`, [provider, slot]);
     let fresh;
     try { fresh = await api('/settings'); } catch {
       if (ticket !== modelSaves) return;
       unreadCells.clear();
-      const host = document.querySelector(`[data-cell="${block}:${provider}:${slot}"]`);
+      const host = document.querySelector(`[data-cell="tiers:${provider}:${slot}"]`);
       if (host) host.append(h('p', { class: 'hint', role: 'status', text: NOT_REFRESHED }));
       return;
     }
     if (ticket !== modelSaves) return;
     data.models = fresh.models;
     data.model_options = fresh.model_options;
+    data.legacy_lead_diffs = fresh.legacy_lead_diffs;
     // A save overtaken by a later one is drawn here too, by the later save's read.
     for (const saved of unreadCells.values()) redrawCell(...saved);
     unreadCells.clear();
+    repaintPreviews();
   }
 
-  // One model picker for a provider and slot. A change saves at once; a refusal shows its
-  // reason under the control and puts the control back.
-  function modelPicker(block, provider, slot, { allowNone, withEffort }) {
+  // One tier's model and effort for a provider. A change saves at once; a refusal shows its
+  // reason under the controls and puts them back.
+  function modelPicker(provider, slot) {
     const cell = data.models[provider] && data.models[provider][slot];
     const current = cell ? cell.model : null;
     const effort = cell && cell.effort ? cell.effort : '';
-    const wrap = h('div', { class: 'cell', 'data-cell': `${block}:${provider}:${slot}` });
+    const wrap = h('div', { class: 'cell', 'data-cell': `tiers:${provider}:${slot}` });
+    const controls = h('div', { class: 'model-controls' });
+    wrap.append(controls);
     const label = `${PROVIDER_NAME[provider]} ${slot} model`;
-    const select = h('select', { 'aria-label': label, class: toolOf(provider).settings.monoModelNames ? 'mono' : '' },
-      optionList(provider, current, { allowNone }).map((o) => h('option', { value: o.value, text: o.label })));
+    const select = h('select', { 'aria-label': label, 'data-focus': label, class: toolOf(provider).settings.monoModelNames ? 'mono' : '' },
+      optionList(provider, current, { allowNone: true }).map((o) => h('option', { value: o.value, text: o.label })));
     select.value = current || NONE;
-    wrap.append(select);
-    let effortSelect = null;
+    controls.append(select);
+    let pills = null;
+
+    const checkPill = (value) => {
+      for (const b of pills?.children || []) b.setAttribute('aria-checked', String(b.dataset.value === value));
+    };
 
     async function commit(model, newEffort) {
       const body = { provider, slot, model };
@@ -270,16 +296,17 @@
         res = await api('/settings/models', { method: 'PUT', body });
       } catch (e) {
         select.value = current || NONE;
-        if (effortSelect) effortSelect.value = effort;
+        checkPill(effort);
         wrap.querySelector('.other')?.remove();
         inlineErr(wrap, e.message);
         setNote('', false);
         return;
       }
       data.models = res.models;
-      redrawCell(block, provider, slot);
+      redrawCell(provider, slot);
+      repaintPreviews();
       setNote(SAVED, false);
-      await refreshModels(provider, slot, block);
+      await refreshModels(provider, slot);
     }
 
     select.addEventListener('change', () => {
@@ -304,19 +331,23 @@
       };
       use.addEventListener('click', go);
       input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } });
-      select.after(row);
+      controls.after(row);
       input.focus();
     }
 
-    if (withEffort) {
+    if (EFFORTS[provider]) {
       const levels = levelsOf(provider, current);
-      effortSelect = h('select', { class: 'effort', 'aria-label': `${PROVIDER_NAME[provider]} ${slot} effort` },
-        h('option', { value: '', text: 'CLI default' }),
-        (levels || EFFORTS[provider]).map((e) => h('option', { value: e, text: e })));
-      effortSelect.value = effort;
-      effortSelect.disabled = !current || levels?.length === 0;
-      effortSelect.addEventListener('change', () => commit(current, effortSelect.value));
-      wrap.append(effortSelect);
+      const choices = ['', ...(levels || EFFORTS[provider])];
+      if (effort && !choices.includes(effort)) choices.push(effort);
+      const disabled = !current || levels?.length === 0;
+      const name = `${PROVIDER_NAME[provider]} ${slot} effort`;
+      pills = h('div', { class: 'seg-radio effort', role: 'radiogroup', 'aria-label': name, 'aria-disabled': disabled ? 'true' : null },
+        choices.map((value) => h('button', {
+          type: 'button', role: 'radio', 'data-value': value, 'data-focus': `${name}:${value}`, text: value || 'CLI default',
+          'aria-checked': String(effort === value), disabled,
+          onclick: () => { if (value === effort) return; checkPill(value); commit(current, value); },
+        })));
+      controls.append(pills);
     }
     return wrap;
   }
@@ -326,14 +357,16 @@
       const res = await api('/settings/models/heads-up', { method: 'POST', body });
       data.models = res.models;
       data.heads_up = res.heads_up;
-      paint('tiers');
+      repaint('tiers');
+      repaintPreviews();
     } catch (e) { inlineErr(host, e.message); }
   }
 
-  function headsUpLine(item) {
+  function headsUpLine(item, tier) {
     const line = h('div', { class: 'hu', 'data-kind': item.kind });
     const actions = h('div', { class: 'hu-actions' });
     let text;
+    let title = null;
     if (item.kind === 'malformed') {
       text = "The models file couldn't be read, so the shipped defaults are showing.";
       actions.append(h('button', { type: 'button', class: 'small', text: 'Reset to defaults', onclick: () => headsUpAction({ action: 'reset' }, line) }));
@@ -341,35 +374,14 @@
       text = `${item.model} is available but fits no tier.`;
       actions.append(h('button', { type: 'button', class: 'small', text: 'Skip', onclick: () => headsUpAction({ action: 'skip', model: item.model }, line) }));
     } else {
-      text = `${item.kind === 'newer' ? 'Newer model' : 'New model'}: ${item.model}`;
+      title = item.kind === 'newer' ? 'Newer model' : 'New model';
+      text = ` · ${item.model} is available for ${tier}.`;
       actions.append(
         h('button', { type: 'button', class: 'small primary', text: 'Switch', onclick: () => headsUpAction({ action: 'switch', tier: item.tier, model: item.model }, line) }),
         h('button', { type: 'button', class: 'small', text: 'Skip', onclick: () => headsUpAction({ action: 'skip', model: item.model }, line) }));
     }
-    line.append(h('span', { class: 'msg', text: text }), actions);
+    line.append(h('span', { class: 'msg' }, title && h('strong', { text: title }), text), actions);
     return line;
-  }
-
-  function otherAgentRow(key, title, hint) {
-    const select = h('select', { 'aria-label': title },
-      TIERS.map(([value, label]) => h('option', { value, text: label })));
-    select.value = data.other_agents[key];
-    select.addEventListener('change', async () => {
-      const row = select.closest('.row-line');
-      try {
-        const res = await api('/settings/preferences', { method: 'PUT', body: { other_agents: { [key]: select.value } } });
-        data.other_agents = res.other_agents;
-        inlineErr(row, '');
-        setNote(SAVED, false);
-      } catch (e) {
-        select.value = data.other_agents[key];
-        inlineErr(row, e.message);
-        setNote('', false);
-      }
-    });
-    return h('div', { class: 'row-line' },
-      h('div', { class: 'what' }, h('span', { text: title }), h('span', { class: 'hint', text: hint })),
-      h('div', { class: 'ctl' }, select));
   }
 
   // Lead names: a built-in list, or a custom one uploaded as a text file (one name per
@@ -570,7 +582,7 @@
   function modeGroup(block, key, label, choices, saved = SAVED) {
     const seg = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
       choices.map(([value, text]) => h('button', {
-        type: 'button', role: 'radio', 'aria-checked': String(data[key] === value), text,
+        type: 'button', role: 'radio', 'aria-checked': String(data[key] === value), text, 'data-focus': `${key}:${value}`,
         onclick: async () => {
           if (data[key] === value) return;
           const row = seg.closest('.row-line');
@@ -578,7 +590,7 @@
             const res = await api('/settings/preferences', { method: 'PUT', body: { [key]: value } });
             data[key] = res[key];
             inlineErr(row, '');
-            paint(block);
+            repaint(block);
             if (key === 'assistant' && res.assistant_error) inlineErr(document.getElementById('assistant-setting'), res.assistant_error);
             setNote(saved, false);
           } catch (e) { inlineErr(row, e.message); setNote('', false); }
@@ -590,7 +602,7 @@
   function escalationGroup(key, label, choices) {
     const seg = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
       choices.map(([value, text]) => h('button', {
-        type: 'button', role: 'radio', 'aria-checked': String(data.escalation[key] === value), text,
+        type: 'button', role: 'radio', 'aria-checked': String(data.escalation[key] === value), text, 'data-focus': `escalation:${key}:${value}`,
         onclick: async () => {
           if (data.escalation[key] === value) return;
           const row = seg.closest('.row-line');
@@ -599,7 +611,7 @@
             data.escalation = res.escalation;
             data.escalation_text = res.escalation_text;
             inlineErr(row, '');
-            paint('escalation');
+            repaint('escalation');
             setNote(SAVED, false);
           } catch (e) { inlineErr(row, e.message); setNote('', false); }
         },
@@ -615,63 +627,328 @@
 
   // ---------------------------------------------------------------- Models
 
+  const AGENT_ROLES = [
+    ['lead', 'Leads'], ['sub-lead', 'Sub-leads'], ['reviewer', 'Plan reviewers'], ['verifier', 'Checker'],
+    ['mapper', 'Code mapping'], ['designer', 'Mockups'],
+    ['scout', 'Scout', "Runs on the lead's or sub-lead's provider"],
+    ['scout-heavy', 'Scout for bigger changes', "Runs on the sub-lead's provider"],
+  ];
+  const ASSISTANT_ROLES = [['assistant', 'Personal assistant'], ['project-lead', 'Project leads']];
+  const LEAD_FAMILY = ['lead', 'sub-lead', 'assistant', 'project-lead'];
+  const ROLE_TIERS = TIERS.map(([value, label]) => [value, label]);
+  const TIER_NAME = Object.fromEntries(ROLE_TIERS);
+
+  const modelsSection = (id, title, sub, ...kids) => h('div', { class: 'models m-block' },
+    h('section', { 'aria-labelledby': id },
+      h('div', { class: 'm-head' }, h('h2', { id, text: title }), sub && h('p', { text: sub })),
+      ...kids));
+
+  // Saves to one setting run one after another in the order made. The page shows each change at
+  // once; a refused latest save puts back what the hub last accepted.
+  function saveInOrder(key, { value, read, write, send, show, fail }) {
+    const state = saves[key] || (saves[key] = { queue: Promise.resolve(), ticket: 0, pending: 0, saved: null });
+    if (!state.pending) state.saved = structuredClone(read());
+    const ticket = ++state.ticket;
+    state.pending++;
+    write(value);
+    show();
+    state.queue = state.queue.then(async () => {
+      try {
+        const res = await send(value);
+        state.saved = value;
+        state.pending--;
+        if (ticket !== state.ticket) return;
+        show(res);
+        setNote(SAVED, false);
+      } catch (e) {
+        state.pending--;
+        if (ticket === state.ticket) { write(state.saved); show(); }
+        fail(e.message);
+        setNote('', false);
+      }
+    });
+  }
+
+  const rowError = (row) => (message) => {
+    const host = panel.querySelector(`[data-row="${row}"]`);
+    if (host) inlineErr(host, message);
+  };
+
+  // The notice's rows follow the tiers; read them again while it is showing.
+  async function refreshDiffs() {
+    if (!data.legacy_lead_diffs?.length) return;
+    try {
+      const fresh = await api('/settings');
+      data.legacy_lead_diffs = fresh.legacy_lead_diffs;
+      repaint('agents');
+    } catch { /* the notice stays as drawn */ }
+  }
+
+  function saveTier(role, tier) {
+    saveInOrder('tier:' + role, {
+      value: tier,
+      read: () => data.other_agents[role],
+      write: (v) => { data.other_agents = { ...data.other_agents, [role]: v }; },
+      send: (v) => api('/settings/preferences', { method: 'PUT', body: { other_agents: { [role]: v } } }),
+      show: (res) => { repaintPreviews(); if (res) refreshDiffs(); },
+      fail: rowError(role),
+    });
+  }
+
+  function saveRoleOrder(role, order) {
+    saveInOrder('order:' + role, {
+      value: order,
+      read: () => data.provider_orders[role],
+      write: (v) => { data.provider_orders = { ...data.provider_orders, [role]: v }; },
+      send: (v) => api('/settings/preferences', { method: 'PUT', body: { provider_orders: { [role]: v } } }),
+      show: () => repaintPreviews(),
+      fail: rowError(role),
+    });
+  }
+
+  function saveSharedOrder(key, order) {
+    saveInOrder(key, {
+      value: order,
+      read: () => data[key],
+      write: (v) => { data[key] = v; },
+      send: (v) => api('/settings/balancing', { method: 'PUT', body: { [key]: v } }),
+      show: (res) => {
+        if (res) { reserveReads++; data.reserved_provider = res.reserved_provider; loadHarnesses(true); }
+        repaint('ladders');
+        repaintPreviews();
+      },
+      fail: rowError('ladder:' + key),
+    });
+  }
+
+  const expandOrder = (entry) => (entry === 'lead' ? data.lead_order : entry === 'worker' ? data.worker_order : entry)
+    .flatMap((p) => (p === 'any' ? data.worker_order : [p]));
+
+  // The models a role would run on: its tier's model on every provider its ladder can reach.
+  // Scouts have no ladder: they run on whichever provider their lead or sub-lead uses.
+  function previewText(role) {
+    const entry = data.provider_orders[role];
+    const reach = entry ? [...new Set(expandOrder(entry))] : PROVIDERS.map(([p]) => p);
+    const tier = data.other_agents[role];
+    const parts = reach.filter((p) => PROVIDER_NAME[p] && harnessOn(p)).flatMap((p) => {
+      const cell = data.models[p]?.[tier];
+      return cell?.model ? [`${PROVIDER_NAME[p]}: ${cell.model}${cell.effort ? ` (${cell.effort})` : ''}`] : [];
+    });
+    return parts.join(' · ') || 'No provider set for this tier';
+  }
+
+  // The enabled providers of a saved order by name, 'any' as itself.
+  const orderNames = (order) => order.filter((p) => p === 'any' || (PROVIDER_NAME[p] && harnessOn(p))).map((p) => (p === 'any' ? 'any' : PROVIDER_NAME[p]));
+
+  function orderSummary(entry) {
+    if (entry === 'lead') return 'Default: Lead';
+    if (entry === 'worker') return 'Default: Worker';
+    return 'Custom: ' + (orderNames(entry).join(' → ') || 'no provider switched on');
+  }
+
+  // A provider order as an editable list. Switched-off providers are hidden here and keep their
+  // index in the saved array; 'any' ("then whatever's left") stays last.
+  function ladderList({ order, name, allowAny, change, attr }) {
+    const all = order.filter((p) => p !== 'any');
+    const hasAny = order.includes('any');
+    const real = all.filter((p) => PROVIDER_NAME[p] && harnessOn(p));
+    const left = all.filter((p) => !real.includes(p));
+    const missing = PROVIDERS.map(([p]) => p).filter((p) => harnessOn(p) && !real.includes(p));
+    const commit = (list) => {
+      const total = left.length + list.length;
+      const out = new Array(total).fill(null);
+      const rest = [];
+      for (const p of left) { const i = all.indexOf(p); if (i < total && out[i] === null) out[i] = p; else rest.push(p); }
+      const visible = list.slice();
+      for (let i = 0; i < total; i++) if (out[i] === null) out[i] = visible.length ? visible.shift() : rest.shift();
+      change(hasAny && allowAny ? [...out, 'any'] : out);
+    };
+    const move = (i, d) => { const next = real.slice(); const [item] = next.splice(i, 1); next.splice(i + d, 0, item); commit(next); };
+    const button = (text, label, onclick, disabled) => h('button', { type: 'button', text, 'aria-label': label, 'data-focus': `${attr}:${label}`, disabled, onclick });
+    return h('div', { class: 'ladder-list', role: 'group', 'aria-label': name, 'data-order': attr },
+      h('ol', {}, real.map((p, i) => h('li', { 'data-provider': p },
+        h('b', { 'aria-hidden': 'true', text: String(i + 1) }),
+        h('span', { text: PROVIDER_NAME[p] }),
+        h('div', { class: 'ladder-actions' },
+          button('↑', `Move ${PROVIDER_NAME[p]} up`, () => move(i, -1), i === 0),
+          button('↓', `Move ${PROVIDER_NAME[p]} down`, () => move(i, 1), i === real.length - 1),
+          real.length > 1 && button('Remove', `Leave ${PROVIDER_NAME[p]} out`, () => commit(real.filter((x) => x !== p))))))),
+      missing.length ? h('div', { class: 'ladder-add' }, missing.map((p) => h('button', {
+        type: 'button', class: 'add-provider', text: `+ ${PROVIDER_NAME[p]}`, 'data-focus': `${attr}:add ${p}`, onclick: () => commit([...real, p]),
+      }))) : null,
+      allowAny && h('label', { class: 'tail' },
+        h('input', { type: 'checkbox', checked: hasAny, 'data-focus': `${attr}:any`, onchange: (ev) => change(ev.target.checked ? [...all, 'any'] : all.slice()) }),
+        h('span', { text: "then whatever's left" })));
+  }
+
+  // What a role's order starts from when Custom is first picked.
+  function customStart(role) {
+    const entry = data.provider_orders[role];
+    if (LEAD_FAMILY.includes(role)) return (entry === 'lead' ? data.lead_order : data.worker_order).slice();
+    return entry === 'worker' ? data.worker_order.slice() : [...new Set(expandOrder('lead'))];
+  }
+
+  function orderControl(role, title) {
+    const entry = data.provider_orders[role];
+    const mode = Array.isArray(entry) ? 'custom' : entry;
+    const summary = orderSummary(entry);
+    const modes = h('div', { class: 'seg-radio order-mode', role: 'radiogroup', 'aria-label': `${title} provider order` },
+      [['lead', 'Default: Lead'], ['worker', 'Default: Worker'], ['custom', 'Custom']].map(([value, text]) => h('button', {
+        type: 'button', role: 'radio', 'aria-checked': String(mode === value), text, 'data-focus': `mode:${role}:${value}`,
+        onclick: () => { if (mode !== value) saveRoleOrder(role, value === 'custom' ? customStart(role) : value); },
+      })));
+    const shared = mode === 'lead' ? ['Lead ladder', data.lead_order] : ['Worker ladder', data.worker_order];
+    const details = h('details', { class: 'm-order', open: openLadders.has(role) },
+      h('summary', { 'aria-label': `${title} provider order: ${summary}`, 'data-focus': `summary:${role}` },
+        h('span', { class: 'm-order-text', text: summary }), h('span', { class: 'caret', 'aria-hidden': 'true', text: '▾' })),
+      h('div', { class: 'order-editor' },
+        h('div', { class: 'order-label', text: 'Provider order' }),
+        modes,
+        mode === 'custom'
+          ? ladderList({ order: entry, name: `${title} custom provider order`, allowAny: LEAD_FAMILY.includes(role), change: (next) => saveRoleOrder(role, next), attr: `role:${role}` })
+          : h('p', { class: 'order-resolved', text: `Uses ${shared[0]}: ${orderNames(shared[1]).join(' → ') || 'no provider switched on'}` }),
+        role === 'lead' && h('p', { class: 'order-applies', text: 'Applies to new threads' })));
+    // One disclosure is open at a time, so their panels never cover each other.
+    details.addEventListener('toggle', () => {
+      if (!details.isConnected) return;
+      if (!details.open) { openLadders.delete(role); return; }
+      openLadders.add(role);
+      for (const other of panel.querySelectorAll('details.m-order[open]')) if (other !== details) other.open = false;
+    });
+    details.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Escape' || !details.open) return;
+      details.open = false;
+      details.querySelector('summary').focus();
+    });
+    return details;
+  }
+
+  function roleRow([role, title, hint]) {
+    const tier = data.other_agents[role];
+    return h('div', { class: 'm-agent', 'data-row': role },
+      h('div', { class: 'm-agent-main' },
+        h('div', { class: 'm-id' },
+          h('div', { class: 'm-role', text: title }),
+          h('div', { class: 'm-preview', 'data-preview': role, text: previewText(role) })),
+        h('div', { class: 'm-controls' },
+          h('div', { class: 'seg-radio tier-switch', role: 'radiogroup', 'aria-label': `${title} tier` },
+            ROLE_TIERS.map(([value, label]) => h('button', {
+              type: 'button', role: 'radio', 'aria-checked': String(tier === value), text: label, 'data-focus': `tier:${role}:${value}`,
+              onclick: () => { if (data.other_agents[role] !== value) saveTier(role, value); },
+            }))),
+          hint ? h('span', { class: 'order-note', text: hint }) : orderControl(role, title))));
+  }
+
+  function familyRow() {
+    return h('div', { class: 'row-line m-family' },
+      h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s. With only one family signed in, one plan reviewer.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
+      modeGroup('agents', 'review_families', 'Reviewers and checkers', [['both', 'Mix families'], ...TOOLS.filter((t) => t.settings.reviewFamily).map((t) => [t.provider, t.label])].filter(([v]) => v === 'both' || harnessOn(v))));
+  }
+
+  const modelText = (model, effort) => (model ? model + (effort ? ` (${effort})` : '') : 'Not used');
+
+  // Shown once after the move to tiers: where a saved Lead or Sub-lead model differs from what
+  // its role now runs on. Nothing is changed without a press.
+  function legacyNotice() {
+    const diffs = (data.legacy_lead_diffs || []).filter((d) => harnessOn(d.provider));
+    if (!diffs.length) return null;
+    const box = h('div', { class: 'm-legacy', role: 'region', 'aria-label': 'Earlier Lead models' });
+    const send = async (button, run) => {
+      button.disabled = true;
+      try { await run(); } catch (e) { button.disabled = false; inlineErr(box, e.message); }
+    };
+    const use = (d) => async () => {
+      const body = { provider: d.provider, slot: d.tier, model: d.legacy_model };
+      if (d.legacy_effort) body.effort = d.legacy_effort;
+      data.models = (await api('/settings/models', { method: 'PUT', body })).models;
+      const fresh = await api('/settings');
+      data.models = fresh.models;
+      data.model_options = fresh.model_options;
+      data.legacy_lead_diffs = fresh.legacy_lead_diffs;
+      repaint('agents', 'tiers', 'assistants');
+      setNote(SAVED, false);
+    };
+    const dismiss = async () => {
+      await api('/settings/preferences', { method: 'PUT', body: { lead_tier_notice_dismissed: true } });
+      data.legacy_lead_diffs = [];
+      data.lead_tier_notice_dismissed = true;
+      repaint('agents');
+    };
+    box.append(
+      h('p', { class: 'm-legacy-title' }, h('strong', { text: 'Leads now use tiers.' }), ' These saved models differ from what the tier runs:'),
+      h('ul', {}, diffs.map((d) => h('li', { 'data-provider': d.provider, 'data-role': d.role },
+        h('span', { text: `${d.label} ${d.role} was ${modelText(d.legacy_model, d.legacy_effort)}; ${TIER_NAME[d.tier]} is ${modelText(d.tier_model, d.tier_effort)}` }),
+        d.tier_model === null && d.legacy_model !== null && h('button', {
+          type: 'button', class: 'small', text: `Use ${d.legacy_model} for ${TIER_NAME[d.tier]}`,
+          onclick: (ev) => send(ev.currentTarget, use(d)),
+        })))),
+      h('button', { type: 'button', class: 'small m-dismiss', text: 'Dismiss', onclick: (ev) => send(ev.currentTarget, dismiss) }));
+    return box;
+  }
+
+  function renderAgents() {
+    const [lead, sub, reviewer, verifier, ...rest] = AGENT_ROLES;
+    return modelsSection('agents', 'Agents', 'Choose a tier for each role. Models depend on the provider used.',
+      legacyNotice(),
+      h('div', { class: 'box m-box' }, [lead, sub, reviewer, verifier].map(roleRow), familyRow(), rest.map(roleRow)),
+      h('p', { class: 'm-under', text: 'For threads in the app. Terminal commands keep their own rules.' }));
+  }
+
+  function renderAssistants() {
+    return modelsSection('assistants', 'Assistants', 'Choose models for conversations outside a thread\'s build.',
+      h('div', { class: 'box m-box' }, ASSISTANT_ROLES.map(roleRow)));
+  }
+
+  function renderLadders() {
+    const column = (key, title, allowAny) => h('div', { class: 'ladder', 'data-row': 'ladder:' + key },
+      h('h3', { text: title }),
+      ladderList({ order: data[key], name: title, allowAny, change: (next) => saveSharedOrder(key, next), attr: key }));
+    return modelsSection('ladders', 'Provider ladders', 'Shared provider orders. Workers always use the Worker ladder; Save for leads in Usage and balancing protects the top provider on the Lead ladder.',
+      h('div', { class: 'box ladder-grid' }, column('lead_order', 'Lead ladder', true), column('worker_order', 'Worker ladder', false)));
+  }
+
   function renderTiers() {
     const items = (data.heads_up || []).slice();
     if (data.models.malformed && !items.some((i) => i.kind === 'malformed')) items.unshift({ kind: 'malformed' });
-    const lines = items.filter((i) => i.kind === 'malformed' || i.kind === 'tierless').map(headsUpLine);
-    const tierItems = (tier) => items.filter((i) => i.tier === tier && (i.kind === 'newer' || i.kind === 'available'));
-
-    const head = h('tr', {}, h('th', { scope: 'col', text: 'Provider' }),
-      TIERS.map(([, label, desc]) => h('th', { scope: 'col' }, h('span', { class: 'tier-name', text: label }), h('span', { class: 'tier-desc', text: desc }))));
-    const body = PROVIDERS.filter(([provider]) => harnessOn(provider)).map(([provider, name, cli]) => h('tr', { class: toolOf(provider).settings.modelHeadsUp ? 'gpt' : '', 'data-provider': provider },
-      h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli }), toolOf(provider).settings.familyHint && h('span', { class: 'hint', text: toolOf(provider).settings.familyHint })),
-      TIERS.map(([slot, label]) => {
-        const td = h('td', { 'data-label': label }, modelPicker('tiers', provider, slot, { allowNone: true, withEffort: Boolean(EFFORTS[provider]) }));
-        if (toolOf(provider).settings.modelHeadsUp) for (const item of tierItems(slot)) td.append(headsUpLine(item));
-        return td;
-      })));
-    const table = h('table', { class: 'tiers' }, h('thead', {}, head), h('tbody', {}, body));
-    return group('models', 'tiers', 'Tiers',
-      lines,
-      h('div', { class: 'box' }, table),
-      h('span', { class: 'hint', text: '"Not used" means that provider can\'t be started at that tier. Effort is how hard the model thinks; "CLI default" leaves it to the CLI.' }));
-  }
-
-  function renderLeadModels() {
-    return group('models', 'lead-models', 'Leads',
-      rows(PROVIDERS.flatMap(([provider, name]) => [['lead', 'Leads run on'], ['sub-lead', 'Sub-leads run on']].map(([slot, title]) => h('div', { class: 'row-line' },
-        h('div', { class: 'what' }, h('span', { text: title }), h('span', { class: 'hint', text: `${name} model` })),
-        h('div', { class: 'ctl wide' }, modelPicker('lead-models', provider, slot, { allowNone: false, withEffort: Boolean(EFFORTS[provider]) })))))));
+    const lines = items.filter((i) => i.kind === 'malformed' || i.kind === 'tierless').map((i) => headsUpLine(i));
+    const enabled = PROVIDERS.filter(([provider]) => harnessOn(provider));
+    const title = (...kids) => modelsSection('tiers', 'Tier models', 'Choose the model and effort for each provider.', lines, ...kids);
+    if (!enabled.length) {
+      return title(h('p', { class: 'm-under' }, 'No provider is switched on. Turn one on under ', h('a', { href: '#providers', text: 'AI providers' }), '.'));
+    }
+    if (!enabled.some(([provider]) => provider === tierTab)) tierTab = enabled[0][0];
+    const tool = toolOf(tierTab);
+    const tabs = h('div', { class: 'm-tabs', role: 'tablist', 'aria-label': 'Provider' }, enabled.map(([provider, name]) => h('button', {
+      type: 'button', role: 'tab', id: 'tier-tab-' + provider, 'aria-selected': String(provider === tierTab), 'aria-controls': 'tier-panel',
+      'data-focus': 'tab:' + provider, text: name,
+      onclick: () => { if (tierTab === provider) return; tierTab = provider; repaint('tiers'); },
+    })));
+    const tierRows = TIERS.map(([slot, label, description]) => h('div', { class: 'model-row', 'data-tier': slot },
+      h('div', { class: 'tier-title' }, h('strong', { text: label }), h('span', { class: 'hint', text: description })),
+      modelPicker(tierTab, slot),
+      tool.settings.modelHeadsUp ? items.filter((i) => i.tier === slot && (i.kind === 'newer' || i.kind === 'available')).map((i) => headsUpLine(i, label)) : null));
+    return title(
+      h('div', { class: 'box m-box' }, tabs,
+        h('div', { id: 'tier-panel', role: 'tabpanel', 'aria-labelledby': 'tier-tab-' + tierTab, 'data-provider': tierTab },
+          tool.settings.familyHint && h('p', { class: 'm-family-hint hint', text: tool.settings.familyHint }),
+          tierRows)),
+      h('p', { class: 'm-under', text: '"Not used" prevents this provider from starting at that tier. CLI default leaves effort to the CLI.' }));
   }
 
   function renderEscalation() {
     const escRow = (title, key, choices) => h('div', { class: 'row-line' },
       h('div', { class: 'what' }, h('span', { text: title })),
       escalationGroup(key, title, choices));
-    return group('models', 'escalation', 'Escalation',
-      h('div', { class: 'escalation-text' },
-        String(data.escalation_text || '').split('\n').filter(Boolean).map((line) => h('p', { text: line }))),
-      rows(
-        escRow('What steps up first', 'first', [['effort', 'Effort'], ['model', 'Model']]),
-        escRow('Highest effort', 'max_effort', [['high', 'High'], ['xhigh', 'xhigh'], ['max', 'Max']]),
-        escRow('Highest tier', 'max_tier', [['standard', 'Standard'], ['heavy', 'Heavy'], ['critical', 'Critical']]),
-        escRow('Ask me before', 'ask_before', [['never', 'Never'], ['critical', 'Critical'], ['any', 'Any step up']])),
-      h('span', { class: 'hint', text: 'The build follows these when a worker comes back wrong. Applies to builds started afterwards.' }));
-  }
-
-  function renderOthers() {
-    return group('models', 'others', 'Other agents',
-      rows(
-        h('div', { class: 'row-line' },
-          h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s. With only one family signed in, one plan reviewer.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
-          modeGroup('others', 'review_families', 'Reviewers and checkers', [['both', 'Mix families'], ...TOOLS.filter((t) => t.settings.reviewFamily).map((t) => [t.provider, t.label])].filter(([v]) => v === 'both' || harnessOn(v)))),
-        otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
-        otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
-        otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
-        otherAgentRow('designer', 'Mockups', 'Draws mockups of screens during planning'),
-        otherAgentRow('scout', 'Scout', 'Reads code for leads and sub-leads and reports back'),
-        otherAgentRow('scout-heavy', 'Scout for bigger changes', 'Checks worker changes of 200 to 800 lines for the sub-lead')),
-      h('span', { class: 'hint', text: 'For threads in the app. Terminal commands keep their own rules.' }));
+    return modelsSection('escalation', 'Escalation', null,
+      h('div', { class: 'box m-box' },
+        h('div', { class: 'escalation-text' },
+          String(data.escalation_text || '').split('\n').filter(Boolean).map((line) => h('p', { text: line }))),
+        h('div', { class: 'esc-grid' },
+          escRow('What steps up first', 'first', [['effort', 'Effort'], ['model', 'Model']]),
+          escRow('Highest effort', 'max_effort', [['high', 'High'], ['xhigh', 'xhigh'], ['max', 'Max']]),
+          escRow('Highest tier', 'max_tier', [['standard', 'Standard'], ['heavy', 'Heavy'], ['critical', 'Critical']]),
+          escRow('Ask me before', 'ask_before', [['never', 'Never'], ['critical', 'Critical'], ['any', 'Any step up']]))),
+      h('p', { class: 'm-under', text: 'Applies to builds started afterwards.' }));
   }
 
   // ---------------------------------------------------------------- Assistant and project leads
@@ -1436,7 +1713,7 @@
   let justAdded = null;        // an account id whose Sign in buttons are offered
   let openProvider = null;     // the provider whose account table is open on Usage
   let balDraft = null;         // unsaved balancing edits
-  let balNote = { box: null, text: '' }; // which balancing box reports its last Save
+  let balNote = '';           // the balancing box's report of its last Save
   let signCard = null;         // {account, machine, el, timers…} while a sign-in card is open
   let usageAsks = 0;           // only the newest usage request's answer is kept
   let reserveReads = 0;        // a Save outdates a reserved-provider read still on its way
@@ -1794,46 +2071,12 @@
   function ensureDraft() {
     if (balDraft) return;
     balDraft = {};
-    for (const k of ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back']) balDraft[k] = structuredClone(data[k]);
+    for (const k of ['within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back']) balDraft[k] = structuredClone(data[k]);
   }
 
-  const orderBlock = (key) => (key === 'lead_order' ? 'lead-order' : 'balancing');
-
-  // An order editor: the providers in order, up/down to move; leads may end in "then whatever's left".
-  function orderEditor(key, label) {
-    ensureDraft();
-    const all = balDraft[key].filter((p) => p !== 'any');
-    const real = all.filter(harnessOn);
-    const left = all.filter((p) => !harnessOn(p)); // switched off: hidden here, kept in the saved order
-    const hasAny = balDraft[key].includes('any');
-    const missing = Object.keys(PROVIDER_NAME).filter((p) => harnessOn(p) && !real.includes(p));
-    // Switched-off providers keep their saved index; the visible ones fill the other slots in their new order.
-    const commit = (list) => {
-      const total = left.length + list.length;
-      const out = new Array(total).fill(null);
-      const rest = [];
-      for (const p of left) { const i = all.indexOf(p); if (i < total && out[i] === null) out[i] = p; else rest.push(p); }
-      const vis = list.slice();
-      for (let i = 0; i < total; i++) if (out[i] === null) out[i] = vis.length ? vis.shift() : rest.shift();
-      balDraft[key] = hasAny && key === 'lead_order' ? [...out, 'any'] : out;
-      paint(orderBlock(key));
-    };
-    const move = (i, d) => { const next = real.slice(); const [item] = next.splice(i, 1); next.splice(i + d, 0, item); commit(next); };
-    return h('div', { class: 'order', 'data-order': key, role: 'group', 'aria-label': label },
-      h('ol', {}, real.map((p, i) => h('li', {}, h('span', { text: PROVIDER_NAME[p] }),
-        h('button', { type: 'button', class: 'small', text: '↑', 'aria-label': `Move ${PROVIDER_NAME[p]} up`, disabled: i === 0, onclick: () => move(i, -1) }),
-        h('button', { type: 'button', class: 'small', text: '↓', 'aria-label': `Move ${PROVIDER_NAME[p]} down`, disabled: i === real.length - 1, onclick: () => move(i, 1) }),
-        real.length > 1 && h('button', { type: 'button', class: 'small', text: 'Remove', 'aria-label': `Leave ${PROVIDER_NAME[p]} out`, onclick: () => commit(real.filter((x) => x !== p)) })))),
-      missing.map((p) => h('button', { type: 'button', class: 'small', text: `+ ${PROVIDER_NAME[p]}`, onclick: () => commit([...real, p]) })),
-      key === 'lead_order' && h('label', { class: 'check' },
-        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...all, 'any'] : all.slice(); paint(orderBlock(key)); } }),
-        h('span', { text: "then whatever's left" })));
-  }
-
-  // The two boxes share one draft. A Save sends its own keys and refreshes only those, so the
-  // other box's unsaved edits stay; both are rebuilt for the reserved provider's name.
-  // `balNote.box` says which box reports it.
-  async function saveBalancing(box, keys, host) {
+  // A Save sends only the balancing box's own keys (the provider orders live on Models) and
+  // rebuilds it for the reserved provider's name.
+  async function saveBalancing(keys, host) {
     try {
       const res = await api('/settings/balancing', { method: 'PUT', body: balancingBody(keys) });
       for (const k of keys) {
@@ -1843,13 +2086,13 @@
       reserveReads++;
       data.reserved_provider = res.reserved_provider;
       inlineErr(host, '');
-      balNote = { box, text: SAVED };
-      paint('lead-order', 'balancing');
+      balNote = SAVED;
+      paint('balancing');
       loadHarnesses(true);
     } catch (e) {
       inlineErr(host, e.message);
-      balNote = { box, text: '' };
-      const status = blockHost(box)?.querySelector('.note');
+      balNote = '';
+      const status = blockHost('balancing')?.querySelector('.note');
       if (status) status.textContent = '';
     }
   }
@@ -1881,7 +2124,7 @@
     rowOf('bal-held-worker').querySelector('.what span').textContent = texts.held;
   }
 
-  const boxNote = (box) => h('p', { class: 'note', role: 'status', 'data-box': box, text: balNote.box === box ? balNote.text : '' });
+  const boxNote = () => h('p', { class: 'note', role: 'status', text: balNote });
 
   const numField = (key, label, hint, max) => h('div', { class: 'row-line' },
     h('div', { class: 'what' }, h('span', { text: label }), h('span', { class: 'hint', text: hint })),
@@ -1952,11 +2195,10 @@
     const reserveLabel = texts.save;
     const within = h('select', { id: 'bal-within', 'aria-label': 'Within a provider', onchange: (ev) => { balDraft.within = ev.target.value; } },
       WITHIN.map(([v, l]) => h('option', { value: v, text: l, selected: v === balDraft.within })));
-    const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing('balancing', ['worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'], settingsBox) });
+    const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing(['within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'], settingsBox) });
     settingsBox.append(
       h('h2', { id: 'bal', text: 'Balancing' }),
       h('div', { class: 'box rows' },
-        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Workers try first' }), h('span', { class: 'hint', text: 'Which provider new workers start on' })), orderEditor('worker_order', 'Worker order')),
         h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Within a provider' }), h('span', { class: 'hint', text: 'How to pick among its accounts' })), h('div', { class: 'ctl' }, within)),
         numField('leave', 'Leave for you (%)', 'An account under this much left stays free for you', 100),
         numField('notify_below', 'Warn me below (%)', 'Shows a dot on Settings when a provider drops under this', 100),
@@ -1966,18 +2208,8 @@
         h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: texts.held })),
           h('div', { class: 'ctl' }, [['worker', 'Workers'], ['reviewer', 'Reviewers'], ['verifier', 'Verifiers'], ['mapper', 'Mappers'], ['designer', 'Designers']].map(([role, label]) =>
             h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'bal-held-' + role, checked: balDraft.held_back[role], 'aria-label': label, onchange: (ev) => { balDraft.held_back[role] = ev.target.checked; } }), h('span', { text: label })))))),
-      h('div', { class: 'actions' }, save), boxNote('balancing'));
+      h('div', { class: 'actions' }, save), boxNote());
     return h('div', { class: 'models balance' }, settingsBox);
-  }
-
-  // The lead provider order, in its own box above Balancing, with its own Save.
-  function renderLeadOrder() {
-    ensureDraft();
-    const row = h('div', { class: 'row-line lead-order' },
-      h('div', { class: 'what' }, h('span', { text: 'Leads try' }), h('span', { class: 'hint', text: 'Which provider a new lead starts on, in order' })),
-      orderEditor('lead_order', 'Lead order'),
-      h('button', { type: 'button', class: 'primary small', id: 'lead-order-save', text: 'Save', onclick: () => saveBalancing('lead-order', ['lead_order'], row) }));
-    return group('models lead-order-box', 'lead-order-heading', 'Lead order', rows(row), boxNote('lead-order'));
   }
 
   // Background state belongs to a section visit, not to its replaceable DOM.
@@ -2276,6 +2508,7 @@
     try {
       const res = await api('/settings/harnesses/' + encodeURIComponent(provider), { method: 'PUT', body: { enabled } });
       if (data && res && res.harnesses) data.harnesses = res.harnesses;
+      if (data && res && res.legacy_lead_diffs) data.legacy_lead_diffs = res.legacy_lead_diffs;
     } catch (e) { hz.rowErr[provider] = e.message; paintHarnesses(); return; }
     if (!enabled && signCard && signCard.provider === provider) closeSignin();
     // Accounts follows the switch at once, unless an account edit is open. An Add account form
@@ -2298,8 +2531,8 @@
   }
 
   function linkReasons(text) {
-    return String(text).split(/(Workers try first|Leads try)/).map((part) => (part === 'Workers try first' || part === 'Leads try'
-      ? h('a', { href: '#usage', text: part }) : part));
+    return String(text).split(/(Lead ladder|Worker ladder|Leads provider order|Settings → Models)/).map((part, i) => (i % 2
+      ? h('a', { href: '#models', text: part }) : part));
   }
 
   // Accounts is the block below Harnesses, so its links scroll there.
@@ -2523,8 +2756,8 @@
     name: renderName, writing: renderWriting, diagrams: renderDiagrams, enter: renderEnter,
     background: () => (bg ? renderBackground() : null),
     harnesses: renderHarnesses, accounts: renderAccounts,
-    usage: renderUsage, 'lead-order': renderLeadOrder, balancing: renderBalancing,
-    tiers: renderTiers, 'lead-models': renderLeadModels, escalation: renderEscalation, others: renderOthers,
+    usage: renderUsage, balancing: renderBalancing,
+    agents: renderAgents, ladders: renderLadders, tiers: renderTiers, escalation: renderEscalation, assistants: renderAssistants,
     conversations: renderConversations,
     'thread-view': renderThreadView, permission: renderPermission, 'lead-names': renderLeadNames,
     templates: renderTemplates, tools: renderProjectTools, 'shared-tools': renderSharedTools,
@@ -2627,7 +2860,7 @@
     if (leaving) {
       if (section === 'you') discardBackground();
       section = next;
-      setNote('', false); styleNote = ''; balNote = { box: null, text: '' };
+      setNote('', false); styleNote = ''; balNote = '';
     }
     const lessons = role && selected !== 'lessons:' + role;
     if (lessons) select('lessons:' + role);
