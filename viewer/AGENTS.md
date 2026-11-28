@@ -22,8 +22,12 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/quiet.js` | The quiet-turn detector: who owes a report, the reminders to an agent and its starter, and the system `needs` card, run on the queue retry timer. |
 | `app/auto-merge.js` | The opt-in auto-merge run after a `check` card is accepted: gates, GitHub readiness re-check, the exact-head REST merge, the attempt record per head and the "Not merged automatically" `needs` card. |
 | `app/background.js` | Shared appearance metadata, bounded authenticated image requests, immutable image storage, revision checks and cleanup, both through the settings file queue; one hub writer per state directory. |
+| `app/theme.js` | Shared theme settings (`mode`, `preset`, `accent`, `revision`), strict validation, revision-checked updates and `GET`/`PUT /settings/theme` routes through the settings file queue. |
 | `pages/background-format.js` | Pure bounded image-container validation and GIF loop normalization shared by hub and local previews. |
 | `pages/background.js`, `pages/background.css` | Saved appearance renderer, token-scoped local preview ownership, Settings editor and opaque content surfaces; signed-in top-level pages only. |
+| `pages/theme-palette.js` | Pure dual-environment curated theme presets (dark + light), WCAG 2.1 accent contrast derivation, and spinner SVG generation. |
+| `pages/theme.js` | Synchronous pre-paint theme bootstrap, monotonic revision gate, `localStorage` cache, OS `prefers-color-scheme` and hub polling sync, and preview token ownership. |
+| `pages/theme-editor.js` | Settings → You Theme editor UI, live preview draft state, hex validation, and revision-checked save/conflict handling. |
 | `app/settings.js` | The Settings store (`settings.json` in the hub state dir), templates and writing style, the `role_layers` text sent at session start, and the style preview; models are read and written only through `codex/model.sh`. |
 | `app/asides.js` | Aside records, prompts, turn lifecycle and graph handling. |
 | `app/handoff.js` | Thread handoffs: the export file format and its validator, history text, the export points and quiet test, the frozen guard, export itself, the handed-off banner, Download again and the `handoffs/` start-up sweep. |
