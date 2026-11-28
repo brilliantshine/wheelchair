@@ -1,6 +1,6 @@
 ---
 slug: assistant-settings
-status: implementing
+status: verifying
 created: 2026-11-28
 ---
 
@@ -368,7 +368,7 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Add assistant `settings` and `setting` CLI commands and tests | `viewer/app/wc.js`, `viewer/test/wc-cli.test.js` | standard / gpt-6.1-terra | `wc-166421be9826-worker` | `node --test viewer/test/wc-cli.test.js` | done |
-| T2 | Export `invokeSettings` adapter, add hub assistant settings dispatcher and tests | `viewer/app/routes.js`, `viewer/app/assistant-actions.js`, `viewer/test/assistant.test.js` | standard / gpt-6.1-terra | `wc-166421be9826-worker-2` | `node --test viewer/test/assistant.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js viewer/test/app-diagram-sensitivity.test.js viewer/test/background.test.js` | in-progress |
+| T2 | Export `invokeSettings` adapter, add hub assistant settings dispatcher and tests | `viewer/app/routes.js`, `viewer/app/assistant-actions.js`, `viewer/test/assistant.test.js` | standard / gpt-6.1-terra | `wc-166421be9826-worker-2` | `node --test viewer/test/assistant.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js viewer/test/app-diagram-sensitivity.test.js viewer/test/background.test.js` | done |
 | T3 | Update assistant protocol rules, API docs, and machine relay/prompt tests | `protocol/app/assistant.md`, `viewer/app/API.md`, `machine/test/assistant.test.js` | standard / gpt-6.1-terra | `wc-166421be9826-worker-3` | `node --test machine/test/name-guard.test.js machine/test/assistant.test.js` | done |
 
 ## Log
@@ -384,3 +384,5 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 - 2026-11-28 — Dispatched T1, T2, T3 in parallel (`gpt-6.1-terra`, standard tier).
 - 2026-11-28 — T1 accepted (band: scout): added assistant `settings` and `setting` CLI commands and unit tests (`wc-cli.test.js` 8/8 passing).
 - 2026-11-28 — T3 accepted (band: scout): updated `protocol/app/assistant.md`, `viewer/app/API.md`, and `machine/test/assistant.test.js` (`name-guard.test.js` + `assistant.test.js` 4/4 passing).
+- 2026-11-28 — Choice: T2, assistant-actions.js: validate optional background opacity revision as a non-negative safe integer, matching background revision semantics.
+- 2026-11-28 — T2 accepted (band: scout): exported `invokeSettings` in `viewer/app/routes.js`, implemented assistant `settings`/`setting` in `viewer/app/assistant-actions.js`, and added tests in `viewer/test/assistant.test.js` (62/62 passing across the 5 validation suites).
