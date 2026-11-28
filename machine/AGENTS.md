@@ -40,6 +40,8 @@ agents own neither tmux nor the machine secret.
 | `lib/mcp-stdio.js` | Standalone stdio MCP server and handshake helper. |
 | `lib/tool-bridge.js` | Exposes script tools through MCP. |
 | `lib/tool-launch.js` | Launches a folder tool MCP server. |
+| `lib/server-relay.js` | Relays a keyed folder tool server's stdin, stdout and stderr, holding back key-bearing output. |
+| `lib/server-lines.js` | Checks one line of keyed server output for keys and decides to pass, replace or hold it back. |
 | `lib/shared-tools.js` | Refreshes, pins and cleans shared tool copies. |
 | `templates/tools/` | Script and server tool templates. |
 | `lib/project-mcp.js` | Reads project MCP servers (including the `wheelchair.windows` marks) and exposes shared document and entry validation. |
