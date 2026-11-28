@@ -319,7 +319,7 @@ npm --prefix viewer run test:browser -- test/app-project-tools.spec.js
 
 ### Round 4 — 2026-11-28
 
-**Lanes:** (pending — paused at 3-round review budget)
+**Lanes:** (pending)
 
 **Changed since Round 3:**
 - S2.1, S2.2 & S2.4: `resolveProgram` resolves symlinks (`fs.realpathSync`); set `windows: true` for unwrapped `mcp-for-unity` servers too; added explicit S2 test cases and validation commands.
@@ -348,3 +348,4 @@ npm --prefix viewer run test:browser -- test/app-project-tools.spec.js
 - 2026-11-28: Completed Round 1 triage (18 findings, all upheld and resolved); advancing to Round 2.
 - 2026-11-28: Completed Round 2 triage (13 findings, all upheld and resolved); advancing to Round 3.
 - 2026-11-28: Completed Round 3 triage (10 findings, all upheld and resolved); paused at 3-round review budget and posted `needs` card.
+- 2026-11-28: User chose to keep all five items together and continue review; budget reset, starting Round 4.
