@@ -74,19 +74,19 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - Set `data = next;` and `if (next.settings_revision) lastRev.settings = next.settings_revision;`.
      - **Invalidate `sharedProjects` on any accepted snapshot whose `saved_dirs` changed**, regardless of which category is currently open (`if (prev && JSON.stringify(prev.saved_dirs) !== JSON.stringify(next.saved_dirs)) { sharedProjectsGen += 1; sharedProjects = null; }`).
      - If `reconcile`, run `reconcileVisibleBlocks(skipBlocks)` (§3) against `renderedSlice` so even a whole-page `reload()` after a local save surfaces any external changes that arrived in the same snapshot.
-     - **Dispatch secondary refreshes inside `applySettingsSnapshot` whenever `prev` exists** (so non-poll rereads like `readReserved()` or `reload()` never acknowledge a newer revision without updating dependent views):
-       - If `section === 'providers'` and (`JSON.stringify(prev.harnesses) !== JSON.stringify(next.harnesses)` or `JSON.stringify(prev.accounts) !== JSON.stringify(next.accounts)`), call `refreshStatus()`.
+     - **Dispatch secondary refreshes inside `applySettingsSnapshot` whenever `prev` exists** (so non-poll rereads like `readReserved()` never acknowledge a newer revision without updating dependent views):
+       - If `section === 'providers'` and `source !== 'reload'` (account add/edit/delete/restore already call `refreshUsage()` and `refreshStatus()` explicitly, so skipping `source === 'reload'` avoids duplicate `?fresh=1` machine reads) and (`JSON.stringify(prev.harnesses) !== JSON.stringify(next.harnesses)` or `JSON.stringify(prev.accounts) !== JSON.stringify(next.accounts)`), call `refreshStatus()`.
        - If `section === 'usage'`: if `accounts` or `harnesses` changed, call `refreshUsage()`; if `source !== 'reserved'` and any balancing key or `provider_orders` / `lead_order` / `worker_order` changed, call `readReserved()`.
        - If `section === 'shared-tools'`: if `sharedProjects === null`, call `loadSharedProjects()`; if `prev.shared_tools_repo !== next.shared_tools_repo` OR `JSON.stringify(prev.saved_dirs) !== JSON.stringify(next.saved_dirs)`, trigger `refreshSharedKeys(null)` (guarded by §3).
      - Return `true`.
    - **All `/settings` rereads pass `startGen = localWriteGen` (captured immediately before `await api('/settings')`) into `applySettingsSnapshot`**:
      - `reload(keep)` captures `const startGen = localWriteGen;` before `api('/settings')` and applies `fresh` via `applySettingsSnapshot(fresh, { reconcile: true, startGen, source: 'reload' })`. Account add/edit/delete/restore rereads go through `reload(false)`.
-     - `refreshModels()` (`settings.js:250-268`) captures `const startGen = localWriteGen;` before `api('/settings')` and applies `fresh` via `applySettingsSnapshot(fresh, { reconcile: true, startGen, skipBlocks: ['tiers'], source: 'models' })`: if accepted, it preserves the existing cell-level redraw (`redrawCell(provider, slot)` for `unreadCells`, never repainting untouched Tiers cells when only `model_options` changed, per `app-settings.spec.js:1398`) and updates `renderedSlice.set('tiers', JSON.stringify(blockSlice('tiers', data)))`.
+     - `refreshModels()` (`settings.js:250-268`) captures `const startGen = localWriteGen;` before `api('/settings')`. Compare `prev = data` against `fresh`: if the only changes in Tiers (`models`, `model_options`, `heads_up`, `harnesses`) are `model_options` and the locally saved `unreadCells` entries, pass `skipBlocks: ['tiers']` to `applySettingsSnapshot(fresh, { reconcile: true, startGen, skipBlocks: ['tiers'], source: 'models' })`, redraw ONLY the saved `unreadCells` via `redrawCell(provider, slot)` (preserving `app-settings.spec.js:1398`), and update `renderedSlice.set('tiers', JSON.stringify(blockSlice('tiers', data)))`. If `fresh` ALSO changed any other tier cell, `heads_up`, or `harnesses`, omit `skipBlocks` so `reconcileVisibleBlocks` reconciles `tiers` normally (preserving `.other` if dirty).
      - `refreshDiffs()` (`settings.js:680-686`), `legacyNotice`'s `use` reread (`settings.js:866`), and `readReserved()` (`settings.js:2138-2151`, passing `source: 'reserved'`) each capture `startGen = localWriteGen` before `api('/settings')` and apply via `applySettingsSnapshot(fresh, { reconcile: true, startGen, source })`.
 
 2. **Non-blocking per-domain polling loop via `window.wcPoller`**
    - Maintain `let lastRev = { settings: null, diagram: null, shared_keys: null };`, `let revRunning = false;`, and per-domain in-flight flags `const domainRunning = { settings: false, diagram: false, shared_keys: false };` so a slow machine read (such as `/shared-keys/read`) never stalls `settings` or `diagram` polling on later ticks.
-   - On initial page load (`settings.js:2914`), fetch `GET /settings` (required) and `GET /settings/revision` (best-effort: if it fails, initialize `lastRev = { settings: data.settings_revision || null, diagram: null, shared_keys: null }` so the first successful poll syncs it instead of breaking page load). Start one `window.wcPoller(pollSettings, 5000)` (pauses while hidden and fires once on tab visible).
+   - On initial page load (`settings.js:2914`), fetch `GET /settings` only (no separate startup `/settings/revision` call) and initialize `lastRev = { settings: data.settings_revision || null, diagram: null, shared_keys: null }`. Secondary tokens (`diagram`, `shared_keys`) are acknowledged only after their respective reads succeed (or on the first poll when that category is not shown). Start one `window.wcPoller(pollSettings, 5000)` (pauses while hidden and fires once on tab visible).
    - On each `pollSettings()` tick:
      1. Return immediately if `!data || revRunning || inFlightWrites > 0`.
      2. Set `revRunning = true` and `const tickGen = localWriteGen;`.
@@ -127,7 +127,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
        - When a template or `'new'` is selected: store `draftBaseline = structuredClone(draft)` in `select(id)`. Dirty when `confirming || JSON.stringify(draft) !== JSON.stringify(draftBaseline)`. An unedited open template editor is clean and refreshes automatically.
      - `thread-view`: `folderDraft !== null && folderDraft !== folderBaseline` (set `folderBaseline = data.default_project_folder || ''` when `folderRow` initializes or saves).
      - `tiers`: `Boolean(blockHost('tiers')?.querySelector('.other input'))` (custom "Other" model input open).
-     - `accounts`: separate `accountsDirty()` from focus: `Boolean(editing || adding || (signCard && signCard.waiting && signCard.el.isConnected && blockHost('accounts')?.contains(signCard.el)))`. Persist rename/plan form input values on `editing` (just as `adding` already persists `adding.name`/`adding.plan`) so rebuilding `accounts` on category re-entry restores typed account edits. If an `editing` or `adding` draft's provider was disabled externally while away, do **not** silently drop or mutate `adding.provider`/`editing`: keep `staleBlocks.add('accounts')` and render the unavailable draft's inline notice + Cancel button (or keep it visible under Accounts with "This provider was turned off elsewhere — Load latest to refresh or turn it back on") until the user clicks `Load latest` or `Cancel`.
+     - `accounts`: separate `accountsDirty()` from focus: `Boolean(editing || adding || (signCard && signCard.waiting && signCard.el.isConnected && blockHost('accounts')?.contains(signCard.el)))`. Persist rename/plan form input values on `editing` (just as `adding` already persists `adding.name`/`adding.plan`) so rebuilding `accounts` on category re-entry restores typed account edits. If an `editing` or `adding` draft's provider was disabled externally (`!harnessOn(provider)`) OR (for `editing`) the edited account was removed externally (`!(data.accounts || []).some((a) => a.id === editing.id)`): do **not** silently drop or mutate `adding.provider`/`editing`; keep `staleBlocks.add('accounts')` and render one inline notice at the top of `accounts` ("Your draft's provider or account is no longer available — Load latest to refresh, or Cancel to dismiss.") with a `Cancel` button that clears `editing`/`adding` and repaints.
      - `harnesses`: `Boolean(hz.confirmOff)`.
      - `background`: `Boolean(backgroundVisit && (backgroundVisit.dirty || backgroundVisit.pending || backgroundVisit.saving))`.
      - `shared-tools`: any `<input>` inside `blockHost('shared-tools')` with non-empty `.value` OR any pending entry in `sharedKeyDraft` (§4.2) for `sharedMachine`. Before `readHash` leaves `shared-tools`, snapshot any non-empty key inputs into `sharedKeyDraft` so returning to `shared-tools` restores them via `paintKeys()`.
@@ -220,15 +220,18 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
         - On `reload` success: build `survivingIds = new Set(lessonList(role).map((item) => item.id))`; reset `edit.baseList = structuredClone(lessonList(role))`; carry forward into `edit.texts` ONLY surviving ids whose `prevTexts[id]` actually differed from `prevBaseItem.text` (never reverted equal values); retain `edit.removals` for surviving ids; collect edited texts for removed ids (`!survivingIds.has(id)` where `prevTexts[id] !== undefined && prevTexts[id] !== prevBaseItem.text`); clear `edit.saving = false`; if `lessonEdit === edit`, clear `staleBlocks.delete('templates')`, repaint `templates`, and display an inline error naming the removed lesson edit text(s) so Collin can copy or re-add them.
 
 2. **Shared-key `change()` 409 recovery and draft persistence (`settings.js:2738-2749`)**
-   - Maintain `let sharedKeyDraft = { machine: null, values: {}, addName: '', addValue: '' };`.
-   - Snapshot all non-empty inputs inside `keyHost` into `sharedKeyDraft` for `sharedMachine` before leaving `shared-tools`, on `error.status === 409` in `change()`, AND before calling `await readKeys({ fromRefresh: false })` on a **successful** `change()` (removing only the just-saved key from `sharedKeyDraft.values` or clearing `addName`/`addValue` if saved from `.pt-addkey`, so other unsaved key inputs typed during the current visit are never wiped when one key is saved!).
+   - Maintain `let sharedKeyDraft = { machine: null, revision: null, values: {}, addName: '', addValue: '' };`.
+   - Snapshot all non-empty inputs inside `keyHost` (along with the current machine-store `revision`) into `sharedKeyDraft` for `sharedMachine` before leaving `shared-tools`.
+   - In `change(action, payload, errorEl)`: capture `const targetMachine = machine.value || 'hub';` at submission time. When the mutation resolves or returns 409, if `machine.value !== targetMachine` (the user switched machines mid-request), do not mutate the new machine's DOM or `sharedKeyDraft`.
+   - To avoid losing text typed or cleared while `await readKeys({ fromRefresh: false })` is in flight: pass `{ excludeKey }` (on single-key save success) or `{ excludeAdd: true }` (on Add-a-key save success) into `readKeys` -> `paintKeys`, and snapshot the live `keyHost` inputs into `sharedKeyDraft` **immediately before** `keyHost.replaceChildren(...)` inside `paintKeys()` (omitting only the submitted key or add fields that just succeeded!).
+   - On category re-entry (`readKeys` for `selected` when `sharedKeyDraft.machine === selected` has pending entries): if `sharedKeyDraft.revision !== null && result.revision !== sharedKeyDraft.revision`, keep `revision = sharedKeyDraft.revision` (so a subsequent Save still receives 409 instead of silently overwriting the external change) and add `'shared-tools'` to `staleBlocks` (showing `.stale-banner`).
    - Inside `paintKeys()` when `sharedKeyDraft.machine === selected`:
      1. Restore `sharedKeyDraft.addName` and `sharedKeyDraft.addValue` into `.pt-addkey`'s name and value inputs first.
      2. Restore each `sharedKeyDraft.values[keyName]` into its matching `.pt-key[data-key]` password input.
      3. For any key in `sharedKeyDraft.values` with no matching row (removed externally): if `.pt-addkey`'s name and value inputs are both empty, prefill them with the first orphaned key (moving it out of `values` into `addName`/`addValue`); keep any remaining orphaned keys in `sharedKeyDraft.values` and list their names in an inline `.pt-warn` note.
      4. If a recovery `readKeys()` fails (network/machine error), keep `sharedKeyDraft` intact so the next successful `readKeys()` for the same machine restores the draft instead of losing it.
    - Only `Load latest` or switching to another machine clears all of `sharedKeyDraft`.
-   - On 409 in `change()`, prepend the 409 alert message at the top of `keyHost` after `await readKeys({ fromRefresh: false })`.
+   - On 409 in `change()` (for the matching `targetMachine`), prepend the 409 alert message at the top of `keyHost` after `await readKeys({ fromRefresh: false })`.
 
 ### §5. Validation
 
@@ -250,7 +253,7 @@ Targeted commands covering all touched files (full-run is handled before push pe
    ```
    Required assertions to add/update:
    - External setting change (made via API while Settings is open) automatically updates a clean unfocused block within one poll interval without manual reload — covering main settings (`name`, `writing`, `balancing`, `models` including `lead_order`/`worker_order`/`other_agents`/`review_families`, `templates` open by default, `accounts`/`harnesses`, `diagrams`, and `shared-tools` repo/keys, including `saved_dirs` changed while another category is open).
-   - Focused text/select control in a clean block defers repaint until focus leaves (or transitions to `.stale-banner` if the user types before blurring), then repaints cleanly without stealing focus; clicking a button, native checkbox (e.g., balancing `held_back`), toggle, or `<summary>` does not hold stale values after an external update and preserves focus on exact-match controls (including diagram radios, account buttons, and shared-key buttons).
+   - Focused text/select control in a clean block defers repaint until focus leaves (or transitions to `.stale-banner` if the user types before blurring), then repaints cleanly without stealing focus; focusing a native checkbox in a clean block (without changing it, or clicking an immediate-save checkbox like a ladder's "then whatever's left") or clicking a button, toggle, or `<summary>` does not hold stale values after an external update and preserves focus on exact-match controls (including diagram radios, account buttons, and shared-key buttons).
    - Unsaved draft in a dirty block (tested on `name`, `writing` including pending Never say input, `balancing`, `templates`, `lessons` including leaving and returning after external removal, `accounts` including rename/plan draft and `Load latest` closing a waiting sign-in card, `shared-tools` key inputs) is preserved when an external change arrives (including across category switches), shows the inline `Updated elsewhere.` banner with `Load latest`, and clicking `Load latest` discards the draft and paints the newer values (while clicking `Save` still saves the draft, including shared-key 409 draft preservation when a key is modified or removed externally).
    - Local save ordering: a slow in-flight refresh GET or delayed `refreshModels()` / `refreshDiffs()` / `readReserved()` / `loadHarnesses()` response never overwrites a newer local save or newer snapshot.
    - `app-lessons.spec.js`: update the existing 409 conflict test (`viewer/test/app-lessons.spec.js:111-117`) to assert retained surviving edits, reloaded current list, and visible lost text, AND add a case that removes the lesson through a real hub mutation route so the revision poll runs before Save and 409 recovery still preserves the lost text (and reverted edits are not treated as new edits).
@@ -261,6 +264,7 @@ Targeted commands covering all touched files (full-run is handled before push pe
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| If a user clicks Save on Lessons and switches to another lesson role or template during the ~50 ms local HTTP request right as another tab deleted that exact lesson, the 409 removed-text notice is not persisted across role switches | Rare path per `protocol/app/realism.md` (requires two unlikely concurrent events inside a sub-second window); `saveLessons()` still guards `lessonEdit === edit` so the newly selected editor is never corrupted | review-round-5 |
 
 ## Check Once Built
 
@@ -365,11 +369,34 @@ Targeted commands covering all touched files (full-run is handled before push pe
 
 ### Round 5 — 2026-11-28
 
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
+
 **Changed since Round 4:**
 - Split `withMutationRequest` (bumps `localWriteGen` only on actual mutation requests) from `withLocalWrite` (pauses polling across save+reread), moved secondary-refresh dispatch inside `applySettingsSnapshot`, and passed `skipBlocks: ['tiers']` from `refreshModels()` to preserve cell-level redraws (§2.1).
 - Excluded native checkboxes/radios/buttons from `blockFocused` and wrapped `paintKeys()` in `swapKeepingFocus` with stable `data-focus` keys (§3.1, §5).
 - Deferred `lessonEdit.baseList` initialization until `data` loads (safe for direct lesson hash links), captured `const edit = lessonEdit` in `saveLessons()`, and kept unavailable Accounts drafts visible with notice + Cancel when their provider is disabled externally (§3.2, §4.1).
 - Guarded `revision` assignment in `readKeys()` before updating it on skipped refreshes, and snapshotted remaining live shared-key inputs before `readKeys()` on successful single-key saves (§3.4, §4.2).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Accounts unavailable-draft rule gave two designs joined by "or" | upheld | Chose one inline notice at top of `accounts` with Cancel button in Spec §3.2 |
+| intent | minor | Secondary refresh in `applySettingsSnapshot` duplicates `refreshStatus()` on local account save (`source: 'reload'`) | upheld | Skipped `providers` `refreshStatus()` dispatch when `source === 'reload'` in Spec §2.1 |
+| mechanics | blocking | `refreshModels()` skipping `tiers` could acknowledge external changes to other tier cells, `heads_up`, or `harnesses` | upheld | Pass `skipBlocks: ['tiers']` only when Tiers changed solely on `model_options` and saved `unreadCells`; otherwise reconcile `tiers` normally in Spec §2.1 |
+| mechanics | major | Startup path did not specify token acknowledgment (`lastRev.settings` from snapshot; secondary tokens only after successful reads) | upheld | Removed startup `/settings/revision` fetch; seed `lastRev.settings` from `data.settings_revision` and acknowledge secondary tokens only after successful reads in Spec §2.2 |
+| mechanics | major | Shared-key drafts survived category navigation without their original write `revision` | upheld | Stored `revision` on `sharedKeyDraft` and kept old `revision` + stale banner on re-entry if machine revision changed in Spec §4.2 |
+| mechanics | major | Snapshotting shared-key inputs before `await readKeys()` loses edits typed/cleared during the read | upheld | Snapshot live `keyHost` inputs immediately before `keyHost.replaceChildren(...)` inside `paintKeys()` (omitting only the submitted key/add fields) in Spec §4.2 |
+| mechanics | major | Shared-key recovery snapshotted against current `sharedMachine` rather than submitting `targetMachine` | upheld | Captured `targetMachine` at `change()` start and ignored DOM/draft updates if machine changed mid-request in Spec §4.2 |
+| mechanics | major | Lesson 409 after switching roles mid-request does not persist removed-text notice when returning | accepted-risk | Rare path per `realism.md` (sub-second race between clicking Save, switching roles, and external deletion); recorded in Accepted Risks (`review-round-5`) |
+| mechanics | major | Unavailable Accounts draft rule missed an edited account deleted externally while its provider stays enabled | upheld | Extended unavailable-draft notice in Spec §3.2 to cover deleted account id too |
+| mechanics | minor | Checkbox focus test example used `held_back` click which makes `balDraft` dirty | upheld | Updated Spec §5 to test a focused unchanged checkbox or immediate-save ladder checkbox |
+
+### Round 6 — 2026-11-28
+
+**Changed since Round 5:**
+- Removed startup `/settings/revision` fetch (`lastRev.settings` seeded from `data.settings_revision`; secondary tokens acknowledged only after successful reads), skipped `providers` `refreshStatus()` on `source: 'reload'`, and restricted `refreshModels()`'s `skipBlocks: ['tiers']` to snapshots where only `model_options` and saved `unreadCells` changed (§2.1–§2.2).
+- Unified the unavailable Accounts draft rule into one inline notice + Cancel button covering both disabled providers and deleted accounts (§3.2).
+- Updated shared-key draft recovery to store original `revision` across category navigation, bind `change()` completion to `targetMachine`, and snapshot live `keyHost` inputs inside `paintKeys()` right before DOM replacement (§4.2).
+- Recorded sub-second lesson-role-switch mid-Save 409 as a rare-path Accepted Risk (`review-round-5`), and fixed the clean checkbox focus example in §5.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
@@ -394,3 +421,4 @@ Targeted commands covering all touched files (full-run is handled before push pe
 - 2026-11-28: Triaged Review Round 3 (11 findings: 2 intent — 1 major, 1 minor; 9 mechanics — 4 blocking, 3 major, 2 minor; all 11 upheld) and applied all fixes to Spec. Hit the 3-round review budget without a clean round; posted budget `needs` card for Collin.
 - 2026-11-28: Collin chose "Run another review pass (Thorough)" (budget reset); launching Round 4.
 - 2026-11-28: Triaged Review Round 4 (intent: no findings; mechanics: 10 findings — 3 blocking, 4 major, 3 minor; all 10 upheld) and updated Spec for Round 5.
+- 2026-11-28: Triaged Review Round 5 (intent: 2 minor upheld; mechanics: 1 blocking, 5 major, 1 minor upheld, 1 rare-path major accepted-risk) and updated Spec for Round 6.
