@@ -58,6 +58,22 @@ test('reader reports decoded string ranges and complete members', () => {
   assert.equal(readLine(Buffer.from('{"id":1,"result":'), { prefix: true }).members.id[0], 6);
   assert.equal(readLine(Buffer.from('{"id":1'), { prefix: true }).members.id, undefined);
 });
+test('reader decodes UTF-8 and escapes byte-for-byte', () => {
+  const cases = ['é', '\\u00e9', '\\uD83D\\uDE00', '\\"', '\\\\', '\\/', '\\b', '\\f', '\\n', '\\r', '\\t', 'plain\\n\\u00e9\\uD83D\\uDE00end'];
+  for (const raw of cases) {
+    const tokens = [];
+    const result = readLine(Buffer.from('{"result":"' + raw + '"}'), { visit: t => tokens.push(t) });
+    assert.equal(result.wellFormed, true, raw);
+    assert.deepEqual(tokens[1].text, Buffer.from(JSON.parse('"' + raw + '"')), raw);
+  }
+  for (const raw of ['\\uD83D', '\\uDE00']) {
+    const tokens = [];
+    const result = readLine(Buffer.from('{"result":"' + raw + '"}'), { visit: t => tokens.push(t) });
+    assert.equal(result.wellFormed, true, raw);
+    assert.deepEqual(tokens[1].text, Buffer.from(String.fromCodePoint(raw === '\\uD83D' ? 0xd83d : 0xde00)));
+    assert.deepEqual(tokens[1].text, Buffer.from([0xef, 0xbf, 0xbd]));
+  }
+});
 test('large clean replies and long escape runs stay bounded', () => {
   const c = createLineChecker({ name: 'demo', values: ['e3' + 'x'.repeat(38), 'n6' + 'y'.repeat(38)] });
   for (const payload of ['A'.repeat(8 * 1024 * 1024), 'A'.repeat(4 * 1024 * 1024) + '\\/' + 'A'.repeat(4 * 1024 * 1024), '\\n\\"é'.repeat(2796203)]) {

@@ -3,7 +3,21 @@ const { findSpellings, escapeLike } = require('./key-spell');
 const { isUtf8 } = require('node:buffer');
 const LINE_LIMIT = 32 * 1024 * 1024, LINE_BUDGET = 64000000;
 const exhausted = Symbol('budget');
-const SIMPLE_ESCAPES = { 34: '"', 92: '\\', 47: '/', 98: '\b', 102: '\f', 110: '\n', 114: '\r', 116: '\t' };
+const SIMPLE_ESCAPES = new Uint8Array(128);
+SIMPLE_ESCAPES[34] = 34; SIMPLE_ESCAPES[92] = 92; SIMPLE_ESCAPES[47] = 47;
+SIMPLE_ESCAPES[98] = 8; SIMPLE_ESCAPES[102] = 12; SIMPLE_ESCAPES[110] = 10;
+SIMPLE_ESCAPES[114] = 13; SIMPLE_ESCAPES[116] = 9;
+
+function hex4(buf, p) {
+  let value = 0;
+  for (let i = 0; i < 4; i++) {
+    const c = buf[p + i];
+    const digit = c >= 48 && c <= 57 ? c - 48 : c >= 65 && c <= 70 ? c - 55 : c >= 97 && c <= 102 ? c - 87 : -1;
+    if (digit < 0) return -1;
+    value = value * 16 + digit;
+  }
+  return value;
+}
 
 // Returns { wellFormed, members }; members maps top-level names to [start,end].
 // visit({ start, end, name, text, top }) receives one decoded string Buffer at a time.
@@ -13,7 +27,7 @@ function readLine(buf, { prefix = false, visit = () => {} } = {}) {
   const ws = () => { while (p < buf.length && (buf[p] === 32 || buf[p] === 10 || buf[p] === 13 || buf[p] === 9)) p++; };
   function string(name, top) {
     const start = p++; let segment = p, decoded = null, used = 0;
-    function append(part) {
+    function ensure() {
       if (!decoded) {
         let closing = p;
         while (closing < buf.length) {
@@ -22,7 +36,23 @@ function readLine(buf, { prefix = false, visit = () => {} } = {}) {
         }
         decoded = Buffer.allocUnsafe(closing - start);
       }
+    }
+    function append(part) {
+      ensure();
       part.copy(decoded, used); used += part.length;
+    }
+    function appendCodePoint(code) {
+      ensure();
+      if (code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
+      if (code < 0x80) decoded[used++] = code;
+      else if (code < 0x800) {
+        decoded[used++] = 0xc0 | (code >> 6); decoded[used++] = 0x80 | (code & 0x3f);
+      } else if (code < 0x10000) {
+        decoded[used++] = 0xe0 | (code >> 12); decoded[used++] = 0x80 | ((code >> 6) & 0x3f); decoded[used++] = 0x80 | (code & 0x3f);
+      } else {
+        decoded[used++] = 0xf0 | (code >> 18); decoded[used++] = 0x80 | ((code >> 12) & 0x3f);
+        decoded[used++] = 0x80 | ((code >> 6) & 0x3f); decoded[used++] = 0x80 | (code & 0x3f);
+      }
     }
     while (p < buf.length) {
       const c = buf[p++];
@@ -40,14 +70,14 @@ function readLine(buf, { prefix = false, visit = () => {} } = {}) {
       if (p >= buf.length) return null;
       const e = buf[p++];
       if (e === 117) {
-        if (p + 4 > buf.length || !/^[0-9a-fA-F]{4}$/.test(buf.toString('ascii', p, p + 4))) return null;
-        let code = parseInt(buf.toString('ascii', p, p + 4), 16); p += 4;
-        if (code >= 0xd800 && code <= 0xdbff && buf[p] === 92 && buf[p + 1] === 117 && p + 6 <= buf.length && /^[0-9a-fA-F]{4}$/.test(buf.toString('ascii', p + 2, p + 6))) {
-          const low = parseInt(buf.toString('ascii', p + 2, p + 6), 16);
+        if (p + 4 > buf.length) return null;
+        let code = hex4(buf, p); if (code < 0) return null; p += 4;
+        if (code >= 0xd800 && code <= 0xdbff && buf[p] === 92 && buf[p + 1] === 117 && p + 6 <= buf.length) {
+          const low = hex4(buf, p + 2);
           if (low >= 0xdc00 && low <= 0xdfff) { code = 0x10000 + (code - 0xd800) * 1024 + low - 0xdc00; p += 6; }
         }
-        append(Buffer.from(String.fromCodePoint(code)));
-      } else if (SIMPLE_ESCAPES[e] !== undefined) append(Buffer.from(SIMPLE_ESCAPES[e]));
+        appendCodePoint(code);
+      } else if (e < SIMPLE_ESCAPES.length && SIMPLE_ESCAPES[e]) { ensure(); decoded[used++] = SIMPLE_ESCAPES[e]; }
       else return null;
       segment = p;
     }
