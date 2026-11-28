@@ -499,3 +499,5 @@ Also review the rendered `protocol/tools.md` edits per `CONTRIBUTING.md:93-95` t
 - 2026-11-28 — Choice: R2-A, `machine/lib/http-tool-proxy.js`: send client replies without 404 recovery, avoiding a recovery wait for a response to an in-flight server request.
 - 2026-11-28 — Choice: R2-A, `machine/lib/mcp-http.js`: distinguish `JSON.parse` `SyntaxError` from callback exceptions so callback errors reject consistently.
 - 2026-11-28 — R2-A accepted (band: self): client replies during `initialize` forward immediately without deadlocking, and `httpHandshake` handles JSON `null` cleanly with `DELETE` teardown (`http-tool-proxy.test.js` 12/12, `wc-tool.test.js` 15/15 pass).
+- 2026-11-28 — Verification Attempt 3 (`8b0b03b9`): Claude verifier PASS, GPT verifier FAIL (1 rare path recorded in Accepted Risks under `verification-3`, 3 gaps opened in `REMEDIATION-3.md`).
+- 2026-11-28 — R3-A accepted (band: self): `http-tool-proxy.js` recovery `initialize` and `mcp-http.js` `httpHandshake` answer server `ping` requests (`http-tool-proxy.test.js` 14/14, `wc-tool.test.js` 15/15 pass; choices: none).
