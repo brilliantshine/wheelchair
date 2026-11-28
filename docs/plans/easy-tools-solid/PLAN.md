@@ -1,6 +1,6 @@
 ---
 slug: easy-tools-solid
-status: ready-for-review
+status: approved
 created: 2026-11-28
 ---
 
@@ -35,6 +35,21 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | Skip Windows-side stdio and script folder tools in sandboxed Codex sessions on WSL with a warning instead of running them unconfined. | Linux `bwrap` cannot confine Windows executables, and `machine/lib/win.js:454` already rejects Windows `run`/`start` in sandboxed sessions to preserve the worktree write boundary. | review-round-1 |
 
 ## Spec
+
+```mermaid
+flowchart LR
+  A["Discover folder tools"] --> B{"Tool type"}
+  B -- "Script" --> C["Script bridge (keys + redaction)"]
+  B -- "Stdio server" --> D["Server launcher (drains stdout, keys + redaction)"]
+  B -- "HTTP server (no keys)" --> E["Direct HTTP entry (WSL forward if Windows)"]
+  B -- "HTTP server (with keys)" --> F["Local stdio-to-HTTP proxy (keys + redaction + 404 recovery)"]
+  C --> G{"Sandboxed Codex?"}
+  D --> G
+  G -- "Yes (Linux tool)" --> H["Run tool inside Codex sandbox (worktree writable)"]
+  G -- "Yes (Windows tool on WSL)" --> I["Skip with warning"]
+  G -- "No (Windows tool on WSL)" --> J["Wait on Windows readiness handoff + pass keys"]
+  G -- "No (Linux/macOS)" --> K["Run tool directly"]
+```
 
 ### Non-goals
 - Do not change folder-tool discovery roots (`.wheelchair/tools/<name>`), project-over-shared precedence, or the Settings shared-repo pinning flow.
@@ -90,7 +105,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
        - If the session is sandboxed Codex (`adapter.sandboxed?.(session)`), exclude every script where `isWindowsExecutable(...)` is true from `scriptRows` and add a warning per skipped script: `tool <name>: skipped in sandboxed Codex (Windows programs cannot run inside Codex's Linux sandbox; set Codex to unrestricted in Settings to use it)`.
        - Otherwise, mark each Windows-side script row (`row.windows = true`). If any script in `scriptRows` has `row.windows === true`, `bridgeEntry` passes `--win-ready-file <readyFile>` to `tool-bridge.js`, passes `--win` right after each Windows script's `--tool <dir>` (so `tool-bridge.js` uses the service's exact classification rather than re-running `isWindowsProgram` with a default mount), and sets `windows: true, wrapped: true` on the returned bridge `extraServers` object.
        - Export `waitReady(readyFile, { timeoutMs, signal })` from `machine/lib/win-tool-proxy.js` reusing its ready-file polling (`waiting` / `ready` / `failed`). If `readyFile` stays missing or `waiting` past `timeoutMs` or `signal` aborts, reject with a timeout/cancelled error.
-       - When `tool-bridge.js` runs a script flagged `--win`, it awaits `waitReady(winReadyFile, { timeoutMs: tool.timeout_seconds * 1000 })`, deducts elapsed wait time from the script's remaining `timeout_seconds` (failing with an MCP error if readiness fails or time runs out), sets `WHEELCHAIR_WINDOWS_PROJECT` from the ready file's Windows path, and appends `WHEELCHAIR_WINDOWS_PROJECT/p` plus each declared key name in `entry.keys` to `env.WSLENV` (colon-delimited, without duplicates) before calling `runScript`.
+       - When `tool-bridge.js` runs a script flagged `--win`, it awaits `waitReady(winReadyFile, { timeoutMs: tool.timeout_seconds * 1000 })`, deducts elapsed wait time from the script's remaining `timeout_seconds` (failing with an MCP error if readiness fails or time runs out), sets `WHEELCHAIR_WINDOWS_PROJECT` from the ready file's Windows path, and appends bare `WHEELCHAIR_WINDOWS_PROJECT` (matching `machine/lib/win.js:426-430` and `machine/lib/win-tool-proxy.js:97-105`, since the value is already a Windows path) plus each declared key name in `entry.keys` to `env.WSLENV` (colon-delimited, without duplicates) before calling `runScript`.
      - **Windows-marked HTTP folder servers (gated on `this.win?.detected?.kernel && tools && connectors.manifest(input.cli).wrapProjectTools`, independent of `wsl` interop — matching `.mcp.json` at `machine/service.js:1049`):**
        - When `row.tool.windows === true`, resolve `target = windowsTarget({ type: 'http', url: row.tool.url })`, acquire `port = await this.win.forwards.get(target.port)`, rewrite the URL with `rewriteUrl(row.tool.url, port)`, and pass the rewritten URL (for unkeyed HTTP entries directly; for keyed HTTP entries via `--url-override <rewrittenUrl>` to `http-tool-proxy.js`), marking `windows: false, wrapped: false` on the `extraServers` object (matching `.mcp.json` HTTP forwards at `connectors/common.js:21-22`, which do not trigger Windows worktree sync). If forwarding fails, leave that server out and add a problem line (`tool <name>: couldn't reach Windows (<reason>); left out of this session`).
 3. **Connector `loaded`, Windows Unity prompt, `WSLENV` reservation & Codex passthrough:**
@@ -140,7 +155,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
    - For `kind: "server"`, require **exactly one** of `start` (non-empty array of non-empty strings) or `url` (string parsing as an `http:` or `https:` URL with no whitespace or control characters). If both are present, fail with `tool.json cannot have both "start" and "url"`; if neither is present, fail with `tool.json is missing "start"` (keeping existing test expectations intact).
    - When `url` is present:
      - Record `tool.url` and `tool.transport = 'http'` (`start` servers get `tool.transport = 'stdio'`).
-     - Optional `headers`: plain object (not array/null), at most 20 entries; every key is a non-empty valid HTTP header token (`/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/`) with no case-insensitive duplicates; every value is a non-empty string with no `\r` or `\n`. Reject reserved transport headers `accept`, `content-type`, `mcp-protocol-version`, and `mcp-session-id` (case-insensitively) with `tool.json has an invalid "headers"`.
+     - Optional `headers`: plain object (not array/null), at most 20 entries; every key is a non-empty valid HTTP header token (`/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/`) with no case-insensitive duplicates; every value is a non-empty string with no `\r` or `\n` that passes Node's `http.validateHeaderValue(key, value)` (rejecting NUL and non-Latin-1 characters at discovery time). Reject reserved transport headers `accept`, `content-type`, `mcp-protocol-version`, and `mcp-session-id` (case-insensitively) with `tool.json has an invalid "headers"`.
      - Placeholder check on `headers` values: every `${...}` occurrence must match `\$\{([A-Za-z_][A-Za-z0-9_]*)\}` (embedded placeholders like `Bearer ${API_KEY}` are allowed). Every referenced key name must appear in `tool.keys`; any unclosed `${`, invalid placeholder syntax, or undeclared key fails validation with `tool.json has an invalid "headers"`.
      - Optional `windows`: boolean (`true` or `false`). If `true`, `windowsTarget({ type: 'http', url: tool.url })` must succeed (localhost HTTP URL); otherwise fail validation with `tool.json has an invalid "windows"`.
    - Reject `headers` or `windows` on `kind: "script"` or on `start` servers.
@@ -161,14 +176,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - Validates `tool.json` at startup (same 32 KiB / regular-file / `validateToolJson` checks as `tool-launch.js`), confirms `kind === 'server'` and `transport === 'http'`, and checks that `--key` args match `tool.keys` (exiting non-zero with the same "its keys changed" message if not).
      - Rejects startup if any of `debuglog('child_process').enabled`, `debuglog('http').enabled`, `debuglog('https').enabled`, or `debuglog('net').enabled` is true.
      - Reads declared keys from `readSharedKeys(stateDir)` or `readKeyStore(stateDir, await projectIdentity(projectDir))` (failing with the standard missing-key error if any key is missing/unusable).
-     - Uses `machine/lib/mcp-http.js` to POST each newline-delimited JSON-RPC message from `process.stdin` to `urlOverride || tool.url` with `${KEY}` placeholders substituted in memory, forwarding each incrementally delivered SSE or JSON message through `checker.line(buf)` as it arrives. For a request with an `id`, the request settles (and releases any gate waiting on it) as soon as an SSE or JSON response with that matching `id` arrives, without waiting for stream EOF (and once settled, stream EOF never emits a second error for that `id`); `notifications/initialized` (no `id`) settles as soon as its HTTP response status/headers arrive (`202` or `2xx`).
-     - Gates ordinary requests on initialization with a single 30-second deadline (started when `initialize` is sent) and tracks `initialized` (set `true` only after `initialize` and any sent `notifications/initialized` succeed): track the in-flight `initialize` promise and, if `notifications/initialized` has been sent, its in-flight promise (`initGate`), awaiting whichever is currently in flight (never blocking for a `notifications/initialized` the client never sent) and any in-flight `recovering` promise before POSTing ordinary requests (`tools/list`, `tools/call`, etc.). If `initGate` fails or exceeds its 30-second deadline, leave `initialized = false`, clear `initGate`, and reply to queued requests with a JSON-RPC `-32603` error. On any subsequent ordinary request while `!initialized` (and saved `initialize` params exist), run the single-flight `recovering` path below to re-establish a complete initialized session before sending the request.
+     - Uses `machine/lib/mcp-http.js` to POST each newline-delimited JSON-RPC message from `process.stdin` to `urlOverride || tool.url` with `${KEY}` placeholders substituted in memory, forwarding each incrementally delivered SSE or JSON message through `checker.line(buf)` as it arrives. On the first `initialize` response, capture and save `sessionId` (from `Mcp-Session-Id`) and `protocolVersion` (from `result.protocolVersion`, falling back to `'2025-06-18'`) before forwarding `notifications/initialized`. For a request with an `id`, the request settles (and releases any gate waiting on it) as soon as an SSE or JSON response with that matching `id` arrives, without waiting for stream EOF (and once settled, stream EOF never emits a second error for that `id`); `notifications/initialized` (no `id`) settles as soon as its HTTP response status/headers arrive (`202` or `2xx`).
+     - Gates ordinary requests on initialization with a single 30-second deadline (started when `initialize` is sent) and tracks `initialized` (set `true` only after `initialize` and any sent `notifications/initialized` succeed): track the in-flight `initialize` promise and, if `notifications/initialized` has been sent, its in-flight promise (`initGate`), awaiting whichever is currently in flight (never blocking for a `notifications/initialized` the client never sent) and any in-flight `recovering` promise before POSTing ordinary requests (`tools/list`, `tools/call`, etc.). If `initGate` fails or exceeds its 30-second deadline, leave `initialized = false`, clear `initGate`, and reply to queued requests with a JSON-RPC `-32603` error. On any subsequent ordinary request while `!initialized` (and saved `initialize` params exist), run the single-flight `recovering` path below (with `expiredId: sessionId || null` and a best-effort `deleteSession` if a prior `sessionId` existed) to re-establish a complete initialized session before sending the request.
      - Remembers the client's original `initialize` request params. If a subsequent request that sent `sentSessionId` receives HTTP `404`:
        - First, if `recovering` is already in flight, await `recovering.promise` before checking `sessionId`.
-       - Next, if the proxy's current `sessionId` has already changed (`sessionId !== sentSessionId`), skip starting a new recovery and retry the request once with the current `sessionId`.
-       - Otherwise, start a single shared recovery (`recovering = { expiredId: sentSessionId, promise }`, with one shared 30-second deadline covering both legs) that leaves `sessionId` and `protocolVersion` unchanged until recovery completes: POST `initialize` with no `Mcp-Session-Id` header, settle as soon as its matching reply arrives to capture `newSessionId` and `newVersion`, POST `notifications/initialized` using `Mcp-Session-Id: newSessionId` and `MCP-Protocol-Version: newVersion`, then publish `sessionId = newSessionId`, `protocolVersion = newVersion`, `initialized = true`, and clear `recovering` so affected requests retry once with the new session ID. If recovery fails or exceeds its 30-second deadline, leave `initialized = false`, clear `recovering`, and reply to waiting requests with a JSON-RPC `-32603` error.
+       - Next, if the proxy's current `sessionId` has already changed (`sessionId !== sentSessionId`), skip starting a new recovery and retry the request once with the current `sessionId` (unless the original request was `notifications/initialized`, which recovery already satisfied).
+       - Otherwise, start a single shared recovery (`recovering = { expiredId: sentSessionId, promise }`, with one shared 30-second deadline covering both legs) that leaves `sessionId` and `protocolVersion` unchanged until recovery completes: POST `initialize` with no `Mcp-Session-Id` header, settle as soon as its matching reply arrives to capture `newSessionId` and `newVersion`, POST `notifications/initialized` using `Mcp-Session-Id: newSessionId` and `MCP-Protocol-Version: newVersion`, then publish `sessionId = newSessionId`, `protocolVersion = newVersion`, `initialized = true`, and clear `recovering` so affected requests retry once with the new session ID (if the 404 was on `notifications/initialized`, recovery's `notifications/initialized` satisfies it without re-sending). If recovery fails or exceeds its 30-second deadline, leave `initialized = false`, clear `recovering`, and reply to waiting requests with a JSON-RPC `-32603` error.
      - Redaction uses `const checker = createLineChecker({ name: tool.name, values })` from `machine/lib/server-lines.js:160`:
-       - For each response JSON message (compacted to one JSON line `buf`), call `const res = checker.line(buf)`; for an oversized body/event (`LINE_LIMIT` exceeded), call `const res = checker.oversized(prefixBuf)` and mark the request settled if `res.out` is emitted (guaranteeing at most one terminal reply per request `id`, so stream EOF/error never emits a second error).
+       - For each response JSON message (compacted to one JSON line `buf`), call `const res = checker.line(buf)`; for an oversized body/event (`LINE_LIMIT` exceeded), call `const res = checker.oversized(prefixBuf)` and mark the originating request settled only when `res.out` is emitted with a matching `id` (guaranteeing at most one terminal reply per request `id`, so stream EOF/error never emits a second error).
        - If `res.out` is non-null, write `res.out` + `\n` to `process.stdout`; if `res.toServer` is non-null, POST `res.toServer` back to the HTTP server (ignoring its body) without forwarding to `process.stdout`; if `res.note` is non-null, log `res.note` to `process.stderr` (never raw keys).
      - If an SSE stream ends for a request with an `id` before any response matching that `id` arrives, or on non-2xx / redirect / network error for a request with an `id`, reply with a JSON-RPC error (`code: -32603`, redacted message naming HTTP status or error code; never raw keys).
      - On `process.stdin` close or `SIGINT`/`SIGTERM`/`SIGHUP`, abort in-flight requests, run best-effort `deleteSession` (bounded 1s timeout) if a `Mcp-Session-Id` is active, and exit cleanly.
@@ -203,7 +218,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - Returned argv:
        `['codex', 'sandbox', '-P', 'wc', '-C', worktree, '-c', fsOverride, '-c', 'permissions.wc.network.enabled=true', '-c', trustOverride, '--', '/bin/sh', '-c', 'cd "$1" && shift && exec "$@"', '--', toolDir, ...command]`.
    - When `adapter.sandboxed?.(session)` is true (sandboxed Codex session in `TOOL_ROLES`):
-     - Resolve `codexHome` once in `machine/service.js` (`session.account_dir ? loginEnv(session.account_dir).CODEX_HOME : (process.env.CODEX_HOME || adapter.usual())`, always a concrete path) and apply it explicitly to BOTH the main Codex launch env (`launchEnv`, on start and resume) and the folder-tool MCP entries (`env.CODEX_HOME`), so both processes always share the exact same `CODEX_HOME` even when `process.env.CODEX_HOME` is unset or tmux inherited a different value.
+     - Resolve `codexHome` once in `machine/service.js` (`session.account_dir ? loginEnv(session.account_dir).CODEX_HOME : adapter.usual()`, always a concrete path since `adapter.usual()` already checks `process.env.CODEX_HOME` before `~/.codex`) and apply it explicitly to BOTH the main Codex launch env (`launchEnv`, on start and resume) and the folder-tool MCP entries (`env.CODEX_HOME`), so both processes always share the exact same `CODEX_HOME`.
      - `machine/service.js` passes `{ sandbox: { cli: input.cli, codexHome } }` when building `bridgeEntry` and stdio `serverEntry`.
      - `bridgeEntry` and stdio `serverEntry` pass `--sandbox-cli <cli>` (and set `CODEX_HOME` in the entry's `env` when `codexHome` is set) to `tool-bridge.js` and `tool-launch.js`.
      - `tool-bridge.js` (via `tool-run.js`) and `tool-launch.js` dispatch through the connector registry (`require('../../connectors').machine(sandboxCli).sandboxWrapTool([program, ...args], { worktree: projectDir, toolDir: dir })`, never importing `connectors/codex/machine.js` directly, keeping `machine/test/name-guard.test.js` green). They run **outside** `codex sandbox` so they can read the machine key store (`stateDir`) and perform output redaction, and wrap only the spawned child tool command with `cwd: projectDir`.
@@ -251,6 +266,7 @@ Also review the rendered `protocol/tools.md` edits per `CONTRIBUTING.md:93-95` t
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | Adding a new folder-based `mcp-for-unity` server mid-session and then hitting an account switch does not re-inject the startup Unity prompt line (`machine/service.js:1137,1143`) | Rare path (requires adding a folder Unity server after session start and then hitting a usage-limit switch); matches existing `.mcp.json` resume behavior | review-round-7 |
+| Oversized (>32 MiB) server-initiated JSON-RPC request on an SSE stream whose `method` field appears after the 32 MiB prefix could collide with a client request ID in `checker.oversized` | Rare path (requires a >32 MiB server-initiated JSON-RPC request with `method` serialized after 32 MiB of params) | review-round-8 |
 
 ## Check Once Built
 
@@ -407,7 +423,7 @@ Also review the rendered `protocol/tools.md` edits per `CONTRIBUTING.md:93-95` t
 
 ### Round 8 — 2026-11-28
 
-**Lanes:** (pending)
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 7:**
 - S2.2 & S4.2: marked Windows-marked HTTP folder forwards `windows: false, wrapped: false` (matching `.mcp.json`).
@@ -417,6 +433,13 @@ Also review the rendered `protocol/tools.md` edits per `CONTRIBUTING.md:93-95` t
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | S5.2 `process.env.CODEX_HOME \|\| adapter.usual()` is redundant with `adapter.usual()` | upheld | S5.2 simplified to `adapter.usual()` |
+| intent | minor | S4.3 `!initialized` recovery omits best-effort `DELETE` for prior session and `expiredId` value | upheld | S4.3 sends best-effort `deleteSession` if prior `sessionId` exists and uses `expiredId: sessionId \|\| null` |
+| mechanics | major | S4.3 omits explicit save of `sessionId`/`protocolVersion` on proxy's first `initialize` | downgraded | Minor per lead.md: S4.3 already required sending both once negotiated from `initialize`; stated explicitly before `notifications/initialized` |
+| mechanics | major | S4.3 404 on original `notifications/initialized` could re-send notification after recovery | downgraded | Minor per lead.md (worst outcome is a repeated notification, and requires expiry in ms window); fixed so recovery satisfies it without re-sending |
+| mechanics | major | S4.3 oversized >32 MiB server-initiated request with `method` after 32 MiB prefix could collide in `checker.oversized` | accepted-risk | Rare path per realism.md; recorded in Accepted Risks (and tightened `res.out` matching-`id` check) |
+| mechanics | minor | S2.2 `WHEELCHAIR_WINDOWS_PROJECT/p` conflicts with bare `WHEELCHAIR_WINDOWS_PROJECT` in `win.js:426-430` | upheld | S2.2 updated to bare `WHEELCHAIR_WINDOWS_PROJECT` |
+| mechanics | minor | S4.1 header validation allows NUL / non-Latin-1 values rejected by Node HTTP | upheld | S4.1 validates header values with `http.validateHeaderValue` |
 
 ## Prior Work
 
@@ -438,3 +461,4 @@ Also review the rendered `protocol/tools.md` edits per `CONTRIBUTING.md:93-95` t
 - 2026-11-28: Completed Round 3 triage (10 findings, all upheld and resolved); paused at 3-round review budget and posted `needs` card.
 - 2026-11-28: User chose to keep all five items together and continue review; budget reset, starting Round 4.
 - 2026-11-28: User pressed Keep going after Round 6 budget pause; budget reset, starting Round 7.
+- 2026-11-28: Round 8 clean (0 blocking, 0 major upheld; 2 majors downgraded to minor and fixed, 1 major rare-path accepted risk, 4 minors fixed). Added Spec Mermaid diagram, set `status: approved`. Ready check passed (`wc.js session list` ok, `claude`/`codex`/`agy`/`python3` installed, `codex/preflight.sh` fresh 132h).
