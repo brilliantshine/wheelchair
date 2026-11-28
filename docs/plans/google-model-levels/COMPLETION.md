@@ -136,3 +136,11 @@ npm --prefix viewer run test:browser -- --grep 'effort'                         
 ```
 
 Residual: five files that load viewer/app/ have no direct require of the isolation helper (app-lessons, app-lessons-history, app-shared-tools-setting, char-hub-dispatch, background-completion); none called agy in the proof run.
+
+### Remediation 3 — 2026-11-27
+
+Verification attempt 3 (commit fcf9ac83): gpt-6.2-sol PASS, claude-opus-5-5 FAIL on one gap, which the full run on fcf9ac83 also hit: the 'Antigravity levels' browser tests left a `/api/settings` route open at test end, so a late settings read failed a test at random (see `REMEDIATION-3.md`). Both verifiers confirmed the test-isolation fix.
+
+| Gap | Fix | Lane | At | Validated by |
+|-----|-----|------|----|--------------|
+| Flaky 'Antigravity levels' browser tests | `test.afterEach(... page.unrouteAll({ behavior: 'ignoreErrors' }))` in the block, as at `viewer/test/app-settings.spec.js:932` | R4, light / claude-haiku-5-5 | `viewer/test/app-settings.spec.js:1320` | `npm --prefix viewer run test:browser -- --grep 'Antigravity levels' --repeat-each=15`: 135 passed; `--grep 'effort'`: 12 passed (sub-lead re-run) |
