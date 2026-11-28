@@ -1635,6 +1635,7 @@
     if (!lead) return '';
     if (lead.status === 'waiting' && lead.waiting_until) {
       if (lead.waiting_reason && lead.waiting_reason.endsWith(' is left out in Settings')) return lead.waiting_reason + '. Turn it back on under Settings → AI providers.';
+      if (lead.waiting_reason && lead.waiting_reason.endsWith('in Settings → Models')) return lead.waiting_reason + '.';
       // The provider the wait is pinned to, else the lead's, else the thread's; none set → room.
       const provider = [lead.waiting_provider, lead.provider, thread().provider].find((p) => PROVIDER_LABEL[p]);
       if (!provider) return 'Waiting for room, about ' + clock(lead.waiting_until);

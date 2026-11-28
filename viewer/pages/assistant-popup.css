@@ -16,7 +16,7 @@
 .wc-asst-float:hover { background: var(--accent-hi); color: var(--accent-ink); }
 .wc-asst-unread { position: absolute; right: 2px; top: 1px; width: 12px; height: 12px; border-radius: 50%;
   background: #d9a441; border: 2px solid var(--bg); }
-.wc-asst-float[hidden], .lead-switch[hidden], .wc-asst-unread[hidden], .wc-asst-panel[hidden], .wc-asst-shade[hidden], .wc-asst-stopped[hidden], .wc-asst-error[hidden] { display: none !important; }
+.wc-asst-float[hidden], .lead-switch[hidden], .wc-asst-unread[hidden], .wc-asst-panel[hidden], .wc-asst-shade[hidden], .wc-asst-stopped[hidden], .wc-asst-error[hidden], .wc-asst-wait[hidden] { display: none !important; }
 .wc-asst-shade { display: none; }
 .wc-asst-panel { position: fixed; right: 20px; bottom: 20px; z-index: 50; width: 410px; height: 690px; max-height: calc(100vh - 40px);
   display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line-2); border-radius: 12px;
@@ -54,6 +54,8 @@
   animation: wc-asst-spin 1s linear infinite; }
 @keyframes wc-asst-spin { to { transform: rotate(360deg); } }
 .wc-asst-error, .wc-asst-error-text { color: var(--bad-text, #e08080); padding: 6px 16px; font-size: 13px; }
+.wc-asst-wait { flex-shrink: 0; margin: 0 12px; padding: 8px 10px; border: 1px solid var(--warn-line); border-radius: 8px;
+  background: var(--warn-bg); color: var(--warn); font-size: 13px; overflow-wrap: anywhere; }
 .wc-asst-compose { padding: 10px 12px 14px; }
 .wc-asst-box { border: 1px solid var(--line-2); background: var(--panel); border-radius: 10px; padding: 10px; display: flex; align-items: flex-end; gap: 8px; }
 .wc-asst-input { flex: 1; min-height: 36px; max-height: 120px; resize: none; border: 0; background: transparent; font-size: 13px; }
