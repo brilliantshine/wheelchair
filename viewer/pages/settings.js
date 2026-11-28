@@ -1615,8 +1615,8 @@
       : `Changes apply to ${role[3]} started after you save.`;
 
     const del = confirming
-      ? h('button', { type: 'button', class: 'danger', id: 'confirm-delete', text: 'Really delete', onclick: () => deleteTemplate(errHost) })
-      : h('button', { type: 'button', class: 'danger', id: 'delete', text: 'Delete', onclick: () => { confirming = true; paint('templates'); } });
+      ? h('button', { type: 'button', class: 'danger', id: 'confirm-delete', 'data-focus': `tpl:${draft.id}:confirm-delete`, text: 'Really delete', onclick: () => deleteTemplate(errHost) })
+      : h('button', { type: 'button', class: 'danger', id: 'delete', 'data-focus': `tpl:${draft.id}:delete`, text: 'Delete', onclick: () => { confirming = true; paint('templates'); } });
 
     return h('div', { class: 'tpl-edit' },
       noteEl(),
@@ -2825,7 +2825,7 @@
         h('div', { class: 'actions' },
           h('button', { id: 'background-save', type: 'button', class: 'primary', text: 'Save', disabled: !backgroundChanged(v) || v.pending || v.saving, onclick: () => saveBackground(v) }),
           h('button', { id: 'background-cancel', type: 'button', text: 'Cancel', disabled: !v.dirty || v.saving, onclick: () => { discardBackground(); bg.refresh(); repaintBackground(ensureBackground()); } }),
-          h('button', { type: 'button', text: 'Remove background', disabled: v.saving || !m, onclick: () => {
+          h('button', { type: 'button', text: 'Remove background', 'data-focus': 'background:remove', disabled: v.saving || !m, onclick: () => {
             ++v.op; cancelBackgroundWork(v); v.pending = false; beginBackground(v); if (!v.dirty) return;
             const old = v.url; v.url = null; v.image = null; v.file = null; v.imageId = null; v.filename = ''; v.opacity = 35; v.error = ''; v.status = '';
             bg.publish(v.token, null, 35); if (old) URL.revokeObjectURL(old); repaintBackground(v);
@@ -3269,16 +3269,25 @@
       paintKeys(read.keys, read.notes);
     }
     view.read = readKeys;
+    // After a write: read the keys, then catch the block up with a project change that a typed
+    // value held back. The repaint replaces this view.
+    const rereadAfterWrite = async () => {
+      clearStale('shared-tools');
+      await acknowledgeKeys(readKeys);
+      if (!blockHost('shared-tools') || renderedSlice.get('shared-tools') === sliceKey('shared-tools')) return;
+      if (blockDirty('shared-tools')) markStale('shared-tools');
+      else if (blockFocused('shared-tools')) deferBlock('shared-tools');
+      else repaint('shared-tools');
+    };
     const change = (action, payload, errorEl) => withLocalWrite(async () => {
       errorEl.textContent = '';
       try {
         const result = await api('/shared-keys/' + action, { method: 'POST', body: { machine: machine.value || 'hub', revision, ...payload } });
         revision = result.revision;
-        clearStale('shared-tools');
-        await acknowledgeKeys(readKeys);
+        await rereadAfterWrite();
       } catch (error) {
         const reason = error.body?.reason || error.body?.error || error.message;
-        if (error.status === 409) { clearStale('shared-tools'); await acknowledgeKeys(readKeys); keyHost.prepend(h('p', { class: 'pt-warn', role: 'alert', text: reason })); }
+        if (error.status === 409) { await rereadAfterWrite(); (blockHost('shared-tools')?.querySelector('.pt-keys') || keyHost).prepend(h('p', { class: 'pt-warn', role: 'alert', text: reason })); }
         else errorEl.textContent = reason;
       }
     });

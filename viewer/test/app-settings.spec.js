@@ -2163,4 +2163,62 @@ test.describe('live refresh', () => {
     await page.locator('#sections a[data-section="shared-tools"]').click();
     await expect(project.locator('option')).toHaveText(['None', 'alpha', 'beta']);
   });
+
+  test('deleting the open template elsewhere never moves focus to the next one’s Delete', async ({ page }) => {
+    await open(page, 'behavior');
+    const alpha = await template(page, 'Alpha');
+    await template(page, 'Bravo');
+    await refreshed(page);
+    await page.locator('.tpl-item', { hasText: 'Alpha' }).click();
+    await expect(page.locator('#tname')).toHaveValue('Alpha');
+    await page.locator('#delete').focus();
+    await send(page, '/settings/templates/' + alpha.id, undefined, 'DELETE');
+    await refreshed(page);
+    await expect(page.locator('#tname')).toHaveValue('Bravo');
+    await expect(page.locator('#delete')).not.toBeFocused();
+  });
+
+  test('a late legacy notice re-read never undoes a newer save', async ({ page }) => {
+    // The notice showing makes a tier save read /settings again (refreshDiffs).
+    await fs.writeFile(path.join(own.state, 'models'), 'claude.heavy = none\nclaude.lead = claude-sonnet-5-5 @medium\n');
+    await open(page, 'models');
+    await expect(page.locator('.m-legacy')).toBeVisible();
+    const read = await holdNextRead(page);
+    await tier(page, 'Checker', 'Light').click();
+    await read.held();
+    const model = page.getByRole('radiogroup', { name: 'What steps up first' }).getByRole('radio', { name: 'Model' });
+    await model.click();
+    await expect.poll(async () => (await settings(page)).escalation.first).toBe('model');
+    await expect(model).toHaveAttribute('aria-checked', 'true');
+    await model.blur();
+    await read.release();
+    expect(await model.getAttribute('aria-checked')).toBe('true');
+  });
+
+  for (const [title, status] of [['saving a shared key', 200], ['a refused shared key save', 409]]) {
+    test(`${title} catches the project picker up with an outside change`, async ({ page }) => {
+      const state = { revision: 1, reads: 0, keys: [key('ONE')] };
+      await sharedStubs(page, state);
+      await page.route('**/api/shared-keys/save', (r) => {
+        state.revision += 1;
+        return r.fulfill(status === 200 ? { json: { outcome: 'saved', revision: state.revision, keys: [] } }
+          : { status, json: { outcome: 'refused', reason: 'changed elsewhere, reload' } });
+      });
+      await open(page, 'shared-tools');
+      const project = page.getByLabel('Shared tools project');
+      await expect(project).toBeEnabled();
+      await expect(project).toHaveValue('');
+      await page.getByLabel('Value for ONE').fill('typed-secret');
+      await prefs(page, { shared_tools_repo: 'owner/elsewhere' });
+      await refreshed(page);
+      await expect(banner(page, 'shared-tools')).toContainText('Updated elsewhere.');
+      await expect(project).toHaveValue('');
+      await page.locator('[data-focus="shared-key:ONE:set"]').click();
+      await expect(project).toHaveValue('owner/elsewhere');
+      await expect(banner(page, 'shared-tools')).toHaveCount(0);
+      const refusal = page.getByRole('alert').filter({ hasText: 'changed elsewhere, reload' });
+      if (status === 409) await expect(refusal).toBeVisible();
+      else await expect(refusal).toHaveCount(0);
+    });
+  }
 });
