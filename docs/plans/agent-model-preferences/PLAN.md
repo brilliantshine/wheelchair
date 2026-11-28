@@ -1,6 +1,6 @@
 ---
 slug: agent-model-preferences
-status: verifying
+status: done
 created: 2026-11-27
 ---
 
