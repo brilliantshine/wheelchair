@@ -116,18 +116,22 @@ test('login state responses scrub keys for every tool', async () => {
 });
 
 test('launch version gates apply to Pi and Kimi and preserve their exact errors', async () => {
-  for (const cli of clis) {
-    const m = machine(), checked = [];
-    m.checkVersion = async cli => checked.push(cli);
-    m.cliStatus = name => ({ installed: true, problem: `${name} version problem` });
-    m.createWorktree = async () => { throw new Error('reached worktree'); };
-    await assert.rejects(m.startNamed({ cli, role: 'lead', thread_id: 'test', token: 'x' }, `wc-${cli}-lead`), { message: cli === 'pi' || cli === 'kimi' ? `${cli} version problem` : 'reached worktree' });
-    assert.deepEqual(checked, cli === 'pi' || cli === 'kimi' ? [cli] : []);
-    if (cli === 'pi' || cli === 'kimi') {
-      m.cliStatus = () => ({ installed: false });
-      await assert.rejects(m.startNamed({ cli }, `wc-${cli}-lead`), { message: cli === 'pi' ? 'Pi is not installed' : 'Kimi Code is not installed' });
+  const home = makeTempSync('char-version-gates-home-'), oldHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    for (const cli of clis) {
+      const m = machine(), checked = [];
+      m.checkVersion = async cli => checked.push(cli);
+      m.cliStatus = name => ({ installed: true, problem: `${name} version problem` });
+      m.createWorktree = async () => { throw new Error('reached worktree'); };
+      await assert.rejects(m.startNamed({ cli, role: 'lead', thread_id: 'test', token: 'x' }, `wc-${cli}-lead`), { message: cli === 'pi' || cli === 'kimi' ? `${cli} version problem` : 'reached worktree' });
+      assert.deepEqual(checked, cli === 'pi' || cli === 'kimi' ? [cli] : []);
+      if (cli === 'pi' || cli === 'kimi') {
+        m.cliStatus = () => ({ installed: false });
+        await assert.rejects(m.startNamed({ cli }, `wc-${cli}-lead`), { message: cli === 'pi' ? 'Pi is not installed' : 'Kimi Code is not installed' });
+      }
     }
-  }
+  } finally { if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome; }
   const m = machine();
   assert.equal(require('../../connectors/pi/machine').piVersionStatus('1.5.1', { logged_in: true }).problem, 'Pi 1.5.2 or newer is needed (found 1.5.1)');
   assert.equal(require('../../connectors/pi/machine').piVersionStatus('1.6.0', { logged_in: true }).warning, 'Pi 1.6.0 is newer than the version wheelchair was tested with (1.5.2). If OpenRouter agents fail, this may be why.');

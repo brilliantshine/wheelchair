@@ -16,7 +16,8 @@ function git(cwd, ...args) {
 }
 async function port() { const s = http.createServer(); await new Promise(r => s.listen(0, '127.0.0.1', r)); const p = s.address().port; await new Promise(r => s.close(r)); return p; }
 async function service(wsl = true, options = {}) {
-  const root = makeTempSync('win-service-'), bin = path.join(root, 'bin'), mount = path.join(root, 'mnt'), state = path.join(mount, 'c/state');
+  const root = makeTempSync('win-service-'), bin = path.join(root, 'bin'), mount = path.join(root, 'mnt'), state = path.join(mount, 'c/state'), home = path.join(root, 'home');
+  fs.mkdirSync(home, { recursive: true });
   const procRoot = path.join(root, 'proc'), etcRoot = path.join(root, 'etc'), runRoot = path.join(root, 'run');
   write(path.join(procRoot, 'sys/kernel/osrelease'), wsl ? 'microsoft' : 'linux');
   if (wsl) write(path.join(procRoot, 'sys/fs/binfmt_misc/WSLInterop'), 'enabled\n');
@@ -29,7 +30,8 @@ async function service(wsl = true, options = {}) {
   write(path.join(bin, 'tmux'), `#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nprintf '%s\\n' "$*" >> "$FAKE_LOG"\ncase "$1" in\n capture-pane) printf 'auto mode on\\n❯ Try anything\\n';;\n list-sessions) printf '%s\\n' $FAKE_SESSIONS;;\nesac\n`, 0o755);
   write(path.join(bin, 'systemd-run'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 1\n', 0o755);
   const prior = { ...process.env };
-  Object.assign(process.env, { PATH: `${bin}:${prior.PATH}`, FAKE_LOG: log, FAKE_SESSIONS: '', WC_FAKE_MOUNT: mount, WC_FAKE_LOCALAPPDATA: 'C:\\Users\\Test', WC_FAKE_GIT_PATH: 'C:\\tools\\git.exe', WC_FAKE_APP_DIR: path.join(root, 'apps'), WHEELCHAIR_SESSION_TOKEN: 'secret-not-for-windows' });
+  // Keep adapter.prepare() (Antigravity's ~/.gemini/config/hooks.json) off the real home.
+  Object.assign(process.env, { HOME: home, PATH: `${bin}:${prior.PATH}`, FAKE_LOG: log, FAKE_SESSIONS: '', WC_FAKE_MOUNT: mount, WC_FAKE_LOCALAPPDATA: 'C:\\Users\\Test', WC_FAKE_GIT_PATH: 'C:\\tools\\git.exe', WC_FAKE_APP_DIR: path.join(root, 'apps'), WHEELCHAIR_SESSION_TOKEN: 'secret-not-for-windows' });
   const secret = path.join(root, 'secret'); write(secret, 'correct-secret\n');
   const listen = await port();
   const winEnv = createWinEnv({ mount, runRoot, env: { ...process.env } });
@@ -118,6 +120,7 @@ test('readying uses the adapter loaded entries', async () => {
     write(path.join(e.root, 'bin/kimi'), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\necho 2.6.3\n', 0o755);
     for (const cli of ['claude', 'codex', 'agy', 'pi', 'kimi']) await start(e, 'lead', dir, { cli });
     assert.deepEqual(seen, [['claude', true], ['codex', true], ['agy', true], ['pi', false], ['kimi', false]]);
+    assert.ok(fs.existsSync(path.join(e.root, 'home/.gemini/config/hooks.json')));
   } finally { await e.close(); }
 });
 

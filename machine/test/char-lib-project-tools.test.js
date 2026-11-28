@@ -34,9 +34,9 @@ test('project checks name Codex-only skip and command-line budget warnings', asy
 test('project tool launch warnings are specific to each CLI', async () => {
   const http = require('node:http');
   const { MachineService } = require('../service');
-  const root = makeTempSync('char-project-launch-'), bin = path.join(root, 'bin'); fs.mkdirSync(bin);
+  const root = makeTempSync('char-project-launch-'), bin = path.join(root, 'bin'), home = path.join(root, 'home'); fs.mkdirSync(bin); fs.mkdirSync(home);
   for (const name of ['tmux', 'systemd-run']) fs.writeFileSync(path.join(bin, name), '#!/bin/sh\nif [ x$1 = xload-buffer ]; then cat >/dev/null; fi\nexit 0\n', { mode: 0o755 });
-  const oldPath = process.env.PATH; process.env.PATH = `${bin}:${oldPath}`;
+  const oldPath = process.env.PATH, oldHome = process.env.HOME; process.env.PATH = `${bin}:${oldPath}`; process.env.HOME = home;
   const service = new MachineService({ stateDir: path.join(root, 'state'), win: { procRoot: root, etcRoot: root, runRoot: root } });
   service.config = { host: '127.0.0.1', port: 0 }; service.authorize = async () => {};
   service.checkVersion = async () => {};
@@ -60,5 +60,5 @@ test('project tool launch warnings are specific to each CLI', async () => {
         } else assert.deepEqual(codexMessages, [], cli);
       }
     }
-  } finally { console.error = oldError; process.env.PATH = oldPath; await new Promise(resolve => server.close(resolve)); }
+  } finally { console.error = oldError; process.env.PATH = oldPath; if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome; await new Promise(resolve => server.close(resolve)); }
 });

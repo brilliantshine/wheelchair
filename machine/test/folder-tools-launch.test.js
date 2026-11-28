@@ -31,10 +31,12 @@ async function putTool(worktree, name, description, kind = 'script') {
 async function fixture(t) {
   const root = await makeTemp('folder-launch-');
   const bin = path.join(root, 'bin');
+  const home = path.join(root, 'home');
   const stateDir = path.join(root, 'state');
   const worktree = path.join(stateDir, 'worktrees', project, 'wc', threadId);
   const launchLog = path.join(root, 'launches');
   await fs.mkdir(bin);
+  await fs.mkdir(home);
   await fs.mkdir(worktree, { recursive: true });
   const shim = (program, body) => fs.writeFile(path.join(bin, program), '#!/bin/sh\n' + body, { mode: 0o755 });
   await shim('systemd-run', 'exit 1\n');
@@ -50,9 +52,13 @@ esac
 `);
   for (const cli of ['claude', 'codex', 'agy', 'pi']) await shim(cli, 'exit 0\n');
   await shim('kimi', 'echo "kimi 2.6.3"\n');
-  const oldPath = process.env.PATH;
+  const oldPath = process.env.PATH, oldHome = process.env.HOME;
   process.env.PATH = `${bin}:${oldPath}`;
-  t.after(() => { process.env.PATH = oldPath; });
+  process.env.HOME = home;
+  t.after(() => {
+    process.env.PATH = oldPath;
+    if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome;
+  });
   const machine = new MachineService({ stateDir, win: { procRoot: root, etcRoot: root, runRoot: root } });
   const events = [];
   machine.emitEvent = async event => events.push(event);
