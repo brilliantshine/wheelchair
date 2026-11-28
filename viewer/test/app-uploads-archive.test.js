@@ -32,7 +32,7 @@ async function setup() {
   git('-C', project, 'remote', 'add', 'origin', origin);
   git('-C', project, 'push', '-u', 'origin', 'main');
   const script = `#!/bin/sh\ncase "$(basename "$0"):$1" in\n  systemd-run:*) exit 1 ;;\n  tmux:capture-pane) printf 'auto mode on\\n❯ Try anything\\n' ;;\n  claude:--version) echo claude-test ;;\n  claude:auth) echo '{"loggedIn":true}' ;;\nesac\n`;
-  for (const name of ['tmux', 'systemd-run', 'claude']) await fs.writeFile(path.join(bin, name), script, { mode: 0o755 });
+  for (const name of ['tmux', 'systemd-run', 'claude', 'agy']) await fs.writeFile(path.join(bin, name), script, { mode: 0o755 });
   const priorPath = process.env.PATH;
   const priorHome = process.env.HOME;
   process.env.HOME = home;
