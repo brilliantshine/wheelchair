@@ -267,6 +267,7 @@ Also review the rendered `protocol/tools.md` edits per `CONTRIBUTING.md:93-95` t
 |------|--------------|-------|
 | Adding a new folder-based `mcp-for-unity` server mid-session and then hitting an account switch does not re-inject the startup Unity prompt line (`machine/service.js:1137,1143`) | Rare path (requires adding a folder Unity server after session start and then hitting a usage-limit switch); matches existing `.mcp.json` resume behavior | review-round-7 |
 | Oversized (>32 MiB) server-initiated JSON-RPC request on an SSE stream whose `method` field appears after the 32 MiB prefix could collide with a client request ID in `checker.oversized` | Rare path (requires a >32 MiB server-initiated JSON-RPC request with `method` serialized after 32 MiB of params) | review-round-8 |
+| Keyed Windows stdio folder server holding `tools/list` without `--list-cache` can exceed Codex/Claude's ~30 s client startup timeout if Windows readiness takes >75 s total (45 s service wait + ~30 s client timeout) | Rare path (exceeding ~75 s total sync time is rare; returning `{ tools: [] }` risks clients that do not refresh on `notifications/tools/list_changed`; approved by lead) | verification-1 |
 
 ## Check Once Built
 
