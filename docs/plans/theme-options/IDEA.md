@@ -27,6 +27,7 @@ Today Wheelchair's accent color is fixed to blue and there is no way to switch c
 - Typography, font-size, layout density, or corner-radius controls.
 - Per-project or per-thread theme overrides (theme settings apply across the app).
 - Custom raw CSS editing or user-uploaded stylesheet files.
+- Theming the graph viewer (`viewer/index.html`) and its graph PNG export (split off into its own follow-up thread).
 
 ## Constraints
 
