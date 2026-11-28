@@ -15,18 +15,13 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: How should Leads and Sub-leads relate to Model Tiers?
-- **Context:** Today, Plan reviewers, Checker, Code mapping, Mockups, and Scouts all choose a tier (`Light`, `Standard`, `Heavy`, `Critical`), while Leads and Sub-leads have a completely separate list of raw per-provider model pickers (showing every provider, even turned-off ones).
+### Q2: How should the reworked Models page organize tiers, agents, and model pickers?
+- **Context:** With every agent picking a tier, we can eliminate the separate Leads section and rethink how tiers, agent assignments, and model/effort pickers are laid out so the page feels unified and uncluttered on both desktop and phone.
 - **Options:**
-  - `tiers-only`: Leads and Sub-leads pick a tier just like every other agent (removing the separate per-provider Lead model pickers).
-  - `tiers-plus-override`: Every agent (including Leads and Sub-leads) picks a tier by default, with an optional per-agent model override when needed.
-  - `columns-in-tiers`: Keep separate per-provider Lead and Sub-lead model slots, but fold them into the Tiers setup (hiding turned-off providers).
-- **Recommendation:** `tiers-only` — one mental model for every agent, eliminates the separate Leads block, and you set each provider's actual models once in Tiers.
-
-### Q2: How should the reworked Models UI organize tiers, agents, and model pickers?
-- **Context:** Currently Models has four stacked blocks (a wide provider×tier grid with two dropdowns per cell, a 10-row Leads list, Escalation switches, and Other agents dropdowns). Collin wants a reworked UI that unifies tiers and agent preferences and gives a better way to choose models and tiers.
-- **Options:** To be tailored once Q1 is answered (e.g., tier-centric cards showing assigned agents + inline effort pills, vs unified Agent-role list + compact Tiers bar, vs provider tabs).
-- **Recommendation:** Decide after Q1.
+  - `tier-cards`: One card per tier (`Light`, `Standard`, `Heavy`, `Critical`) showing the agents assigned to it (as clickable chips you can move between tiers) and each enabled provider's model + effort pills.
+  - `agents-plus-provider-tabs`: Top block has every agent role with a 4-way segmented tier picker (`Light | Standard | Heavy | Critical`) and a subtle preview of its models; bottom block has provider tabs (`Claude`, `GPT`, etc.) so you configure one provider's 4 tiers at a time.
+  - `cleaned-up-split`: Streamlined Tiers grid (all enabled providers visible at once, effort pills instead of effort dropdowns) directly paired with one unified Agents list using segmented tier buttons.
+- **Recommendation:** `agents-plus-provider-tabs` — one-tap tier switching for every agent with live model previews, and provider tabs keep the tier pickers uncluttered as more providers are enabled.
 
 ### Q3: Should Personal assistant and Project leads share the Lead preference or have their own?
 - **Context:** Today Personal assistant and Project leads silently use the Lead slot with no mention on the Models page.
@@ -60,10 +55,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
+| 1 | Every agent role — including Leads and Sub-leads — picks a model tier (`light`, `standard`, `heavy`, `critical`) rather than maintaining separate per-provider Lead/Sub-lead model pickers. | One unified tier system for all agents removes the separate Leads block and lets you define each provider's models once in Tiers. | user |
 
 ## Spec
 
-To be filled as decisions land.
+### 1. Unified tier-based agent model preferences
+- Every configurable agent role picks a model tier (`light`, `standard`, `heavy`, `critical`): Leads, Sub-leads, Plan reviewers, Checker, Code mapping, Mockups, Scout, and Scout for bigger changes.
+- The separate per-provider `Leads` model-picker block is removed from **Settings → Models**.
+- Session placement for `lead` and `sub-lead` resolves through their configured tier (defaulting to `heavy` for existing/new setups unless migrated or configured otherwise — exact migration/backward-compatibility rules to be specified after remaining design decisions).
 
 ## Accepted Risks
 
