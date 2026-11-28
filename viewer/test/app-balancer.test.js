@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { makeTempSync } = require('../../test-support/run-dir.js');
+require('./helpers/isolate-models.js');
 process.env.WHEELCHAIR_MODELS = path.join(makeTempSync('balancer-models-'), 'models');
 const { setup, close, api, machinePost, event } = require('./helpers/app.js');
 

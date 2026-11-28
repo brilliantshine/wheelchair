@@ -1,5 +1,6 @@
 'use strict';
 
+require('./helpers/isolate-models.js');
 const { makeTemp } = require('../../test-support/run-dir');
 const test = require('node:test');
 const assert = require('node:assert/strict');

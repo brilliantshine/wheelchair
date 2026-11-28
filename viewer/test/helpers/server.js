@@ -7,6 +7,7 @@ const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+require('./isolate-models');
 const { makeTemp, trackChild } = require('../../../test-support/run-dir');
 
 const ROOT = path.resolve(__dirname, '../../..');
