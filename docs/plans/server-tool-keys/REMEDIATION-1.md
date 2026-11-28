@@ -61,3 +61,42 @@ and after numbers. If the same gate fails twice, stop and report rather than ite
 
 Close the report with: "List each decision you made that this brief did not settle, one line each,
 naming the file or piece of the design it affected. Write 'none' if there were none."
+
+## R2 — decode buffer cut short after a leading `\"` (found while accepting R1)
+
+Gap (normal use, key exposure, always fixed): `ensure()` in `machine/lib/server-lines.js:30-38`
+(added by T6) scans for the closing quote starting at `p`, which points at the byte *after* the
+first backslash. When the first escape in a string is `\"`, the scan stops at that escaped quote, so
+`decoded` is too small and `Buffer.copy` silently truncates the rest of the decoded text. Detection
+then never sees the rest of the string. Sub-lead probe: `{"result":"a\"bcdefghijk"}` decodes to
+`a"bc`; a reply whose text is `"` + 40 × `x` + ` ` + a fully percent-encoded 14-character key is
+passed to the client unchanged (`out` is the original line, `note` null).
+
+Plan slug `server-tool-keys`, task id `R2`. Lead session `wc-878f834f8279-lead`.
+
+**Change.** In `ensure()`, start the scan at `start + 1` (the byte after the opening quote) instead
+of `p`: `let closing = start + 1;`. Nothing else in `machine/lib/server-lines.js` changes.
+
+**Tests** (add to `machine/test/server-lines.test.js`):
+1. For each of `a\"bcdefghijk`, `\"abc`, `\"\"x\\y\n`, `x\"` + 1000 × `y`: the decoded text from
+   `readLine`'s `visit` equals `Buffer.from(JSON.parse('"' + raw + '"'))`.
+2. With key `Secret12345XYZ`: a line `{"jsonrpc":"2.0","id":1,"result":{"text":"\"` + 40 × `x` + ` `
+   + the key percent-encoded byte by byte (`%53%65…`) + `"}}\n` is held back: `out` is the S5 error
+   reply for id `1` (`…its reply contained one of its keys and was held back`), and `note` is
+   `tool <name>: held back a reply that contained one of its keys`.
+Confirm both fail before the change and pass after; say so in the report.
+
+**Ownership boundary.** `machine/lib/server-lines.js`, `machine/test/server-lines.test.js`, report
+`docs/plans/server-tool-keys/reports/R2.md`.
+
+**Validation (paste output).**
+
+```bash
+node --test machine/test/server-lines.test.js
+node --test machine/test/folder-tools-launch.test.js
+git diff <base>..HEAD --stat
+```
+
+If the same gate fails twice, stop and report rather than iterating. Close the report with: "List
+each decision you made that this brief did not settle, one line each, naming the file or piece of
+the design it affected. Write 'none' if there were none."
