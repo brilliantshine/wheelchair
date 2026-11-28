@@ -9,16 +9,16 @@ created: 2026-11-27
 
 ## What we're building
 
-A cleaner way in **Settings → Models** to choose which models each kind of agent uses, bringing agent model preferences and model tiers together into one coherent setup instead of splitting them into separate blocks.
+A reworked **Settings → Models** UI with a clearer, less cluttered way to choose models and tiers for every kind of agent, bringing agent model preferences and model tiers together into one coherent setup instead of splitting them into separate blocks.
 
 ## Why — the problem
 
-Right now **Settings → Models** splits model choices across separate blocks (model tiers, lead models, escalation, and other agents). It feels cluttered and forces you to jump between separate places to understand or change which model an agent will actually run on.
+Right now **Settings → Models** splits model choices across separate blocks: a provider-by-tier table, a separate list of per-provider model pickers for Leads and Sub-leads, an Escalation block, and an Other agents list that picks tiers. It feels cluttered, the controls for choosing models and tiers are cumbersome, and it forces you to jump between separate places to understand or change what an agent will run on.
 
 ## What good looks like
 
 - Opening **Settings → Models** makes it immediately clear what models are configured for each tier and which agents use them, without scrolling through separate, cluttered blocks.
-- Changing model preferences for any agent role is quick and straightforward on both desktop and phone.
+- Choosing or changing model preferences and tiers for any agent role uses a cleaner, more intuitive UI on both desktop and phone.
 - Existing saved model settings continue to work without losing preferences or breaking new sessions.
 
 ## Not doing
