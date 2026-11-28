@@ -412,3 +412,124 @@ test('assistant actions exclude and refuse project lead threads', async () => {
     assert.equal((await call({ action: 'threads' })).body.threads.some((row) => row.id === record.id), false);
   } finally { await close(c); }
 });
+
+test('assistant settings reads, writes and authorization', async () => {
+  const { c, call } = await assistantFixture();
+  const set = (target, payload) => call({ action: 'setting', target, payload });
+  const read = async () => (await api(c, '/settings')).body;
+  try {
+    const snapshot = await call({ action: 'settings' });
+    assert.equal(snapshot.status, 200);
+    for (const key of ['diagram_sensitivity', 'background', 'reserved_provider']) assert.ok(Object.hasOwn(snapshot.body, key));
+    assert.equal(Object.hasOwn(snapshot.body, 'lesson_history'), false);
+    assert.ok(Object.hasOwn((await call({ action: 'settings', include_history: true })).body, 'lesson_history'));
+    for (const action of ['settings', 'setting']) await assert.rejects(() => require('../app/assistant-actions.js').run({}, { action }, {}), e => e.status === 403);
+    for (const [target, payload, status] of [['preferences', { assistant: 'off' }, 403], ['preferences', { enter_to_send: true }, 400], ['preferences', {}, 400], ['unknown', {}, 400], ['', {}, 400], ['style', [], 400]]) assert.equal((await set(target, payload)).status, status);
+    assert.equal((await set('preferences', { user_name: 'Test User' })).body.ok, true);
+    assert.equal((await read()).user_name, 'Test User');
+    const style = { ...(await read()).style, text: 'Use clear words.' };
+    assert.equal((await set('style', style)).body.ok, true);
+    assert.equal((await read()).style.text, style.text);
+    assert.equal((await set('harness', { provider: 'claude', enabled: true })).body.ok, true);
+    assert.equal((await read()).harnesses.claude, true);
+    const added = await set('account-add', { provider: 'claude', name: 'Assistant test', plan: 'unknown' });
+    assert.equal(added.body.ok, true); const id = added.body.result.id;
+    assert.ok((await read()).accounts.some(a => a.id === id));
+    assert.equal((await set('account-update', { id, name: 'Renamed' })).body.ok, true);
+    assert.equal((await read()).accounts.find(a => a.id === id).name, 'Renamed');
+    assert.equal((await set('account-remove', { id })).body.ok, true);
+    assert.ok(!(await read()).accounts.some(a => a.id === id));
+    assert.equal((await set('account-remove', { id: 'default-claude' })).body.ok, true);
+    assert.equal((await set('account-restore', { id: 'default-claude' })).body.ok, true);
+    assert.ok((await read()).accounts.some(a => a.id === 'default-claude'));
+    assert.equal((await set('balancing', { lead_order: ['claude'] })).body.ok, true);
+    assert.deepEqual((await read()).lead_order, ['claude']);
+    const template = await set('template-create', { name: 'Test', role: 'worker', scope: 'all', switches: {}, text: 'Test text' });
+    assert.equal(template.body.ok, true); const tid = template.body.result.id;
+    assert.ok((await read()).templates.some(t => t.id === tid));
+    assert.equal((await set('template-update', { id: tid, name: 'Changed' })).body.ok, true);
+    assert.equal((await read()).templates.find(t => t.id === tid).name, 'Changed');
+    assert.equal((await set('template-delete', { id: tid })).body.ok, true);
+    assert.ok(!(await read()).templates.some(t => t.id === tid));
+    const missing = await set('background', { action: 'opacity', opacity: 50 }); assert.equal(missing.status, 400);
+    for (const revision of [undefined, -1, 1.2]) assert.equal((await set('background', { action: 'remove', revision })).status, 400);
+    assert.equal((await set('background', { action: 'remove', revision: 9 })).status, 409);
+    assert.equal((await api(c, '/settings/background')).body.revision, 0);
+  } finally { await close(c); }
+});
+
+test('assistant diagram failure preserves machine results', async () => {
+  const { c, call } = await assistantFixture();
+  try {
+    const result = await call({ action: 'setting', target: 'diagram-sensitivity', payload: { level: 'high' } });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.ok, false);
+    assert.equal(result.body.error, 'one or more machines did not update diagram sensitivity');
+    assert.ok(result.body.result.machines.hub);
+    assert.ok((await api(c, '/settings/diagram-sensitivity')).body.machines.hub);
+  } finally { await close(c); }
+});
+
+test('assistant changes models, lessons and background with browser read-back', async () => {
+  const { c, call } = await assistantFixture();
+  const set = (target, payload) => call({ action: 'setting', target, payload });
+  const read = async () => (await api(c, '/settings')).body;
+  try {
+    await fs.writeFile(c.modelsCache, JSON.stringify({ models: [{ slug: 'gpt-99-astra', visibility: 'list' }] }));
+    assert.ok((await read()).heads_up.some(x => x.model === 'gpt-99-astra'));
+    assert.equal((await set('models-heads-up', { action: 'skip', model: 'gpt-99-astra' })).body.ok, true);
+    assert.ok(!(await read()).heads_up.some(x => x.model === 'gpt-99-astra'));
+    assert.equal((await set('model', { provider: 'gpt', slot: 'heavy', model: 'custom-heavy' })).body.ok, true);
+    assert.equal((await read()).models.gpt.heavy.model, 'custom-heavy');
+    const settingsFile = path.join(c.state, 'settings.json');
+    const data = JSON.parse(await fs.readFile(settingsFile));
+    const date = new Date().toISOString();
+    data.lessons.worker.push({ id: 'L123456', text: 'Original', saved_by: 'agent', saved_at: date });
+    data.lesson_waiting.push({ wid: 'w', role: 'worker', text: 'Waiting', saved_by: 'agent', saved_at: date, received_at: date, source: 'file' });
+    await fs.writeFile(settingsFile, JSON.stringify(data));
+    assert.equal((await set('lessons-update', { role: 'worker', edits: [{ id: 'L123456', text: 'Edited' }], removals: [] })).body.ok, true);
+    let state = await read(); assert.equal(state.lessons.worker[0].text, 'Edited');
+    const vid = state.lesson_history.L123456.versions[0].vid;
+    assert.equal((await set('lesson-restore', { role: 'worker', id: 'L123456', vid })).body.ok, true);
+    assert.equal((await read()).lessons.worker[0].text, 'Original');
+    assert.equal((await set('lesson-keep', { role: 'worker', id: 'L123456' })).body.ok, true);
+    assert.ok((await read()).lessons.worker[0].kept_at);
+    assert.equal((await set('lesson-waiting', { role: 'worker', wid: 'w', action: 'discard' })).body.ok, true);
+    assert.equal((await read()).lesson_waiting.length, 0);
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64');
+    const url = `${c.server.url}/api/settings/background/upload?revision=0&opacity=35`;
+    const uploaded = await fetch(url, { method: 'POST', headers: { 'x-graph-token': c.server.token, origin: new URL(c.server.url).origin, 'content-type': 'image/png' }, body: png });
+    assert.equal(uploaded.status, 200);
+    assert.equal((await set('background', { action: 'opacity', opacity: 72 })).body.ok, true);
+    let bg = (await api(c, '/settings/background')).body; assert.equal(bg.opacity, 72);
+    assert.equal((await set('background', { action: 'remove', revision: bg.revision - 1 })).status, 409);
+    assert.equal((await set('background', { action: 'remove', revision: bg.revision })).body.ok, true);
+    bg = (await api(c, '/settings/background')).body; assert.equal(bg.image_id, null);
+  } finally { await close(c); }
+});
+
+test('project lead dispatcher rejects settings actions', async () => {
+  const { Hub } = require('../app/hub.js');
+  const hub = new Hub({ stateDir: await require('./helpers/server.js').makeDir('assistant-project-lead-') });
+  await hub.state.init();
+  await require('../app/settings.js').update(hub, v => { v.project_leads = 'on'; });
+  const source = { ...require('../app/threads.js').emptyThread({ machine: 'hub', project: '/tmp/project' }), project_lead: true, sessions: [{ name: 'lead', role: 'lead', live: true }] };
+  await hub.save(source);
+  for (const action of ['settings', 'setting']) await assert.rejects(() => require('../app/project-lead-actions.js').dispatch(hub, { calling_session: 'lead', action }), e => e.status === 400);
+});
+
+test('assistant diagram update is visible through settings route', async () => {
+  const { c, call } = await assistantFixture();
+  const http = require('node:http'); let level = 'default';
+  const server = http.createServer(async (req, res) => {
+    if (req.method === 'POST') { let body = ''; for await (const chunk of req) body += chunk; level = JSON.parse(body).level; }
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ level, files: [] }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    await fs.writeFile(path.join(c.state, 'machines.json'), JSON.stringify({ hub: { name: 'hub', address: '127.0.0.1', port: server.address().port, secret: c.machine.secret } }));
+    assert.equal((await api(c, '/settings/diagram-sensitivity')).body.machines.hub.level, 'default');
+    assert.equal((await call({ action: 'setting', target: 'diagram-sensitivity', payload: { level: 'high' } })).body.ok, true);
+    assert.equal((await api(c, '/settings/diagram-sensitivity')).body.machines.hub.level, 'high');
+  } finally { await new Promise(resolve => server.close(resolve)); await close(c); }
+});

@@ -219,8 +219,10 @@ Both HTML diagram routes accept `download=1` to serve an inert attachment under 
 
 ### Assistant actions
 
-`POST /api/machine/assistant` requires the machine secret and a `calling_session` naming the live personal assistant lead. The setting must be on. The body carries `action` and its arguments; refusals return their HTTP status and `{error}`. The assistant thread cannot be targeted.
+`POST /api/machine/assistant` requires the machine secret (401 without it) and a `calling_session` naming the live personal assistant lead. The setting must be on (403 otherwise or for another caller). The body carries `action` and its arguments; refusals return their HTTP status and `{error}`. The assistant thread cannot be targeted.
 
+- `settings` accepts optional `include_history` (boolean); lesson history is omitted by default.
+- `setting` accepts `target` and `payload`. Targets: `preferences`, `style`, `diagram-sensitivity`, `background`, `harness`, `account-add`, `account-update`, `account-remove`, `account-restore`, `balancing`, `model`, `models-heads-up`, `template-create`, `template-update`, `template-delete`, `lessons-update`, `lesson-restore`, `lesson-keep`, `lesson-waiting`. Invalid targets or payloads return 400; unauthorized assistants return 403; conflicts such as a stale background revision return 409. A partial `diagram-sensitivity` failure returns HTTP 200 with `{ok:false,error,result:{machines}}`.
 - `projects` returns machines and their available project paths and names.
 - `threads` accepts `archived`; `thread` accepts `thread` and adds open cards, lead queue text and recent chat.
 - `start` accepts `machine`, `project`, `message` and optional `title`; `message` accepts `thread` and `text`.
