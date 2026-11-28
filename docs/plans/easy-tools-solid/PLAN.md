@@ -1,6 +1,6 @@
 ---
 slug: easy-tools-solid
-status: implementing
+status: verifying
 created: 2026-11-28
 ---
 
