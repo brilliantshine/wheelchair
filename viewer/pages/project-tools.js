@@ -311,7 +311,7 @@
         h('div', { class: 'pt-tool-head' }, h('h3', { text: row.name }),
           row.kind && h('span', { class: 'pt-chip', text: row.kind }),
           h('span', { class: 'pt-chip', text: row.source === 'project' ? 'this project' : 'shared' })),
-        !row.key_missing && h('p', { class: row.status === 'ok' && row.kind === 'script' ? 'pt-folder-good' : 'pt-warn', text: row.status === 'ok' ? (row.kind === 'server' ? "server tools don't work on Kimi, Pi or sandboxed Codex" : 'Working') : row.reason }),
+        !row.key_missing && h('p', { class: row.status === 'ok' && row.kind === 'script' ? 'pt-folder-good' : 'pt-warn', text: row.status === 'ok' ? (row.kind === 'server' ? "server tools don't work on Kimi or Pi" : 'Working') : row.reason }),
         row.note && h('p', { class: 'hint', text: row.note }),
         (row.key_lines || []).map(line => h('p', { class: row.key_missing ? 'pt-warn' : 'hint', text: line })))); }
       els.paintFolders = () => { const cards = folderCards(); els.folders.replaceChildren(...(state.read.folder_tools?.notes || []).map(text => h('p', { class: 'hint', text })), ...(cards.length ? cards : [h('p', { class: 'hint', text: 'No folder tools yet. Ask in a thread to make one for this project or the shared tools project.' })])); };

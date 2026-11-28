@@ -1,6 +1,6 @@
 # Folder tools
 
-A tool is a folder in `.wheelchair/tools/<name>/` with `tool.json` and any files it needs. A script tool starts a fresh program for each call; a server tool runs a stdio MCP server for the session. Wheelchair connects valid folder tools automatically for supported agents; no `.mcp.json` edit is needed. HTTP MCP servers stay in `.mcp.json`.
+A tool is a folder in `.wheelchair/tools/<name>/` with `tool.json` and any files it needs. A script tool starts a fresh program for each call; a server tool connects an MCP server for the session, either a stdio server that Wheelchair starts or an HTTP server at a URL. Wheelchair connects valid folder tools automatically for supported agents; no `.mcp.json` edit is needed.
 
 ## Describe a tool
 
@@ -23,7 +23,7 @@ A complete script description:
 
 `inputs` maps names to a type (`string`, `number`, `boolean`, `object` or `array`), a nonempty description and a boolean `required`. `run` is a nonempty argument array: its first item is an executable on PATH or a path relative to the tool folder. The script receives a JSON object on stdin and returns text on stdout. `timeout_seconds` is an integer from 1 to 240, default 120; the cap leaves time for cleanup within the bridge's Codex call deadline. Failed calls return an error; stdout is capped at 1 MiB and stderr keeps its last 4 KiB.
 
-A complete server description:
+A complete stdio server description:
 
 ```json
 {
@@ -40,7 +40,32 @@ A complete server description:
 "start": ["sh", "-c", "cd \"$WHEELCHAIR_PROJECT_DIR\" && exec some-server \"$WHEELCHAIR_PROJECT_DIR\""]
 ```
 
-Use `WHEELCHAIR_PROJECT_DIR` for the project's files, never a path climbing out of the tool folder. Reach the tool's own helper files relative to its folder. Keep state in `WHEELCHAIR_PROJECT_DIR` or a temporary folder: shared copies are read-only.
+Use `WHEELCHAIR_PROJECT_DIR` for the project's files, never a path climbing out of the tool folder. Reach the tool's own helper files relative to its folder. Keep caches and state in `WHEELCHAIR_PROJECT_DIR` or under `/tmp`: shared copies are read-only, and [sandboxed Codex](#ai-limits) lets a tool write nowhere else.
+
+A server description has exactly one of `start` and `url`.
+
+## HTTP servers
+
+A server tool can point at an MCP server that is already listening over HTTP. Wheelchair does not start it.
+
+```json
+{
+  "name": "tickets",
+  "description": "Search tickets",
+  "kind": "server",
+  "url": "https://tickets.example.com/mcp",
+  "headers": { "Authorization": "Bearer ${TICKETS_API_KEY}" },
+  "keys": ["TICKETS_API_KEY"]
+}
+```
+
+`url` is an `http:` or `https:` URL without spaces or control characters. `headers` is optional: an object of at most 20 header names and nonempty single-line values (Latin-1 characters only), with no name repeated in a different case. It cannot set `Accept`, `Content-Type`, `MCP-Protocol-Version` or `Mcp-Session-Id`. A value may hold `${NAME}` placeholders, alone or inside other text; each name must be listed in `keys`. Placeholders work only in header values, not in `url`. `headers` and `windows` are only for HTTP servers.
+
+Without `keys`, the URL and headers go into the agent's MCP config as written, so never write a secret there. With `keys`, the agent talks to a local proxy that Wheelchair starts for the session: the proxy reads the values, puts them into the headers of its requests to `url` and checks replies for keys as described under [Keys](#keys). The values and the filled-in headers stay out of the agent's config. The keyed proxy does not follow redirects, so give the final URL.
+
+On WSL, add `"windows": true` for a server listening on Windows. The URL must then be plain `http` on `localhost` or `127.0.0.1`. Wheelchair forwards it to the session through a private local port, with or without keys. If it cannot reach Windows, the tool is left out of that session and named on the problems card.
+
+`check` connects to an HTTP server and lists its tools, sending only the headers that have no placeholder. For a `windows: true` server on WSL it validates the description only; the live connection happens at session start.
 
 ## Keys
 
@@ -59,7 +84,7 @@ Script and server tools can declare `keys`: an array of 1–20 unique environmen
 }
 ```
 
-Server tools may list `keys`. Values reach only the server process and are read when it starts. Replies and error output are checked for keys using the same spellings as scripts. Only text inside a message can be replaced. A reply that cannot be cleaned this way or is over 32 MiB is usually replaced by an error reply to the same request. It is dropped if its `id` holds a key or could not be checked, or if an oversized reply's `id` comes after the cut. A server request that cannot be cleaned gets an error; other messages that cannot be cleaned are dropped. `check` runs without keys. Keyed servers have the same availability as other server tools.
+Server tools may list `keys`. For a stdio server, values reach only the server process and are read when it starts. For an HTTP server, they are read when its local proxy starts and sent to the server in the headers that name them. Replies and error output are checked for keys using the same spellings as scripts. Only text inside a message can be replaced. A reply that cannot be cleaned this way or is over 32 MiB is usually replaced by an error reply to the same request. It is dropped if its `id` holds a key or could not be checked, or if an oversized reply's `id` comes after the cut. A server request that cannot be cleaned gets an error; other messages that cannot be cleaned are dropped. `check` runs server tools without keys. Keyed servers have the same availability as other server tools.
 
 A project tool uses the project's keys, set on its Tools page under Keys on this machine. A shared tool uses the machine's shared keys, set in Settings under Shared tools, Shared keys. In the shared tools project's own threads, its tools use the shared keys too. Each machine keeps its own keys. A usable value is 8–4096 characters of letters, digits and `. _ ~ + / = -`; other values count as not set.
 
@@ -67,7 +92,7 @@ For script tools, at each call the values are added only to the tool's own proce
 
 A tool with a missing key is not offered; problems show `needs key <KEY>, not set on this machine` (or `needs keys A, B, …` for several). On Kimi and Pi the problems line is as of session start. For MCP, a key added mid-session is usable from the next agent start (a new session, resume or account switch). For script tools, a replaced value applies from the next call; a removed key makes the next call fail without running. A server gets a replaced or removed value at its next start, at the next agent start. For MCP, if a tool's `keys` change mid-session, it is refused as changed until the next agent start. For script tools on Kimi and Pi, an added key and a changed `keys` list both apply from the next `wc.js tool run`, with no refusal.
 
-In script output, keys printed as-is or with up to three layers of common escapes are replaced with `[key]`. This covers JSON and backslash escapes such as `\u002B`, `\x2B` and `\/`, and percent-encoding such as `%2B`. Base64, hashing, splitting and web-page codes such as `&#43;` are outside this protection, and deeper escaping may leave a key visible. A backslash right before a key is hidden with it. At a cut edge, text that looks like part of an escaped key is dropped, and a cut-off stretch made entirely of key characters, percent signs and backslashes can be dropped whole. Very escape-heavy output can show `[not checked for keys]` in place of stretches of those characters. A server message replaces an echoed key with `[key]` only when it appears as written. If JSON escapes it, for example `/` as `\/`, the message is held back instead. A message is also held back as "could not be checked for keys" if it contains a stretch over 4 KiB of key characters mixed with `%` or `\`, such as a long percent-encoded URL or nested JSON with `\/`, or so many stretches that checking runs out of time. Never print or log a key in any form. Never write a key into a tool's files: they are committed. Node's child-process debug output (`NODE_DEBUG`) on in the bridge or server launcher refuses keyed tools. Claude, Antigravity and unrestricted Codex use keyed tools through MCP with no extra step. Kimi and Pi run keyed script tools through `wc.js tool run`, which asks the machine to run them with their keys and returns redacted output; key values never appear in the result. Sandboxed Codex cannot use keyed tools; set Codex to unrestricted in Settings to use them.
+In script output, keys printed as-is or with up to three layers of common escapes are replaced with `[key]`. This covers JSON and backslash escapes such as `\u002B`, `\x2B` and `\/`, and percent-encoding such as `%2B`. Base64, hashing, splitting and web-page codes such as `&#43;` are outside this protection, and deeper escaping may leave a key visible. A backslash right before a key is hidden with it. At a cut edge, text that looks like part of an escaped key is dropped, and a cut-off stretch made entirely of key characters, percent signs and backslashes can be dropped whole. Very escape-heavy output can show `[not checked for keys]` in place of stretches of those characters. A server message replaces an echoed key with `[key]` only when it appears as written. If JSON escapes it, for example `/` as `\/`, the message is held back instead. A message is also held back as "could not be checked for keys" if it contains a stretch over 4 KiB of key characters mixed with `%` or `\`, such as a long percent-encoded URL or nested JSON with `\/`, or so many stretches that checking runs out of time. Never print or log a key in any form. Never write a key into a tool's files: they are committed. Node's child-process debug output (`NODE_DEBUG`) on in the bridge or server launcher refuses keyed tools; the keyed HTTP proxy also refuses its HTTP and network debug output. Claude, Antigravity and Codex, sandboxed or unrestricted, use keyed tools through MCP with no extra step. Kimi and Pi run keyed script tools through `wc.js tool run`, which asks the machine to run them with their keys and returns redacted output; key values never appear in the result.
 
 Tools may rely only on `PATH`, `HOME`, `WHEELCHAIR_PROJECT_DIR`, their declared keys and variables they set themselves. Keys a tool happens to find in its environment exist only on some AIs and projects.
 
@@ -95,10 +120,14 @@ $ wc.js tool run demo --input '{"text":"hi"}'
 Input: {"text":"hi"}
 ```
 
-Create a template with `new`, edit it, run `check` and `run` with representative input, then commit before asking for review. Use `--kind server` for the Node server template; server tools are tested with `check`, not `run`. A changed `tool.json` reaches MCP at the next agent start: a new session, resume or account switch. Script files themselves run live. If the description changes during a session, the bridge asks you to run it from the shell or wait for the next start.
+Create a template with `new`, edit it, run `check` and `run` with representative input, then commit before asking for review. Use `new <name> --kind server [--lang node|python]` for a stdio server template. Node is the default; `--lang python` makes a Python server that uses only the standard library and needs `python3` on `PATH`. To make an HTTP server tool, write its `tool.json` as above. Server tools are tested with `check`, not `run`. A changed `tool.json` reaches MCP at the next agent start: a new session, resume or account switch. Script files themselves run live. If the description changes during a session, the bridge asks you to run it from the shell or wait for the next start.
 
 ## AI limits
 
-Claude, unrestricted Codex and Antigravity receive folder tools through MCP in roles that receive project tools. Kimi, Pi and sandboxed Codex run script tools from the shell with `wc.js tool run`; set the shell call timeout above the tool's `timeout_seconds`. Kimi and Pi run keyed script tools through the machine as above. Sandboxed Codex cannot use keyed tools; its problems and `wc.js tool list` say so, with the message `set Codex to unrestricted in Settings to use it`. They have no server tools; Codex needs unrestricted mode for those. Codex keeps `.mcp.json` entries first, then tries folder entries one at a time (bridge first, then server tools by name). Any entry that would push the launch arguments over Codex's 64 KiB budget is left out and named on the problems card; later smaller entries can still fit.
+Claude, Codex and Antigravity receive folder tools through MCP in roles that receive project tools. Kimi and Pi run script tools from the shell with `wc.js tool run`; set the shell call timeout above the tool's `timeout_seconds`. They run keyed script tools through the machine as above, and they have no server tools, stdio or HTTP.
+
+Sandboxed Codex runs folder scripts and stdio servers inside Codex's sandbox, keyed or not. A tool there can write only to the thread's worktree and `/tmp`. It cannot write elsewhere under `$HOME`, so put its caches and state in those two places. Keys are read, and output is checked for them, outside the sandbox. HTTP server tools connect as they do elsewhere. On WSL, script and stdio tools that run Windows programs are skipped in sandboxed Codex with a warning, because its Linux sandbox cannot confine them; set Codex to unrestricted in Settings to use them.
+
+Codex keeps `.mcp.json` entries first, then tries folder entries one at a time (bridge first, then server tools by name). Any entry that would push the launch arguments over Codex's 64 KiB budget is left out and named on the problems card; later smaller entries can still fit.
 
 Codex sets the bridge's MCP call deadline to 260 seconds. Codex 0.172.0 defaults to 300 seconds per call for server tools. Claude Code 2.1.332 defaults to 100,000,000 ms per MCP call (it reads `MCP_TOOL_TIMEOUT`, in milliseconds), well above 260 seconds. Wheelchair sets the Antigravity bridge's `timeoutSeconds` to 260; Antigravity's default for server tools was not established.

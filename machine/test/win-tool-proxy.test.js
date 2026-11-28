@@ -26,11 +26,11 @@ const waitFor = async (predicate, timeout = 3000) => {
   while (Date.now() < end) { const value = predicate(); if (value) return value; await sleep(10); }
   throw new Error('timed out waiting for condition');
 };
-function launch({ ready = false, env = {}, cache, command = process.execPath, args, pause = false, probeMs = 2000, preload, holdMs = 100, initMs = 200 } = {}) {
+function launch({ ready = false, env = {}, cache, command = process.execPath, args, pause = false, probeMs = 2000, preload, holdMs = 100, initMs = 200, noCache = false } = {}) {
   const dir = makeTempSync('proxy-'), readyFile = path.join(dir, 'ready'), list = path.join(dir, 'cache', 'list'), record = path.join(dir, 'record');
   if (ready) fs.writeFileSync(readyFile, JSON.stringify({ state: 'ready', copy: 'C:\\copy' }));
   if (cache) { fs.mkdirSync(path.dirname(list)); fs.writeFileSync(list, JSON.stringify({ tools: cache })); }
-  const child = track(spawn(process.execPath, [...(preload ? ['--require', preload] : []), proxy, '--probe-ms', String(probeMs), '--ready-file', readyFile, '--list-cache', list, '--name', 'example', '--hold-ms', String(holdMs), '--poll-ms', '10', '--init-ms', String(initMs), '--stop-ms', '20,30,20', '--', command, ...(args || (command === process.execPath ? [server] : []))], { env: { ...process.env, WHEELCHAIR_SESSION_TOKEN: 'secret', RECORD: record, ...env } }));
+  const child = track(spawn(process.execPath, [...(preload ? ['--require', preload] : []), proxy, '--probe-ms', String(probeMs), '--ready-file', readyFile, ...(noCache ? [] : ['--list-cache', list]), '--name', 'example', '--hold-ms', String(holdMs), '--poll-ms', '10', '--init-ms', String(initMs), '--stop-ms', '20,30,20', '--', command, ...(args || (command === process.execPath ? [server] : []))], { env: { ...process.env, WHEELCHAIR_SESSION_TOKEN: 'secret', RECORD: record, ...env } }));
   let text = '', stderr = ''; const lines = [];
   child.stdout.on('data', b => { text += b; let n; while ((n = text.indexOf('\n')) >= 0) { lines.push(JSON.parse(text.slice(0, n))); text = text.slice(n + 1); } });
   if (pause) child.stdout.pause();
@@ -233,4 +233,30 @@ test('socket probe skips pending stdout writes', TEST_TIMEOUT, async () => {
 
 test('probe interval must be a positive integer', TEST_TIMEOUT, async () => {
   for (const probeMs of ['0', '01', '-1', 'abc']) { const p = launch({ probeMs }); const result = await p.exit; assert.equal(result.code, 2); assert.match(result.stderr, /Invalid proxy arguments/); }
+});
+
+test('without cache holds list until ready or failure', TEST_TIMEOUT, async () => {
+  for (const state of ['ready', 'failed']) {
+    const p = launch({ noCache: true, holdMs: 5000, initMs: 5000 });
+    p.send('initialize', 1, { protocolVersion: 'v' }); await p.wait(x => x.id === 1);
+    p.send('tools/list', 2); await sleep(100); assert.ok(!p.lines.some(x => x.id === 2));
+    p.setReady({ state, reason: 'offline', copy: 'C:' });
+    const result = await p.wait(x => x.id === 2);
+    if (state === 'ready') assert.ok(Array.isArray(result.result.tools));
+    else assert.match(result.error.message, /offline/);
+    assert.equal(fs.existsSync(path.dirname(p.list)), false);
+    p.child.stdin.end(); await p.exit;
+  }
+});
+test('waitReady resolves and rejects on readiness, timeout and abort', async () => {
+  const { waitReady } = require('../lib/win-tool-proxy');
+  const file = path.join(makeTempSync('wait-ready-'), 'ready');
+  fs.writeFileSync(file, JSON.stringify({ state: 'ready', copy: 'C:\\copy' }));
+  assert.equal((await waitReady(file, { timeoutMs: 1000 })).copy, 'C:\\copy');
+  fs.writeFileSync(file, JSON.stringify({ state: 'failed', reason: 'disk' }));
+  await assert.rejects(waitReady(file, { timeoutMs: 1000 }), /disk/);
+  fs.writeFileSync(file, JSON.stringify({ state: 'waiting' }));
+  await assert.rejects(waitReady(file, { timeoutMs: 100 }), /timed out/);
+  const controller = new AbortController(); const pending = waitReady(file, { timeoutMs: 1000, signal: controller.signal }); controller.abort();
+  await assert.rejects(pending, /cancelled/);
 });

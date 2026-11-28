@@ -8,8 +8,9 @@ const { debuglog } = require('util');
 const { projectIdentity, readKeyStore, usableReason } = require('./project-keys');
 const { readSharedKeys } = require('./shared-keys');
 const { relay } = require('./server-relay');
-const args = process.argv.slice(2); let dir, projectDir, stateDir, keyStore; const keys = [];
-for (let i = 0; i < args.length; i++) { if (args[i] === '--project-dir') projectDir = args[++i]; else if (args[i] === '--tool') dir = args[++i]; else if (args[i] === '--state-dir') stateDir = args[++i]; else if (args[i] === '--key-store') keyStore = args[++i]; else if (args[i] === '--key') keys.push(args[++i]); }
+function main() {
+const args = process.argv.slice(2); let dir, projectDir, stateDir, keyStore, win, winReadyFile, winListCache, sandboxCli; const keys = [];
+for (let i = 0; i < args.length; i++) { if (args[i] === '--sandbox-cli') sandboxCli = args[++i]; else if (args[i] === '--win') win = true; else if (args[i] === '--win-ready-file') winReadyFile = args[++i]; else if (args[i] === '--win-list-cache') winListCache = args[++i]; else if (args[i] === '--project-dir') projectDir = args[++i]; else if (args[i] === '--tool') dir = args[++i]; else if (args[i] === '--state-dir') stateDir = args[++i]; else if (args[i] === '--key-store') keyStore = args[++i]; else if (args[i] === '--key') keys.push(args[++i]); }
 if (!projectDir || projectDir.startsWith('--')) { console.error('usage: --project-dir <dir> --tool <dir>'); process.exit(1); }
 let tool;
 try {
@@ -36,9 +37,12 @@ if (keyed) {
   if (missing.length) { console.error(`tool ${tool.name} needs ${missing.length === 1 ? 'key' : 'keys'} ${missing.join(', ')}, not set on this machine`); process.exit(1); }
   for (const k of keys) { env[k] = store.keys[k]; values.push(store.keys[k]); }
 }
+if (keyed && (win || winReadyFile)) { const entries = (env.WSLENV || '').split(':').filter(Boolean); for (const key of keys) if (!entries.some(e => e.split('/')[0] === key)) entries.push(key); env.WSLENV = entries.join(':'); }
 const program = tool.start[0].includes('/') ? path.resolve(dir, tool.start[0]) : tool.start[0];
 let child;
-try { child = spawn(program, tool.start.slice(1), { cwd: dir, env, detached: true, stdio: keyed ? ['pipe','pipe','pipe'] : ['pipe','pipe','inherit'] }); } catch (e) { console.error(`tool ${tool.name}: cannot start ${tool.start[0]}: ${keyed ? e.code : e.message.replace(/[\r\n]+/g, ' ')}`); process.exit(1); }
+const command = winReadyFile ? [process.execPath, path.join(__dirname, 'win-tool-proxy.js'), '--ready-file', winReadyFile, ...(winListCache ? ['--list-cache', winListCache] : []), '--name', tool.name, '--', program, ...tool.start.slice(1)] : [program, ...tool.start.slice(1)];
+const argv = sandboxCli ? require('../../connectors').machine(sandboxCli).sandboxWrapTool(command, { worktree: projectDir, toolDir: dir }) : command;
+try { child = spawn(argv[0], argv.slice(1), { cwd: sandboxCli ? projectDir : dir, env, detached: true, stdio: keyed ? ['pipe','pipe','pipe'] : ['pipe','pipe','inherit'] }); } catch (e) { console.error(`tool ${tool.name}: cannot start ${tool.start[0]}: ${keyed ? e.code : e.message.replace(/[\r\n]+/g, ' ')}`); process.exit(1); }
 let killed = false;
 function kill() { if (killed || !child.pid) return; killed = true; try { process.kill(-child.pid, 'SIGTERM'); } catch {} const reaper = spawn(process.execPath, ['-e', "setTimeout(() => { try { process.kill(-Number(process.argv[1]), 'SIGKILL'); } catch {} }, 5000)", String(child.pid)], { detached: true, stdio: 'ignore' }); reaper.on('error', () => {}); reaper.unref(); }
 process.on('exit', kill);
@@ -48,10 +52,28 @@ if (keyed) {
   relay({ child, name: tool.name, values, kill, stdin: process.stdin, stdout: process.stdout, stderr: process.stderr });
   return;
 }
-process.stdin.pipe(child.stdin); child.stdout.pipe(process.stdout); child.stdin.on('error', () => {});
-process.stdin.on('end', () => { kill(); process.exit(0); });
+pipeKeyless({ child, stdin: process.stdin, stdout: process.stdout, kill, exit: code => process.exit(code) });
 child.on('error', e => { console.error(`tool ${tool.name}: cannot start ${tool.start[0]}: ${e.message.replace(/[\r\n]+/g, ' ')}`); process.exit(1); });
-child.on('close', (code, signal) => { kill(); if (signal) process.exit(1); else process.exit(code ?? 1); });
 
 }
 start();
+}
+
+function pipeKeyless({ child, stdin, stdout, kill, exit }) {
+  child.stdin.on('error', () => {});
+  stdin.pipe(child.stdin);
+  child.stdout.pipe(stdout, { end: false });
+  stdout.on('error', e => { if (e.code === 'EPIPE') { kill(); exit(0); } });
+  stdin.on('end', () => { kill(); exit(0); });
+  child.on('close', (code, signal) => {
+    kill();
+    stdin.pause?.();
+    stdin.unref?.();
+    const result = signal ? 1 : (code ?? 1);
+    if (stdout.writableEnded || stdout.destroyed) exit(result);
+    else stdout.write('', () => exit(result));
+  });
+}
+
+if (require.main === module) main();
+module.exports = { pipeKeyless };

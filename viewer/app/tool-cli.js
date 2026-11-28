@@ -7,6 +7,7 @@ const { execFileSync } = require('node:child_process');
 const { NAME_RE, RESERVED, discover } = require('../../machine/lib/folder-tools');
 const { toolEnv, runScript, installExitHandlers } = require('../../machine/lib/tool-run');
 const { handshake } = require('../../machine/lib/mcp-stdio');
+const { httpHandshake } = require('../../machine/lib/mcp-http');
 
 const unreachable = "couldn't reach the machine service; the tool did not run";
 const lost = "lost the connection to the machine before the tool's result arrived; the tool may already have run, so check before running it again";
@@ -32,6 +33,11 @@ function runRequest(urlText, token, body) {
   });
 }
 
+function onWsl() {
+  try { return process.platform === 'linux' && /microsoft/i.test(fs.readFileSync('/proc/version', 'utf8')); }
+  catch { return false; }
+}
+
 async function roots(request) {
   const token = process.env.WHEELCHAIR_SESSION_TOKEN;
   if (!token) {
@@ -54,18 +60,28 @@ async function main(args, io = {}) {
   if (!['new', 'list', 'check', 'run'].includes(command)) throw new Error('usage: wc.js tool <new|list|check|run>');
   const { worktree, shared, keyed_unavailable, keyed_run } = await roots(command === 'run' ? runRequest : io.request);
   if (command === 'new') {
-    const [name, flag, kind] = tail;
-    if (tail.length !== 3 || flag !== '--kind' || !['script', 'server'].includes(kind)) throw new Error('usage: wc.js tool new <name> --kind script|server');
+    const [name, ...flags] = tail;
+    const usage = 'usage: wc.js tool new <name> --kind script|server [--lang node|python]';
+    const options = {};
+    for (let i = 0; i < flags.length; i += 2) {
+      const flag = flags[i], value = flags[i + 1];
+      if (!['--kind', '--lang'].includes(flag) || Object.hasOwn(options, flag) || !value || value.startsWith('--')) throw new Error(usage);
+      options[flag] = value;
+    }
+    const kind = options['--kind'], lang = options['--lang'];
+    if (!name || name.startsWith('--') || !['script', 'server'].includes(kind)) throw new Error(usage);
+    if (lang !== undefined && kind === 'script') throw new Error('--lang is only supported with --kind server');
+    if (lang !== undefined && !['node', 'python'].includes(lang)) throw new Error(`unsupported --lang "${lang}"; supported: node, python`);
     if (!NAME_RE.test(name || '') || name === RESERVED) throw new Error('invalid or reserved tool name');
     const dest = path.join(worktree, '.wheelchair', 'tools', name);
     await fs.promises.mkdir(path.dirname(dest), { recursive: true });
     try { await fs.promises.mkdir(dest); } catch (e) { if (e.code === 'EEXIST') throw new Error(`tool folder already exists: ${dest}`); throw e; }
-    const template = path.join(__dirname, '../../machine/templates/tools', kind);
+    const template = path.join(__dirname, '../../machine/templates/tools', kind === 'server' && lang === 'python' ? 'server-python' : kind);
     for (const file of await fs.promises.readdir(template)) {
       const source = path.join(template, file), content = (await fs.promises.readFile(source, 'utf8')).replaceAll('__NAME__', name);
       await fs.promises.writeFile(path.join(dest, file), content, { mode: (await fs.promises.stat(source)).mode });
     }
-    if (kind === 'server') await fs.promises.copyFile(path.join(__dirname, '../../machine/lib/mcp-stdio.js'), path.join(dest, 'mcp-stdio.js'));
+    if (kind === 'server' && lang !== 'python') await fs.promises.copyFile(path.join(__dirname, '../../machine/lib/mcp-stdio.js'), path.join(dest, 'mcp-stdio.js'));
     out.write(`${dest}\nNext: wc.js tool check ${name}\n`); return;
   }
   const found = await discover({ worktree, shared, path: process.env.PATH });
@@ -117,12 +133,21 @@ async function main(args, io = {}) {
       for (const row of rows) {
         if (row.status !== 'ok') { out.write(`${row.name}: ${row.reason}\n`); failed = true; continue; }
         if (row.kind !== 'server') { out.write(`${row.name}: ok${row.tool.keys.length ? ' (validated without using keys)' : ''}\n`); continue; }
+        const remote = row.tool.transport === 'http';
+        if (remote && row.tool.windows === true && onWsl()) { out.write(`${row.name}: ok (Windows localhost HTTP tool — live check runs through the Windows forward at session start)\n`); continue; }
         const remaining = deadline - Date.now();
         if (remaining <= 0) { out.write(`${row.name}: check deadline exceeded\n`); failed = true; continue; }
-        const [program, ...argv] = row.tool.start;
-        const env = toolEnv(process.env, worktree);
-        for (const key of row.tool.keys) delete env[key];
-        const result = await handshake({ command: program.includes('/') ? path.resolve(row.dir, program) : program, args: argv, cwd: row.dir, env, timeoutMs: remaining, signal: controller.signal });
+        let result;
+        if (remote) {
+          const headers = Object.fromEntries(Object.entries(row.tool.headers || {}).filter(([, value]) => !value.includes('${')));
+          // Time out just before the deadline's abort, which would skip closing the server's session.
+          result = await httpHandshake({ url: row.tool.url, headers, timeoutMs: Math.max(1, remaining - 100), signal: controller.signal });
+        } else {
+          const [program, ...argv] = row.tool.start;
+          const env = toolEnv(process.env, worktree);
+          for (const key of row.tool.keys) delete env[key];
+          result = await handshake({ command: program.includes('/') ? path.resolve(row.dir, program) : program, args: argv, cwd: row.dir, env, timeoutMs: remaining, signal: controller.signal });
+        }
         if (!result.ok) { out.write(`${row.name}: ${result.error}\n${row.tool.keys.length ? 'it ran without its keys; that may be why\n' : ''}`); failed = true; }
         else out.write(`${row.name}: ${result.serverInfo?.name || '(unnamed server)'}${result.tools === null ? '' : ` tools: ${result.tools.join(', ')}`}${row.tool.keys.length ? ' (checked without its keys)' : ''}\n`);
       }

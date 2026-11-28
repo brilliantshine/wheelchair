@@ -153,8 +153,9 @@ test('folder entries respect sandbox, order, budget and validation', () => {
   assert.ok(result.argv.indexOf('mcp_servers.project_wheelchair-tools.command="/node"') < result.argv.indexOf('mcp_servers.project_server.command="/node"'));
   assert.deepEqual(result.loaded.map(x => x.name), ['existing', 'wheelchair-tools', 'server']);
   const sandbox = run(session, { ...ctx, extraServers: extras });
-  assert.deepEqual(sandbox.warnings, [{ names: ['wheelchair-tools', 'server'], text: 'folder tools run from the shell here (`wc.js tool run`); server tools need Codex set to unrestricted' }]);
-  assert.deepEqual(sandbox.argv, run(session, ctx).argv);
+  assert.deepEqual(sandbox.warnings, []);
+  assert.ok(sandbox.argv.includes('mcp_servers.project_wheelchair-tools.tool_timeout_sec=260'));
+  assert.deepEqual(sandbox.loaded.map(x => x.name), ['existing', 'wheelchair-tools', 'server']);
   assert.deepEqual(run(session, { ...ctx, extraServers: [] }), run(session, ctx));
   assert.deepEqual(run(unrestricted, { ...ctx, extraServers: [] }), run(unrestricted, ctx));
   assert.deepEqual(run(unrestricted, { ...ctx, tools: false, extraServers: extras }), run(unrestricted, { ...ctx, tools: false }));
@@ -172,4 +173,19 @@ test('keyless bridge retains legacy arguments and fits the same near-limit Codex
   assert.deepEqual(entry.args,legacy.args);
   const run=e=>command(input,{...session,codex_mode:'unrestricted'},worktree,{tools:true,mcp:{names:['existing'],servers:{existing:{command:'node',args:["'".repeat(15800)]}}},extraServers:[{name:'wheelchair-tools',folder:'bridge',entry:e}]});
   assert.deepEqual(run(entry),run(legacy)); assert.ok(run(entry).loaded.some(row=>row.name==='wheelchair-tools'));
+});
+
+test('sandbox options reach stdio folder entries but not HTTP entries', () => {
+  const { bridgeEntry, serverEntry } = require('../lib/folder-tools');
+  const sandbox = { cli: 'codex', codexHome: '/account/home' };
+  const script = { dir: '/shared/script', tool: { keys: [] } };
+  const server = { name: 'server', dir: '/shared/server', tool: { keys: [] } };
+  for (const entry of [bridgeEntry(worktree, [script], { sandbox }).entry, serverEntry(worktree, server, { sandbox }).entry]) {
+    assert.deepEqual(entry.env, { CODEX_HOME: sandbox.codexHome });
+    assert.deepEqual(entry.args.slice(entry.args.indexOf('--sandbox-cli'), entry.args.indexOf('--sandbox-cli') + 2), ['--sandbox-cli', 'codex']);
+  }
+  for (const keys of [[], ['TOKEN']]) {
+    const entry = serverEntry(worktree, { ...server, key_store: 'shared', tool: { transport: 'http', url: 'https://example.test', keys } }, { sandbox, stateDir: '/state' }).entry;
+    assert.ok(!entry.args?.includes('--sandbox-cli')); assert.equal(entry.env?.CODEX_HOME, undefined);
+  }
 });
