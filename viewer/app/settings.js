@@ -432,7 +432,7 @@ async function update(hub, change) {
     assertFits(value);
     return value;
   });
-  hub.bumpSettingsRevision('settings');
+  hub.bumpSettingsRevision?.('settings');
   return result;
 }
 

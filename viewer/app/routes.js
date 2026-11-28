@@ -107,7 +107,7 @@ async function handle(hub, request, response, url, machineAuthenticated) {
     if (config.shared_tools_repo) input.shared_tools = { repo: config.shared_tools_repo, candidates: config.saved_dirs.filter(entry => entry.machine === name).map(entry => entry.path) };
     try {
       const result = await hub.client.passThrough(name, `/v1/shared-keys/${bits[1]}`, 'POST', input, 120_000);
-      if (bits[1] !== 'read' && result.status >= 200 && result.status < 300) hub.bumpSettingsRevision('shared_keys');
+      if (bits[1] !== 'read' && result.status >= 200 && result.status < 300) hub.bumpSettingsRevision?.('shared_keys');
       return send(response, result.status, result.body);
     } catch (error) {
       if (error.status === 404 && error.message === `unknown machine: ${name}`) return send(response, 404, { error: error.message });
@@ -398,7 +398,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
     } else {
       try { await settings.modelCommand(hub, args); }
       catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
-      hub.bumpSettingsRevision('settings');
+      hub.bumpSettingsRevision?.('settings');
     }
     return send(response, 200, { models: await settings.models(hub), heads_up: await settings.headsUp(hub) });
   }
