@@ -110,15 +110,15 @@ None.
     - `--accent-ink`: `pickContrastInk(accent)`.
     - `--accent-hover`: hover fill for filled primary buttons/FABs — shifts `--accent` in HSL lightness (+8% in dark mode, -8% in light mode; if already near 0% or 100% lightness, shifts toward middle so hover is visibly distinct).
     - `--accent-hover-ink`: `pickContrastInk(accentHover)` (guaranteed `>= 4.5:1` against `--accent-hover` even for `#000000` or `#ffffff` accents).
-    - `--accent-soft`: RGB mix of `--accent` (14% in dark, 10% in light) over `surfaces['--panel']`.
+    - `--accent-soft`: RGB mix of `--accent` (starting at 14% in dark, 10% in light) over `surfaces['--panel']`; if any of `surfaces['--ink']`, `surfaces['--dim']`, `status['--warn']`, `status['--good-text']`, or `status['--bad-text']` falls below `4.5:1` against `--accent-soft` (e.g. `#ffffff` accent in Slate Dark), step the mix weight down (to 0% if needed) until all five clear `>= 4.5:1`.
     - `--accent-line`: RGB mix of `--accent` (42% in dark, 38% in light) over `surfaces['--line']`.
     - `--accent-chip`: RGB mix of `--accent` (20% in dark, 14% in light) over `surfaces['--panel']`.
+    - `--accent-vis`: non-text visible accent derived from `--accent` by stepping HSL lightness (lighter in dark mode, darker in light mode) only if needed so its WCAG 2.1 non-text contrast ratio against `--bg`, `--panel`, `--panel-2`, and `--panel-3` is `>= 3.0:1` (unchanged exact `--accent` whenever it already clears `3.0:1`, including Default Dark `#5b9dd9`). Used for both the loading spinner highlight and selected graph node/edge strokes.
     - `--accent-text`: computed **after** `--accent-soft` and `--accent-chip`; starts from `--accent` in HSL and steps lightness (lighter in dark mode, darker in light mode) until WCAG 2.1 contrast ratio against all five surfaces (`--bg`, `--panel`, `--panel-2`, `--accent-soft`, `--accent-chip`) is `>= 4.5:1` (falling back to `surfaces['--ink']` if needed).
     - `--accent-hi`: hover/highlight text accent derived from `--accent-text` (slightly lighter in dark mode, slightly darker in light mode) while maintaining `>= 4.5:1` contrast against all five surfaces (`--bg`, `--panel`, `--panel-2`, `--accent-soft`, `--accent-chip`).
     - `--human`: RGB mix of `--accent` (16% in dark, 12% in light) over `surfaces['--panel-2']` (verified `>= 4.5:1` with `surfaces['--ink']`; if a very bright/dark accent lowers contrast below 4.5:1, reduce mix weight until `>= 4.5:1`).
-- **Spinner SVG derivation (`buildSpinnerUrls(ink, idle, accent, surfaces, resolvedMode)`):**
-  - Derives `spinnerAccent` from `accent` by stepping HSL lightness (lighter in dark mode, darker in light mode) only if needed so its WCAG 2.1 non-text contrast ratio against `--bg`, `--panel`, `--panel-2`, and `--panel-3` is `>= 3.0:1` (unchanged exact `accent` whenever it already clears `3.0:1`, including Default Dark `#5b9dd9`).
-  - Builds the two `url("data:image/svg+xml,...")` strings (normal speed and `prefers-reduced-motion` speed, matching `viewer/pages/app.css:204,206`) with `%23` URI-encoded `ink`, `idle`, and `spinnerAccent` hex values, exposed as `--spinner-svg` and `--spinner-svg-reduced` in `vars`.
+- **Spinner SVG derivation (`buildSpinnerUrls(ink, idle, accentVis)`):**
+  - Builds the two `url("data:image/svg+xml,...")` strings (normal speed and `prefers-reduced-motion` speed, matching `viewer/pages/app.css:204,206`) with `%23` URI-encoded `ink`, `idle`, and `--accent-vis` hex values, exposed as `--spinner-svg` and `--spinner-svg-reduced` in `vars`.
 - **`resolveTheme(theme, prefersLight)`**: accepts `{ mode, preset, accent }` (normalizing invalid values to defaults) and boolean `prefersLight`, returns `{ mode, preset, accent, resolvedMode: 'light' | 'dark', effectiveAccent, vars }`.
 - **`parseHexColor(input)`**: trims whitespace, accepts optional leading `#`, accepts 3-digit (`#abc` → `#aabbcc`) or 6-digit hex, returns lowercase `#rrggbb` or `null`.
 
@@ -194,25 +194,26 @@ None.
    - `viewer/pages/background.css`: verify opaque content surfaces remain opaque using `var(--bg)` / `var(--panel)` in light mode when a background image is active.
 2. **Graph viewer (`viewer/index.html`) and PNG export (`viewer/pages/picture-export.js`, `viewer/pages/picture.js`):**
    - Load `theme-palette.js` and `theme.js` in `viewer/index.html` `<head>`.
-   - Align `viewer/index.html`'s `:root` variables with the shared palette (`--bg`, `--panel`, `--panel-2`, `--line`, `--line-2`, `--ink`, `--dim`, `--accent`, `--accent-ink`, `--accent-hover`, `--accent-hover-ink`, `--accent-text`, `--accent-soft`, `--warn`, `--good`, `--good-text`, `--bad`, `--bad-text`, `--bad-bg`, `--warn-bg`, `--warn-line`, and map `--success: var(--good-text); --danger: var(--bad-text);`, keeping existing dark defaults as fallbacks).
+   - Align `viewer/index.html`'s `:root` variables with the shared palette while preserving its exact existing dark-mode appearance for Default Dark (Decision #9):
+     - Keep `viewer/index.html`'s existing dark-mode defaults (`--graph-stroke: #6b7280`, `--success: #4ea87b`, `--danger: #c4645f`, `--node-fill: #21252c`, `#3a1f1f`/`#f2d4d1` error banner, `#2a2a1f`/`#8a8a4a`/`#e6e4c8` notice banner) in dark mode, and override them under `html[data-theme-mode="light"]` (`--graph-stroke: var(--dim)`, `--success: var(--good-text)`, `--danger: var(--bad-text)`, `--node-fill: var(--panel)`, error banner `--bad-bg`/`--bad`/`--bad-text`, notice banner `--warn-bg`/`--warn-line`/`--warn`).
    - Audit all literal dark colors in `viewer/index.html` and replace them with theme tokens:
-     - `#controls button:hover:not(:disabled)` (`viewer/index.html:31`): `background: var(--panel-2); border-color: var(--line-2); color: var(--ink);` (instead of `#2b3542`).
+     - `#controls button:hover:not(:disabled)` (`viewer/index.html:31`): `background: var(--accent-soft); border-color: var(--line-2); color: var(--ink);` (visibly distinct from resting `--panel-2` in both modes, with `>= 4.5:1` ink contrast).
      - Active/selected accent-filled toolbar toggle buttons (`viewer/index.html:29-36`): `background: var(--accent); border-color: var(--accent); color: var(--accent-ink);` and their `:hover:not(:disabled)` state uses `background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-hover-ink);`.
-     - Error and notice banners (`viewer/index.html:55-59`): error uses `background: var(--bad-bg); border-color: var(--bad); color: var(--bad-text);`; notice uses `background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn);`.
-     - `.node .node-box`: `fill: var(--panel); stroke: var(--line-2);` (instead of `#21252c`).
-     - `.node.selected .node-box`: `fill: var(--accent-soft); stroke: var(--accent);` (instead of `#2b3140`).
+     - `.node .node-box`: `fill: var(--node-fill); stroke: var(--graph-stroke);` (preserves `#21252c` / `#6b7280` in dark mode and `var(--panel)` / `var(--dim)` with `>= 3.0:1` outline contrast in light mode).
+     - `.node.selected .node-box`: `fill: var(--accent-soft); stroke: var(--accent-vis);` (instead of `#2b3140` / raw `--accent`).
+     - Selected graph edges (`viewer/index.html:145,157-158`): `stroke: var(--accent-vis);` so selection cues remain `>= 3.0:1` against `--bg` even with a `#ffffff` accent in light mode.
      - `.node .node-fork` (`viewer/index.html:109`) and `.detail .detail-inferred` (`viewer/index.html:208`): `fill: var(--warn);` (instead of `#d8b45f`).
      - `.open-child .open-child-bg`: `fill: var(--panel-2); stroke: var(--accent-line);` (instead of `#2c3340`).
      - `.open-child .open-child-label` and `.status-tag.status-in-progress`: `fill: var(--accent-text);` (instead of `var(--accent)`).
      - Edge-label background pill (if literal dark fill) → `fill: var(--bg);`.
-     - Selection box `#marquee` (`viewer/index.html:219`): `fill: color-mix(in srgb, var(--accent) 14%, transparent);` (with `var(--accent-soft)` fallback).
+     - Selection box `#marquee` (`viewer/index.html:219`): `fill: color-mix(in srgb, var(--accent-vis) 14%, transparent); stroke: var(--accent-vis);` (with `var(--accent-soft)` fallback).
    - **PNG export document ownership (`viewer/pages/picture-export.js`, `viewer/pages/picture.js`):**
      - Graph export (`exportGraphPng` / SVG clone from iframe): capture the iframe's computed background color (`getComputedStyle(iframe.contentDocument.documentElement).getPropertyValue('--bg')` or `getComputedStyle(svg).backgroundColor`) from the **iframe document** at the same time SVG computed styles are inlined, and pass that captured background into the canvas fill so a live theme update on the parent page cannot produce a mismatched background.
      - Form export (`exportFormPng`): reads computed palette tokens from the Picture page's own `document.documentElement` (which loads `theme-palette.js` + `theme.js`).
 3. **Standalone doc page (`viewer/doc.html`):**
    - Load `theme-palette.js` and `theme.js` in `<head>`, align `:root` variables with the shared palette (dark defaults as fallback), and use `var(--accent-text)` (hover `var(--accent-hi)`) for links (`viewer/doc.html:66`) instead of raw `var(--accent)`.
 4. **Embedded terminal (`viewer/pages/term-view.js`, `viewer/pages/views.css`):**
-   - Terminal stays dark in all color modes (Decision #4): `.tv-host` in `viewer/pages/views.css` explicitly sets `background: #0c0e10; color: #e6e8ec; color-scheme: dark;` and xterm's constructor in `viewer/pages/term-view.js` passes an explicit dark `theme: { background: '#0c0e10', foreground: '#e6e8ec', cursor: '#e6e8ec' }` (preserving the existing warning-color cursor while typing). Surrounding controls (`.term-bar`, `.tv-view` border, `.tv-switch`, `.tv-notice`) remain themed with readable light/dark tokens including with an active background image.
+   - Terminal stays dark in all color modes (Decision #4): `.tv-host` in `viewer/pages/views.css` explicitly sets `background: #0c0e10; color: #e6e8ec; color-scheme: dark;` and xterm's constructor in `viewer/pages/term-view.js` passes an explicit dark `theme: { background: '#0c0e10', foreground: '#e6e8ec', cursor: '#e6e8ec' }`. The typing-mode cursor in `viewer/pages/term-view.js` uses the fixed dark-terminal warning color `#d9a441` (instead of reading page `--warn`, which is dark amber `#7c5000` in light mode) so it remains readable on `#0c0e10` in both modes. Surrounding controls (`.term-bar`, `.tv-view` border, `.tv-switch`, `.tv-notice`) remain themed with readable light/dark tokens including with an active background image.
 5. **Agents activity colors (`viewer/pages/agents.js`):**
    - Read accent/status colors from computed CSS variables (with existing hex fallbacks) where accent-colored indicators appear, and refresh on `wc-theme-change`.
 6. **Router & test map upkeep (`CONTRIBUTING.md`):**
@@ -233,8 +234,8 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 
 1. **Theme unit & API tests (`viewer/test/theme.test.js`):**
    - Covers `theme-palette.js` WCAG 2.1 contrast (`>= 4.5:1`) for:
-     - `--ink`, `--ink-2`, `--dim` against `--bg`, `--panel`, and `--panel-2`, plus `--good-ink` on `--good`, and `--good-text`, `--warn`, `--bad-text` against `--bg`, `--panel`, `--panel-2`, and `--accent-soft` for all 6 presets in both `light` and `dark` modes.
-     - `--accent-ink` on `--accent`, `--accent-hover-ink` on `--accent-hover`, `--accent-text` and `--accent-hi` on `--bg`/`--panel`/`--panel-2`/`--accent-soft`/`--accent-chip`, `--ink` on `--human`, and `spinnerAccent` (`>= 3.0:1` non-text contrast on `--bg`/`--panel`/`--panel-2`/`--panel-3`) across all 6 presets, both modes, and edge hex colors (`#000000`, `#777777`, `#8d8d8d`, `#8f8f8f`, `#ffffff`, `#ffff00`, `#ff0000`, `#00ff00`, `#5b9dd9`, `#d6a53b`).
+     - `--ink`, `--ink-2`, `--dim` against `--bg`, `--panel`, and `--panel-2`, plus `--good-ink` on `--good`, and `--ink`, `--dim`, `--good-text`, `--warn`, `--bad-text` against `--bg`, `--panel`, `--panel-2`, and `--accent-soft` (including `#ffffff` and `#000000` accents) for all 6 presets in both `light` and `dark` modes.
+     - `--accent-ink` on `--accent`, `--accent-hover-ink` on `--accent-hover`, `--accent-text` and `--accent-hi` on `--bg`/`--panel`/`--panel-2`/`--accent-soft`/`--accent-chip`, `--ink` on `--human`, and `--accent-vis` (`>= 3.0:1` non-text contrast on `--bg`/`--panel`/`--panel-2`/`--panel-3`) across all 6 presets, both modes, and edge hex colors (`#000000`, `#777777`, `#8d8d8d`, `#8f8f8f`, `#ffffff`, `#ffff00`, `#ff0000`, `#00ff00`, `#5b9dd9`, `#d6a53b`).
      - Exact pixel-identical default dark tokens and `--spinner-svg` / `--spinner-svg-reduced` color injection.
    - Covers `GET /wheelchair/api/settings/theme` and `PUT /wheelchair/api/settings/theme`: defaults, malformed `theme` field normalization vs unparseable `settings.json` returning 500 without overwriting, valid save + revision increment, idempotent no-op save, 400 invalid input (`{ error }`), 409 revision conflict (`{ error, mode, preset, accent, revision }`), 413 oversized payload, preservation across unrelated `settings.update()` calls.
    - Command: `node --test viewer/test/theme.test.js`
@@ -242,10 +243,10 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
    - Command: `node --test viewer/test/background.test.js viewer/test/app-settings.test.js`
 3. **Browser Settings editor & sync spec (`viewer/test/theme-editor.spec.js`, listed in `viewer/test/firefox-specs.js`):**
    - Isolated server via `viewer/test/helpers/server.js`.
-   - Tests Settings → You Theme controls: live preview of mode/preset/custom hex/quick swatch without saving, status line `"Previewing on this page · Save to apply across devices"`, preset switch preserving custom accent, Reset to preset, Reset to default preserving color mode, Reset discarding preview, Save persisting across reload, invalid hex validation disabling Save, 409 conflict with stale baseRevision after concurrent update, delayed stale GET not overwriting newer PUT/storage state, navigating away (including mobile Back link and header navigation + browser Back / `pagehide`) discarding in-flight/draft state, 6-column desktop / 3-column phone (390×844) preset grid with zero horizontal overflow.
+   - Tests Settings → You Theme controls: live preview of mode/preset/custom hex/quick swatch without saving, status line `"Previewing on this page · Save to apply across devices"`, preset switch preserving custom accent, Reset to preset, Reset to default preserving color mode, Reset discarding preview, Save persisting across reload, invalid hex validation disabling Save, 409 conflict with stale baseRevision after concurrent update, delayed stale GET not overwriting newer PUT/storage state, navigating away (including mobile Back link and header navigation + browser Back / `pagehide` + `pageshow` repaint confirming `persisted` restoration or dispatching persisted `pageshow` and asserting clean saved values and button state), 6-column desktop / 3-column phone (390×844) preset grid with zero horizontal overflow.
    - Command: `npm --prefix viewer run test:browser -- test/theme-editor.spec.js`
 4. **Browser rendering & cross-page spec (`viewer/test/theme-rendering.spec.js`, listed in `viewer/test/firefox-specs.js`):**
-   - Tests that saved light mode + custom accent color applies to Thread, Threads, Agents, New, Picture, Graph (`viewer/index.html`), and Standalone Doc (`viewer/doc.html`), including readable contrast on raw-accent-replaced labels, graph node boxes/labels, active toolbar button hover, inferred-edge detail text, standalone doc links, filled button hover pairs, `body` computed `color-scheme: light`, and spinner `--spinner-svg` containing the contrast-checked `spinnerAccent` hex; verifies Terminal (`.tv-host` / xterm) stays dark (`#0c0e10`), Sign-in stays default dark, pre-paint bootstrap avoids dark flash on reload in light mode, light mode + background image keeps cards opaque, and exported graph PNG background pixel matches the iframe's active theme background.
+   - Tests that saved light mode + custom accent color applies to Thread, Threads, Agents, New, Picture, Graph (`viewer/index.html`), and Standalone Doc (`viewer/doc.html`), including readable contrast on raw-accent-replaced labels, graph node boxes/labels, selected graph edge stroke with `#ffffff` accent in Default Light, active toolbar button hover, inferred-edge detail text, standalone doc links, filled button hover pairs, `body` computed `color-scheme: light`, and spinner `--spinner-svg` containing the contrast-checked `--accent-vis` hex; verifies Terminal (`.tv-host` / xterm) stays dark (`#0c0e10`) with readable `#d9a441` typing cursor when Typing is enabled in light mode, Sign-in stays default dark, Default Dark graph node outline/fill stay preserved, pre-paint bootstrap avoids dark flash on reload in light mode, light mode + background image keeps cards opaque, and exported graph PNG background pixel matches the iframe's active theme background.
    - Command: `npm --prefix viewer run test:browser -- test/theme-rendering.spec.js`
 
 ## Accepted Risks
@@ -341,13 +342,35 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 
 ### Round 4 — 2026-11-28
 
-**Lanes:** pending.
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 3:**
 - Darkened light-mode `--good` to `#197a48` (5.29:1 with `#ffffff`) and `--warn` to `#7c5000` (>= 5.3:1 on `--accent-soft` even for black accent), and added status-on-surface contrast tests to §7.1.
 - Extended `spinnerAccent` `>= 3.0:1` non-text contrast check to `--bg`, `--panel`, `--panel-2`, and `--panel-3` (desktop aside surface), adding `#8f8f8f` to §7.1.
 - Updated `viewer/index.html` in Spec §5.2: re-tokenized `#controls button:hover:not(:disabled)` to `--panel-2`/`--line-2`/`--ink`, mapped `--success: var(--good-text)` and `--danger: var(--bad-text)`, tokenized error/notice banners (`--bad-*`/`--warn-*`), and specified unambiguous `fill: var(--warn)` for `.node .node-fork` and `.detail .detail-inferred`.
 - Added `pageshow` repaint from saved `wcTheme.current().metadata` in `theme-editor.js` (Spec §4) so bfcache Back restores clean form state.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Changing `.node .node-box` stroke from `--graph-stroke` to `--line-2` drops outline contrast to 1.56:1 and breaks Default Dark | upheld | Preserved `--graph-stroke` (`#6b7280` dark / `var(--dim)` light) and `--node-fill` (`#21252c` dark / `var(--panel)` light) in Spec §5.2 |
+| intent | minor | `#controls button:hover:not(:disabled)` used `--panel-2`, matching resting background | upheld | Changed hover background to `var(--accent-soft)` in Spec §5.2 |
+| intent | minor | Mapping `--success`/`--danger` and banners unconditionally changed Default Dark graph viewer vs Decision #9 | upheld | Scoped `--success`/`--danger` and banner overrides to `html[data-theme-mode="light"]` in Spec §5.2 so Default Dark stays unchanged |
+| mechanics | blocking | Slate Dark + white accent made `--accent-soft` `#3e4348`, dropping `--warn` (4.44:1) and `--bad-text` (4.39:1) below 4.5:1 | upheld | Capped `--accent-soft` mix weight in Spec §2 until `--ink`, `--dim`, `--warn`, `--good-text`, and `--bad-text` all clear >= 4.5:1, and added `#ffffff` to §7.1 |
+| mechanics | blocking | Muted text `--dim` on `--accent-soft` dropped to 3.42:1 in Slate Dark + white accent | upheld | Resolved with mechanics finding #1 (`--dim` included in `--accent-soft` >= 4.5:1 mix cap and §7.1 matrix) |
+| mechanics | blocking | `.node .node-box` fill/outline change contradicts Decision #9 and drops outline contrast | upheld | Resolved with intent finding #1 in Spec §5.2 and tested in §7.4 |
+| mechanics | minor | White accent in Default Light leaves selected graph edge stroke at 1.07:1 | upheld | Generalized `spinnerAccent` to `--accent-vis` (>= 3.0:1) for both spinner highlight and selected graph node/edge strokes in Spec §2 & §5.2, tested in §7.4 |
+| mechanics | minor | Terminal typing cursor reads light-mode `--warn` (`#7c5000`, 2.77:1 on `#0c0e10`) | upheld | Fixed terminal typing cursor to `#d9a441` in Spec §5.4 and added test in §7.4 |
+| mechanics | minor | Browser Back test should confirm `pageshow.persisted` restoration and clean field/button state | upheld | Updated §7.3 to verify `pageshow` persisted restoration and clean saved values/button state |
+
+### Round 5 — 2026-11-28
+
+**Lanes:** pending.
+
+**Changed since Round 4:**
+- Capped `--accent-soft` mix weight in Spec §2 so `--ink`, `--dim`, `--warn`, `--good-text`, and `--bad-text` all clear `>= 4.5:1` (including `#ffffff`/`#000000` accents across all presets) and added them to §7.1.
+- Generalized `spinnerAccent` into `--accent-vis` (`>= 3.0:1` against `--bg`/`--panel`/`--panel-2`/`--panel-3`) and applied it to selected graph node/edge strokes and `#marquee` in Spec §2 & §5.2.
+- Preserved Default Dark graph viewer appearance in Spec §5.2 (`--graph-stroke: #6b7280`, `--node-fill: #21252c`, existing dark `--success`/`--danger`/banners), scoping light-mode overrides to `html[data-theme-mode="light"]`, and changed `#controls button:hover:not(:disabled)` to `var(--accent-soft)`.
+- Fixed terminal typing cursor in `viewer/pages/term-view.js` to `#d9a441` (Spec §5.4) and added `pageshow` persisted restoration and `#ffffff`-accent edge stroke assertions to §7.3–§7.4.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
