@@ -44,18 +44,23 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 2 | Layout for **Settings → Models**: **Agent tier buttons + Provider tabs** — top **Agents** block with 4-way segmented tier switches (`Light | Standard | Heavy | Critical`) and live model previews per role, followed by **Tier models** with tabs per enabled provider and inline effort pills instead of a second dropdown. | One-tap tier switching for every agent and single-provider tabs keep the page clean on both desktop and phone. | user |
 | 3 | Place the `Reviewers and checkers` family mix control in the Agents block alongside Plan reviewers and Checker, and keep `Escalation` as a compact block below Tier models. | Keeps review/check settings together and keeps worker escalation visible without competing with the main tier/agent controls. | defaulted |
 | 4 | Give Personal assistant and Project leads their own tier switches in the Agents block (separate from thread Leads). | Lets Collin run Personal assistant and Project leads on a different tier from thread Leads. | user |
+| 5 | Place Personal assistant and Project leads in their own separate block at the bottom of **Settings → Models** (separate from thread/build agents). | They don't build code directly, so keeping them in their own block keeps the main Agents block focused on thread/build roles. | user |
+| 6 | Add per-role provider ladders (dropdown/collapsible custom provider order, defaulting to the global order in Usage and balancing) for each applicable agent role (`lead`, `reviewer`, `verifier`, `mapper`, `designer`, `assistant`, `project-lead`), updating `IDEA.md` scope accordingly. `sub-lead` (follows thread provider) and `scout`/`scout-heavy` (built-in CLI helpers on lead's provider) do not have provider ladders. | Gives full per-role provider preference control right alongside tier selection while keeping rows uncluttered until opened. | idea-change |
 
 ## Spec
 
-### 1. Unified tier-based agent model preferences
-- Every configurable agent role picks a model tier (`light`, `standard`, `heavy`, `critical`): Leads, Sub-leads, Personal assistant, Project leads, Plan reviewers, Checker, Code mapping, Mockups, Scout, and Scout for bigger changes.
+### 1. Unified tier-based agent model preferences & per-role provider ladders
+- Every configurable agent role picks a model tier (`light`, `standard`, `heavy`, `critical`): Leads, Sub-leads, Plan reviewers, Checker, Code mapping, Mockups, Scout, Scout for bigger changes, plus Personal assistant and Project leads (in their own block).
 - The separate per-provider `Leads` model-picker block is removed from **Settings → Models**.
 - Session placement for `lead`, `sub-lead`, Personal assistant, and Project leads resolves through each role's configured tier.
+- Applicable roles (`lead`, `reviewer`, `verifier`, `mapper`, `designer`, `assistant`, `project-lead`) each have an optional per-role provider ladder (`null` / default = use global `lead_order` for `lead`/`assistant`/`project-lead` and global `worker_order` for `reviewer`/`verifier`/`mapper`/`designer`; or a custom ordered list of providers).
+- For `reviewer` and `verifier`, when `review_families` is `both` (Mix families), their per-role ladder orders candidate providers (respecting `--provider` / `--not-provider` constraints); when `review_families` is locked to a single provider, that single provider still takes precedence.
 
 ### 2. Reworked Settings → Models layout
-- **Agents block (top):** Lists each agent role with a 4-way segmented tier control (`Light | Standard | Heavy | Critical`) and a subtle live preview of the models that tier resolves to across enabled providers. Includes the `Reviewers and checkers` family mix control alongside Plan reviewers and Checker.
+- **Agents block (top):** Thread/build agent roles (`Leads`, `Sub-leads`, `Plan reviewers`, `Checker` + `Reviewers and checkers` family mix, `Code mapping`, `Mockups`, `Scout`, `Scout for bigger changes`), each with a 4-way segmented tier control (`Light | Standard | Heavy | Critical`), live resolved model preview, and (for applicable roles) a compact collapsible/dropdown provider ladder control.
 - **Tier models block (middle):** Tabs for each enabled provider (`Claude`, `GPT`, `Antigravity`, etc.); the active provider tab shows its 4 tiers (`Light`, `Standard`, `Heavy`, `Critical`), each with a model picker (including `Not used` and `Other…`) and inline segmented effort pills (`CLI default` plus the model's supported effort levels) instead of a second dropdown, plus any heads-up actions for that provider/tier.
-- **Escalation block (bottom):** Compact block with the 4 worker step-up segmented controls and live summary text.
+- **Escalation block:** Compact block with the 4 worker step-up segmented controls and live summary text.
+- **Assistants block (bottom):** Separate block for `Personal assistant` and `Project leads` (since they don't build directly), each with its own 4-way tier switch, live model preview, and collapsible provider ladder control.
 
 ## Accepted Risks
 
