@@ -2,7 +2,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const { once } = require('node:events');
 const { request, httpHandshake } = require('../lib/mcp-http');
+
+async function stopChild(child) {
+  if (child.exitCode === null && child.signalCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; }
+}
 
 async function server(handler) {
   const s = http.createServer(handler); await new Promise(resolve => s.listen(0, '127.0.0.1', resolve));
@@ -57,8 +62,36 @@ test('proxy answers a ping during 404 recovery initialization', async () => {
   const lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   const next = async () => JSON.parse((await Promise.race([lines.next(), new Promise((_, reject) => setTimeout(() => reject(new Error('reply timed out')), 3000))])).value);
   const send = msg => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
-  try { send({ id: 1, method: 'initialize', params: {} }); assert.equal((await next()).id, 1); send({ method: 'notifications/initialized' }); send({ id: 2, method: 'tools/call' }); assert.deepEqual(await next(), { jsonrpc: '2.0', id: 2, result: { recovered: true } }); assert.deepEqual(received, { jsonrpc: '2.0', id: 'rec-ping', result: {} }); assert.equal(replySession, 's2'); } finally { child.kill(); fixture.s.closeAllConnections(); fixture.s.close(); }
+  try { send({ id: 1, method: 'initialize', params: {} }); assert.equal((await next()).id, 1); send({ method: 'notifications/initialized' }); send({ id: 2, method: 'tools/call' }); assert.deepEqual(await next(), { jsonrpc: '2.0', id: 2, result: { recovered: true } }); assert.deepEqual(received, { jsonrpc: '2.0', id: 'rec-ping', result: {} }); assert.equal(replySession, 's2'); } finally { await stopChild(child); fixture.s.closeAllConnections(); fixture.s.close(); }
 });
+
+for (const action of ['shutdown', 'recover']) {
+  test(`dropped initialization deletes its session on ${action}`, async () => {
+    const fs = require('node:fs/promises'), path = require('node:path'), { spawn } = require('node:child_process'), readline = require('node:readline'), { makeTemp } = require('../../test-support/run-dir');
+    const root = await makeTemp(), dir = path.join(root, 'web'), state = path.join(root, 'state'), seen = []; let generation = 0;
+    await fs.mkdir(dir); await fs.mkdir(path.join(state, 'shared-keys'), { recursive: true });
+    await fs.writeFile(path.join(state, 'shared-keys', 'keys.json'), JSON.stringify({ shared: true, revision: 1, keys: { API_KEY: 'secret123456' } }));
+    const fixture = await server((req, res) => { let body = ''; req.on('data', b => { body += b; }); req.on('end', () => {
+      if (req.method === 'DELETE') { seen.push(`DELETE:${req.headers['mcp-session-id']}`); res.writeHead(204); res.end(); return; }
+      const msg = JSON.parse(body); seen.push(msg.method);
+      if (msg.method === 'initialize' && ++generation === 1) { res.writeHead(200, { 'content-type': 'text/event-stream', 'mcp-session-id': 's-drop' }); res.end(); return; }
+      if (msg.method === 'notifications/initialized') { res.writeHead(202); res.end(); return; }
+      res.writeHead(200, { 'content-type': 'application/json', ...(msg.method === 'initialize' ? { 'mcp-session-id': 's-new' } : {}) });
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: msg.method === 'initialize' ? { protocolVersion: '2025-06-18' } : {} }));
+    }); });
+    await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'web', description: 'x', kind: 'server', url: fixture.url, keys: ['API_KEY'] }));
+    const child = spawn(process.execPath, [path.join(__dirname, '../lib/http-tool-proxy.js'), '--project-dir', root, '--tool', dir, '--state-dir', state, '--key-store', 'shared', '--key', 'API_KEY'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+    const next = async () => JSON.parse((await Promise.race([lines.next(), new Promise((_, reject) => setTimeout(() => reject(new Error('reply timed out')), 3000))])).value);
+    const send = msg => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
+    try {
+      send({ id: 1, method: 'initialize', params: {} }); assert.equal((await next()).error.code, -32603);
+      if (action === 'recover') { send({ id: 2, method: 'ping' }); assert.deepEqual((await next()).result, {}); assert.deepEqual(seen.slice(0, 5), ['initialize', 'DELETE:s-drop', 'initialize', 'notifications/initialized', 'ping']); }
+      const exited = once(child, 'exit'); child.stdin.end(); await exited;
+      assert.ok(seen.includes('DELETE:s-drop'));
+    } finally { await stopChild(child); fixture.s.close(); }
+  });
+}
 
 test('proxy injects keys, redacts replies, recovers one expired session and deletes on shutdown', async () => {
   const fs = require('node:fs/promises'), path = require('node:path'), { spawn } = require('node:child_process'), readline = require('node:readline');
@@ -87,7 +120,7 @@ test('proxy injects keys, redacts replies, recovers one expired session and dele
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'ping' }) + '\n'); const held = await next(); assert.equal(held.error.code, -32603); assert.doesNotMatch(JSON.stringify(held), /secret123456/);
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'incomplete' }) + '\n'); assert.equal((await next()).error.code, -32603);
     child.stdin.end(); await new Promise(resolve => child.on('exit', resolve)); assert.ok(seen.some(x => x.method === 'DELETE' && x.sid === 's2')); assert.ok(seen.every(x => x.auth === 'Bearer secret123456'));
-  } finally { child.kill(); fixture.s.close(); }
+  } finally { await stopChild(child); fixture.s.close(); }
 });
 
 test('oversized JSON is reported with its prefix', async () => {
@@ -99,7 +132,7 @@ test('oversized JSON is reported with its prefix', async () => {
 test('proxy refuses Node network debugging', async () => {
   const fs = require('node:fs/promises'), path = require('node:path'), { spawn } = require('node:child_process'); const { makeTemp } = require('../../test-support/run-dir');
   const root = await makeTemp(), dir = path.join(root, 'web'); await fs.mkdir(dir); await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'web', description: 'x', kind: 'server', url: 'http://localhost', keys: ['API_KEY'] }));
-  const child = spawn(process.execPath, [path.join(__dirname, '../lib/http-tool-proxy.js'), '--project-dir', root, '--tool', dir, '--key', 'API_KEY'], { env: { ...process.env, NODE_DEBUG: 'net' }, stdio: ['ignore', 'pipe', 'pipe'] }); let err = ''; child.stderr.on('data', data => { err += data; }); const code = await new Promise(resolve => child.on('exit', resolve)); assert.notEqual(code, 0); assert.match(err, /debug output is on/);
+  const child = spawn(process.execPath, [path.join(__dirname, '../lib/http-tool-proxy.js'), '--project-dir', root, '--tool', dir, '--key', 'API_KEY'], { env: { ...process.env, NODE_DEBUG: 'net' }, stdio: ['ignore', 'pipe', 'pipe'] }); let err = ''; child.stderr.on('data', data => { err += data; }); try { const [code] = await once(child, 'exit'); assert.notEqual(code, 0); assert.match(err, /debug output is on/); } finally { await stopChild(child); }
 });
 
 test('failed initialized notification gates queued calls and the next call recovers', async () => {
@@ -116,7 +149,7 @@ test('failed initialized notification gates queued calls and the next call recov
   const child = spawn(process.execPath, [path.join(__dirname, '../lib/http-tool-proxy.js'), '--project-dir', root, '--tool', dir, '--state-dir', state, '--key-store', 'shared', '--key', 'API_KEY'], { stdio: ['pipe', 'pipe', 'pipe'] }); const lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   const next = async () => JSON.parse((await Promise.race([lines.next(), new Promise((_, reject) => setTimeout(() => reject(new Error('reply timed out')), 3000))])).value);
   const send = msg => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
-  try { send({ id: 1, method: 'initialize', params: {} }); assert.equal((await next()).id, 1); send({ method: 'notifications/initialized' }); send({ id: 2, method: 'ping' }); assert.equal((await next()).error.code, -32603); send({ id: 3, method: 'ping' }); assert.deepEqual((await next()).result, {}); assert.equal(count, 2); child.stdin.end(); await new Promise(resolve => child.on('exit', resolve)); } finally { child.kill(); fixture.s.close(); }
+  try { send({ id: 1, method: 'initialize', params: {} }); assert.equal((await next()).id, 1); send({ method: 'notifications/initialized' }); send({ id: 2, method: 'ping' }); assert.equal((await next()).error.code, -32603); send({ id: 3, method: 'ping' }); assert.deepEqual((await next()).result, {}); assert.equal(count, 2); child.stdin.end(); await new Promise(resolve => child.on('exit', resolve)); } finally { await stopChild(child); fixture.s.close(); }
 });
 
 test('proxy forwards client replies to server requests on an open SSE stream', async () => {
@@ -143,7 +176,7 @@ test('proxy forwards client replies to server requests on an open SSE stream', a
     assert.deepEqual(await next(), { jsonrpc: '2.0', id: 'srv-1', method: 'roots/list' });
     const reply = { jsonrpc: '2.0', id: 'srv-1', result: { roots: [] } }; child.stdin.write(JSON.stringify(reply) + '\n');
     assert.deepEqual(await next(), { jsonrpc: '2.0', id: 2, result: { content: [] } }); assert.deepEqual(received, reply);
-  } finally { child.kill(); fixture.s.close(); }
+  } finally { await stopChild(child); fixture.s.close(); }
 });
 
 test('initialization deadline aborts late replies', async () => {
@@ -158,7 +191,7 @@ test('initialization deadline aborts late replies', async () => {
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n');
     await new Promise(resolve => setTimeout(resolve, 1000));
     assert.equal(replies.length, 1); assert.equal(replies[0].id, 1); assert.equal(replies[0].error.code, -32603);
-  } finally { child.kill(); fixture.s.close(); }
+  } finally { await stopChild(child); fixture.s.close(); }
 });
 
 test('handshake handles null JSON and deletes the session', async () => {
@@ -196,5 +229,5 @@ test('proxy forwards a client reply during initialization', async () => {
     const reply = { jsonrpc: '2.0', id: 'init-ping', result: {} }; child.stdin.write(JSON.stringify(reply) + '\n');
     assert.deepEqual(await next(), { jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18', capabilities: {} } });
     assert.deepEqual(received, reply); assert.equal(replySession, 'init-session');
-  } finally { child.kill(); fixture.s.close(); }
+  } finally { await stopChild(child); fixture.s.close(); }
 });

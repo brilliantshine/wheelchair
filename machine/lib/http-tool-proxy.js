@@ -86,7 +86,7 @@ async function start() {
     const isRequest = typeof msg.method === 'string' && msg.id !== undefined;
     try {
       if (msg.method === 'initialize') {
-        params = msg.params; initialized = false; initStarted = Date.now();
+        sessionId = null; params = msg.params; initialized = false; initStarted = Date.now();
         const controller = new AbortController();
         const gate = deadline(send(msg, true, controller), initDeadline, controller).then(r => { if (!r.original?.result) { const e = new Error('initialization failed'); e.replied = true; throw e; } sessionId = r.headers?.['mcp-session-id'] || null; protocolVersion = r.original.result.protocolVersion || '2025-06-18'; initialized = true; return r; });
         initGate = gate; try { await gate; } finally { if (initGate === gate) initGate = null; }
@@ -103,7 +103,7 @@ async function start() {
         if (!initialized && typeof msg.method === 'string') await recover(sessionId);
         await send(msg);
       }
-    } catch (e) { if (msg.method === 'initialize') sessionId = null; if (msg.method === 'initialize' || msg.method === 'notifications/initialized') initialized = false; if (isRequest && !closing && !e.replied) errorReply(msg.id, e.status ? `HTTP status ${e.status}` : e.code ? `HTTP error ${e.code}` : 'HTTP request failed'); }
+    } catch (e) { if (msg.method === 'initialize' || msg.method === 'notifications/initialized') initialized = false; if (isRequest && !closing && !e.replied) errorReply(msg.id, e.status ? `HTTP status ${e.status}` : e.code ? `HTTP error ${e.code}` : 'HTTP request failed'); }
   }
   const input = readline.createInterface({ input: process.stdin });
   input.on('line', raw => { try { const msg = JSON.parse(raw); if (msg && typeof msg === 'object' && (typeof msg.method === 'string' || (Object.hasOwn(msg, 'id') && (Object.hasOwn(msg, 'result') || Object.hasOwn(msg, 'error'))))) handle(msg); } catch {} });
