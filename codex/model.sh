@@ -273,6 +273,7 @@ def kimi_models():
 AGY_TTL = 30
 LEVELS = ("low", "medium", "high", "xhigh", "max")
 AGY = next((tool for tool in TOOLS if (tool.get("settings", {}).get("modelOptions") or {}).get("listedKey") == "agy_visible"), None)
+AGY_PROVIDER = AGY["provider"] if AGY else None
 
 
 def agy_valid(models):
@@ -506,7 +507,7 @@ def main(root, argv):
         return
     if len(argv) == 2 and argv[0] in PROVIDERS and (slot := slot_for(argv[0], argv[1])) is not None:
         model, effort = read_cell(pin_path, argv[0], slot)
-        if argv[0] == "gemini":
+        if argv[0] == AGY_PROVIDER:
             model, effort = agy_normalize(model, effort, agy_models(pin_path))
         if model == "none":
             print(f"{argv[0]} is not used at {slot}", file=sys.stderr)
@@ -515,7 +516,7 @@ def main(root, argv):
         return
     if len(argv) == 3 and argv[0] == "effort" and argv[1] in PROVIDERS and (slot := slot_for(argv[1], argv[2])) is not None:
         model, effort = read_cell(pin_path, argv[1], slot)
-        if argv[1] == "gemini":
+        if argv[1] == AGY_PROVIDER:
             model, effort = agy_normalize(model, effort, agy_models(pin_path))
         if model != "none" and effort:
             print(effort)
@@ -528,7 +529,7 @@ def main(root, argv):
                 return
         print(f"claude has no family at {slot}", file=sys.stderr)
         raise SystemExit(3)
-    if len(argv) == 3 and argv[:2] == ["levels", "gemini"]:
+    if len(argv) == 3 and argv[0] == "levels" and argv[1] == AGY_PROVIDER:
         listed = agy_models(pin_path)
         entry = next((e for e in listed if e["value"] == argv[2]), None)
         if entry is None or "efforts" not in entry:
@@ -568,7 +569,7 @@ def main(root, argv):
         for provider in PROVIDERS:
             for slot in SLOTS:
                 model, effort = cell(pins, provider, slot)
-                if provider == "gemini":
+                if provider == AGY_PROVIDER:
                     model, effort = agy_fix(model, effort, listed)
                 result[provider][slot] = None if model == "none" else {
                     "model": model, "effort": effort}
