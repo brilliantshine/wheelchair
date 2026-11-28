@@ -236,3 +236,9 @@ Writes are sent once by `wc.js assistant`; reads retry hub unavailability. Start
 `GET /settings/background` returns `image_id`, `media_type`, `opacity`, `revision`, `image_url`, and `missing_image`. `GET /settings/background/image/<id>` serves only the current image. `POST /settings/background/upload?revision=<n>&opacity=<n>` accepts a raw PNG, JPEG, WEBP, or GIF (at most 25 MiB) with its matching Content-Type. `PUT /settings/background` accepts `{revision,image_id,opacity}`; null image_id removes the image. Writes compare revisions and return 409 with current metadata on conflict. JSON writes are limited to 4 KiB. All routes use normal browser authentication and origin checks.
 
 A state directory supports one running hub writer. Tests must use independent state directories except for sequential restart tests, which stop the first server before reusing its directory.
+
+### Theme settings
+
+`GET /wheelchair/api/settings/theme` returns `{ mode, preset, accent, revision }` with `Cache-Control: no-store`. Mode is `system`, `light`, or `dark`; preset is `default`, `midnight`, `forest`, `amber`, `rose`, or `slate`; accent is `null` or a six-digit lowercase hex color.
+
+`PUT /wheelchair/api/settings/theme` accepts the same object (uppercase hex is accepted), limited to 4 KiB. The revision must match the current revision; changes increment it, while an unchanged save leaves it alone. A conflict returns 409 with `{ error: "Theme changed elsewhere", ...current }`. Invalid input returns 400, oversized requests 413, and unreadable settings 500, each with an `error` message.

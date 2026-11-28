@@ -18,7 +18,7 @@
 .panel section { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .panel select, .panel input, .panel textarea { min-height: 34px; padding: 6px 8px; border-radius: 6px; font-size: 13px; }
 .panel select { width: 100%; }
-.panel input[type="checkbox"] { min-height: 0; width: 18px; height: 18px; padding: 0; accent-color: var(--accent); }
+.panel input[type="checkbox"] { min-height: 0; width: 18px; height: 18px; padding: 0; accent-color: var(--accent-vis); }
 .panel textarea { width: 100%; resize: vertical; line-height: 1.5; }
 .panel button { min-height: 34px; font-size: 13px; padding: 6px 14px; }
 .panel button.small { min-height: 28px; padding: 3px 10px; font-size: 12px; }
@@ -203,7 +203,7 @@ button.danger { color: var(--bad-text); }
 .usage-line.dim { color: var(--dim); }
 .usage-table .why { color: var(--ink-2); }
 .meter { display: inline-block; width: 90px; max-width: 100%; height: 6px; margin-right: 4px; vertical-align: middle; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
-.meter > span, .bar > span { display: block; height: 100%; background: var(--accent); }
+.meter > span, .bar > span { display: block; height: 100%; background: var(--accent-vis); }
 .usage-table tr.next th { color: var(--accent-hi); }
 .usage-table th .v-badge { margin-left: 6px; }
 .row-line .num { flex: 0 0 90px; }
@@ -218,7 +218,7 @@ button.danger { color: var(--bad-text); }
 .diagram-radios { display: flex; flex-direction: column; }
 .diagram-radios .choice { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-content: center; column-gap: 10px; width: 100%; min-height: 44px; padding: 11px 14px; border: 0; border-top: 1px solid var(--panel-2); border-radius: 0; background: transparent; color: var(--ink); text-align: left; font-size: 13px; }
 .diagram-radios .choice::before { content: ''; grid-row: 1 / span 2; align-self: start; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; border: 1px solid var(--dim); }
-.diagram-radios .choice[aria-checked="true"]::before { border: 5px solid var(--accent); }
+.diagram-radios .choice[aria-checked="true"]::before { border: 5px solid var(--accent-vis); }
 .diagram-radios .choice:first-child { border-top: 0; border-radius: 12px 12px 0 0; }
 .diagram-radios .choice:last-child { border-radius: 0 0 12px 12px; }
 .diagram-radios .choice .hint { margin: 0; font-weight: 400; }
@@ -446,4 +446,58 @@ button.danger { color: var(--bad-text); }
   .esc-grid .row-line:last-child { border-bottom: 0; }
   .esc-grid .seg-radio { width: 100%; }
   .esc-grid .seg-radio button { flex: 1; }
+}
+
+/* ---- Theme (theme-editor.js) ---- */
+.theme-editor { max-width: 936px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.theme-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 12px; }
+.theme-box { overflow: hidden; }
+.theme-row { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.theme-row:first-child { border-top: 0; }
+.theme-label { flex: 0 0 180px; font-size: 13px; font-weight: 600; }
+.theme-label .hint { display: block; margin-top: 2px; font-weight: 400; }
+.theme-content { flex: 1; min-width: 0; }
+.theme-modes { display: inline-flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+.panel .theme-modes button { min-height: 30px; padding: 4px 17px; border: 0; border-radius: 6px; background: transparent; font-size: 12px; }
+.panel .theme-modes button[aria-pressed="true"] { background: var(--line-2); color: var(--ink); font-weight: 600; }
+.theme-presets { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
+.panel .theme-preset { position: relative; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 6px;
+  min-width: 0; padding: 7px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--bg); text-align: left; font-size: 11px; color: var(--ink-2); }
+.panel .theme-preset[aria-pressed="true"] { padding: 6px; border: 2px solid var(--accent-vis); color: var(--ink); }
+.theme-preset-name { overflow-wrap: anywhere; line-height: 1.35; }
+.theme-bar { display: flex; height: 27px; flex: none; border-radius: 4px; overflow: hidden; }
+.theme-bar i:first-child { width: 36%; }
+.theme-bar i + i { width: 24%; }
+.theme-check { display: none; position: absolute; right: 6px; top: 5px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink); text-align: center; font-weight: 700; line-height: 18px; }
+.theme-preset[aria-pressed="true"] .theme-check { display: block; }
+.theme-accent { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.panel input.theme-color { width: 42px; height: 36px; padding: 3px; flex: none; cursor: pointer; }
+.panel input.theme-hex { width: 104px; height: 36px; font-family: var(--mono); }
+.panel input.theme-hex[aria-invalid="true"] { border-color: var(--bad); }
+.theme-swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-left: 5px; }
+.panel button.theme-swatch { width: 26px; height: 26px; min-height: 0; padding: 0; flex: none; border-radius: 50%; border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--line-2); }
+.theme-resets { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 5px; }
+.panel button.theme-link { min-height: 30px; padding: 0; border: 0; background: transparent; color: var(--accent-text); font-size: 12px; }
+.theme-actions { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--band); border-top: 1px solid var(--line); }
+.theme-message { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.theme-message p { margin: 0; }
+.background-active .settings .theme-head { background-color: var(--bg); padding: 12px; border-radius: 10px; }
+@media (max-width: 700px) {
+  .theme-head { display: block; }
+  .theme-head .hint { display: block; margin-top: 3px; }
+  .theme-row { display: block; padding: 12px; }
+  .theme-label { margin-bottom: 9px; }
+  .theme-label .hint { display: none; }
+  .theme-modes { display: flex; }
+  .panel .theme-modes button { flex: 1; min-height: 40px; }
+  .theme-presets { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .theme-preset { min-height: 61px; }
+  .theme-bar { height: 24px; }
+  .theme-accent { gap: 9px; }
+  .theme-swatches { width: 100%; gap: 13px; margin: 2px 0 0; }
+  .panel button.theme-swatch { width: 32px; height: 32px; }
+  .theme-actions { flex-wrap: wrap; padding: 12px; }
+  .theme-message { flex-basis: 100%; }
+  .panel .theme-actions button { min-height: 40px; }
 }

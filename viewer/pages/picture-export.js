@@ -32,6 +32,14 @@
   }
 
   // ---- graph ----
+  // The graph frame keeps its own palette whatever this page's theme is, so the canvas behind it
+  // must come from the frame.
+  function graphBackground(doc, svg) {
+    const view = doc.defaultView;
+    const own = view.getComputedStyle(svg).backgroundColor;
+    if (own && own !== 'transparent' && own !== 'rgba(0, 0, 0, 0)') return own;
+    return view.getComputedStyle(doc.documentElement).getPropertyValue('--bg').trim() || '#14161a';
+  }
   function graphSvg(doc) {
     const svg = doc && doc.getElementById('canvas');
     if (!svg) return null;
@@ -45,6 +53,7 @@
     const { svg, root } = found;
     const box = root.getBBox();
     const view = doc.defaultView;
+    const background = graphBackground(doc, svg);
     const live = Array.from(svg.querySelectorAll('*'));
     const clone = svg.cloneNode(true);
     const copies = Array.from(clone.querySelectorAll('*'));
@@ -68,7 +77,7 @@
       const img = new Image();
       img.onload = () => {
         const c = canvas.getContext('2d');
-        c.fillStyle = pageBackground(); c.fillRect(0, 0, canvas.width, canvas.height);
+        c.fillStyle = background; c.fillRect(0, 0, canvas.width, canvas.height);
         c.drawImage(img, 0, 0, canvas.width, canvas.height);
         resolve(canvas);
       };
