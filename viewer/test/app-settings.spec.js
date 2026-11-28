@@ -1831,6 +1831,8 @@ test.describe('live refresh', () => {
     await expect(tier(page, 'Checker', 'Heavy')).toHaveAttribute('aria-checked', 'true');
     const ladder = page.locator('[data-order="lead_order"] li');
     const before = await ladder.evaluateAll((items) => items.map((i) => i.dataset.provider));
+    const workerLadder = page.locator('[data-order="worker_order"] li');
+    const workersBefore = await workerLadder.evaluateAll((items) => items.map((i) => i.dataset.provider));
     const { lead_order: order, worker_order: workers } = await settings(page);
     await send(page, '/settings/balancing', { lead_order: [...order].filter((p) => p !== 'any').reverse().concat('any'), worker_order: [...workers].reverse() });
     await prefs(page, { other_agents: { verifier: 'light' }, review_families: 'claude' });
@@ -1838,6 +1840,7 @@ test.describe('live refresh', () => {
     await expect(tier(page, 'Checker', 'Light')).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByRole('radiogroup', { name: 'Reviewers and checkers' }).getByRole('radio', { name: 'Claude', exact: true })).toHaveAttribute('aria-checked', 'true');
     await expect.poll(() => ladder.evaluateAll((items) => items.map((i) => i.dataset.provider))).toEqual([...before].reverse());
+    await expect.poll(() => workerLadder.evaluateAll((items) => items.map((i) => i.dataset.provider))).toEqual([...workersBefore].reverse());
 
     await page.locator('#sections a[data-section="threads"]').click();
     await prefs(page, { tool_steps: 'hide' });
@@ -2164,19 +2167,22 @@ test.describe('live refresh', () => {
     await expect(project.locator('option')).toHaveText(['None', 'alpha', 'beta']);
   });
 
-  test('deleting the open template elsewhere never moves focus to the next one’s Delete', async ({ page }) => {
-    await open(page, 'behavior');
-    const alpha = await template(page, 'Alpha');
-    await template(page, 'Bravo');
-    await refreshed(page);
-    await page.locator('.tpl-item', { hasText: 'Alpha' }).click();
-    await expect(page.locator('#tname')).toHaveValue('Alpha');
-    await page.locator('#delete').focus();
-    await send(page, '/settings/templates/' + alpha.id, undefined, 'DELETE');
-    await refreshed(page);
-    await expect(page.locator('#tname')).toHaveValue('Bravo');
-    await expect(page.locator('#delete')).not.toBeFocused();
-  });
+  for (const control of ['delete', 'duplicate', 'toggle-use', 'see-full', 'save-template']) {
+    test(`deleting the open template elsewhere never moves focus to the next one’s #${control}`, async ({ page }) => {
+      await open(page, 'behavior');
+      const alpha = await template(page, 'Alpha');
+      await template(page, 'Bravo');
+      await refreshed(page);
+      await page.locator('.tpl-item', { hasText: 'Alpha' }).click();
+      await expect(page.locator('#tname')).toHaveValue('Alpha');
+      await page.locator('#' + control).focus();
+      await expect(page.locator('#' + control)).toBeFocused();
+      await send(page, '/settings/templates/' + alpha.id, undefined, 'DELETE');
+      await refreshed(page);
+      await expect(page.locator('#tname')).toHaveValue('Bravo');
+      await expect(page.locator('#' + control)).not.toBeFocused();
+    });
+  }
 
   test('a late legacy notice re-read never undoes a newer save', async ({ page }) => {
     // The notice showing makes a tier save read /settings again (refreshDiffs).

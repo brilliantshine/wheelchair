@@ -1607,7 +1607,7 @@
         h('span', { class: 'state', text: 'per task' })));
 
     const fullHost = promptBox();
-    const fullLink = h('button', { type: 'button', class: 'link', id: 'see-full', text: 'See it in full', onclick: () => seeInFull(document.getElementById('full-prompt')) });
+    const fullLink = h('button', { type: 'button', class: 'link', id: 'see-full', 'data-focus': `tpl:${draft.id || 'new'}:see-full`, text: 'See it in full', onclick: () => seeInFull(document.getElementById('full-prompt')) });
 
     const using = draft.live_sessions || 0;
     const usingText = draft.id
@@ -1645,9 +1645,9 @@
           'Where they disagree, the lower layer wins. Nothing overrides layer 1.',
           worker ? " …except this template's 'Pick, record it, keep going'" : null)),
       h('div', { class: 'actions' },
-        h('button', { type: 'button', class: 'primary', id: 'save-template', text: 'Save', onclick: () => saveTemplate(errHost) }),
-        draft.id ? h('button', { type: 'button', id: 'toggle-use', text: draft.in_use ? 'Stop using' : 'Mark in use', onclick: () => toggleInUse(errHost) }) : null,
-        draft.id ? h('button', { type: 'button', id: 'duplicate', text: 'Duplicate', onclick: () => duplicateTemplate(errHost) }) : null,
+        h('button', { type: 'button', class: 'primary', id: 'save-template', 'data-focus': `tpl:${draft.id || 'new'}:save`, text: 'Save', onclick: () => saveTemplate(errHost) }),
+        draft.id ? h('button', { type: 'button', id: 'toggle-use', 'data-focus': `tpl:${draft.id}:toggle-use`, text: draft.in_use ? 'Stop using' : 'Mark in use', onclick: () => toggleInUse(errHost) }) : null,
+        draft.id ? h('button', { type: 'button', id: 'duplicate', 'data-focus': `tpl:${draft.id}:duplicate`, text: 'Duplicate', onclick: () => duplicateTemplate(errHost) }) : null,
         draft.id ? del : null,
         h('span', { class: 'grow', id: 'using', text: usingText })),
       errHost);
