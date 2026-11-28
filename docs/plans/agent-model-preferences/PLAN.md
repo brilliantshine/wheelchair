@@ -74,7 +74,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 3. **Legacy `lead`/`sub-lead` pin transition notice & backward compatibility:**
    - Do **not** remove `lead` or `sub-lead` from `codex/model.sh`'s `SLOTS` or parser: existing `~/.wheelchair/models` files containing `lead`/`sub-lead` pins must continue to parse cleanly without triggering malformed-file fallbacks, and `codex/test/run.sh` remains untouched and green.
    - Add boolean `lead_tier_notice_dismissed` to `defaults()` (default `false`; normalized as `Boolean(saved.lead_tier_notice_dismissed)`).
-   - In `describe(hub)`: when `!value.lead_tier_notice_dismissed`, read the raw models pins file (`hub.modelsFile` / `~/.wheelchair/models` if it exists) to find which `(provider, role)` pairs (`role` in `'lead'`, `'sub-lead'`) have an explicit saved line in that file (so shipped defaults and `sub-lead -> lead` inheritance from `show --json` never trigger false notices on fresh installs). For each enabled provider with an explicit saved `lead` or `sub-lead` entry, compare its saved model and effort (including explicit `none` / `null` and effort-only differences) against that provider's current `value.other_agents.lead` or `value.other_agents['sub-lead']` tier cell from `models(hub)`. Return `legacy_lead_diffs`: an array of `{ provider, label, role, legacy_model, legacy_effort, tier, tier_model, tier_effort }` for every differing pair. When dismissed, when the pins file does not exist, or when there are no diffs, return `legacy_lead_diffs: []`.
+   - In `describe(hub)`: when `!value.lead_tier_notice_dismissed`, read models strictly through `models(hub)` (`codex/model.sh show --json`, honoring `WHEELCHAIR_MODELS` and `viewer/AGENTS.md:27` — never reading `~/.wheelchair/models` directly). For each enabled provider and each legacy role (`lead`, `sub-lead`), compare its `models(hub)` cell (`legacy_model`, `legacy_effort`) against that provider's current `value.other_agents[role]` tier cell (`tier_model`, `tier_effort`). Emit a diff entry `{ provider, label, role, legacy_model, legacy_effort, tier, tier_model, tier_effort }` when the two cells differ (by model or effort) **and** either (a) the legacy cell differs from the provider manifest's shipped default for that slot, or (b) `tier_model === null` (`Not used`) while `legacy_model !== null` (so fresh installs whose shipped defaults match never trigger false notices, while any provider whose Heavy tier is `Not used` still surfaces the recovery action). When dismissed or when there are no diffs, return `legacy_lead_diffs: []`.
    - Never silently overwrite any shared tier cell on upgrade; the user decides whether to apply a legacy pin to a tier cell (via the explicit button in §4.2) or dismiss the notice.
 
 ### 2. API routes and documentation (`viewer/app/routes.js`, `viewer/app/API.md`)
@@ -122,12 +122,16 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
        - Else if `role === 'lead'` (new thread lead, Personal assistant, or Project lead) or `role === 'sub-lead'` or `['reviewer', 'verifier', 'mapper', 'designer'].includes(role)`: `order = expandOrder(settings.provider_orders[preferenceRole(role, thread)], settings)`.
        - Else (`worker`): `order = [...settings.worker_order]`.
      - Apply `strictReview` override and enabled-harness filter: `order = (strictReview ? [strictReview] : [...new Set(order.filter(Boolean))]).filter((p) => settings.harnesses[p])`.
+     - **Configuration-block waits (before quota-refill waits):**
+       - If `!order.length` (e.g. a role's Custom provider ladder has no enabled providers left after a harness is turned off): return `{ wait: { provider: null, until: new Date(now + 60000).toISOString(), reason: 'No enabled provider in this role\'s provider ladder in Settings → Models' } }`.
+       - Track whether at least one provider in `order` had a configured model at `slot` (did not exit 3 from `model.sh`). If `order.length > 0` and zero providers in `order` had a configured model at `slot`: return `{ wait: { provider: order.length === 1 ? order[0] : null, until: new Date(now + 60000).toISOString(), reason: order.length === 1 ? `${DISPLAY_NAMES[order[0]]} is set to Not used for ${slot} in Settings → Models` : `All enabled providers on this role's ladder are set to Not used for ${slot} in Settings → Models` } }` (instead of a misleading quota wait).
      - Wait metadata (`balancer.js:139`): replace `['lead', 'sub-lead'].includes(role) && thread.provider` with `isPinnedThreadLead(role, thread)` so `sub-lead`, `assistant`, and `project-lead` never attribute exhausted-ladder waits to `thread.provider` (they use `order[0] || null` for `lead` or `null` for `sub-lead` when multiple providers were tried).
      - Keep `reservedProvider` (`balancer.js:24-27`), `heldBack` (`balancer.js:49-51`), and `save_for_leads` (`balancer.js:106`) unchanged (`lead` and `sub-lead` are not held back, and `reservedProvider` still uses `settings.lead_order`).
-4. **Harness diagnostics & thread wait banner (`viewer/app/harnesses.js`, `viewer/pages/settings.js`, `viewer/pages/thread.js`):**
-   - In `viewer/app/harnesses.js:28-36`, compute `enabledLeadOrder(value)` from `balancer.expandOrder(value.provider_orders.lead, value)` (filtered by `value.harnesses[p]`). For the startup repair hint when another enabled & signed-in provider exists outside the order, name the control that actually owns the setting: for `role === 'worker'`, name `Worker ladder in Settings → Models`; for `role === 'lead'`, name `Lead ladder in Settings → Models` when `value.provider_orders.lead === 'lead'` (or `Worker ladder` if `lead_order` includes `'any'`), `Worker ladder in Settings → Models` when `value.provider_orders.lead === 'worker'`, and `Leads provider order in Settings → Models` when `value.provider_orders.lead` is a custom array.
-   - In `viewer/pages/settings.js:2300-2303` (AI providers failure notice link), link to `#models` instead of `#usage`.
-   - In `viewer/pages/thread.js:1633-1642` (`waitingLine()`): in addition to the existing `is left out in Settings` branch, when `lead.waiting_reason` contains `is set to Not used for `, display `lead.waiting_reason` directly (e.g. `Kimi is set to Not used for heavy in Settings → Models.`) instead of the quota refill message, so the user immediately sees the configuration block and how to recover.
+4. **Harness diagnostics, thread wait banner, and lead prompt (`viewer/app/harnesses.js`, `viewer/pages/settings.js`, `viewer/pages/thread.js`, `protocol/app/lead.md`):**
+   - In `viewer/app/harnesses.js:28-36`, compute `enabledLeadOrder(value)` from `balancer.expandOrder(value.provider_orders.lead, value)` (filtered by `value.harnesses[p]`). If `selection.wait?.reason` names a `Not used` or empty-ladder configuration block, surface `selection.wait.reason` directly as `can_start[role].reason` (never falling through to the quota-limit message). When another enabled & signed-in provider exists outside the order, name the exact owning control without duplicating `"in Settings"`: `Worker ladder` for `role === 'worker'`, and for `role === 'lead'`, `Lead ladder` when `value.provider_orders.lead === 'lead'` (or `Worker ladder` if `lead_order` includes `'any'`), `Worker ladder` when `value.provider_orders.lead === 'worker'`, and `Leads provider order` when `value.provider_orders.lead` is a custom array (ending `in Settings.`).
+   - In `viewer/pages/settings.js:2300-2303` (`linkReasons()`): update the matcher regex from `/(Workers try first|Leads try)/` to `/(Lead ladder|Worker ladder|Leads provider order)/` and link matches to `#models` (updating the corresponding assertion in `viewer/test/app-harnesses.spec.js:501`).
+   - In `viewer/pages/thread.js:1633-1642` (`waitingLine()`): in addition to the existing `is left out in Settings` branch, when `lead.waiting_reason` ends with `in Settings → Models` (covering both `is set to Not used for ... in Settings → Models` and `No enabled provider in this role's provider ladder in Settings → Models`), display `lead.waiting_reason + '.'` directly instead of the quota refill message.
+   - In `protocol/app/lead.md:92`: update `the lead and sub-lead run on the lead model from Settings, and the reviewer, verifier, mapper and designer on the Other agents tiers there` to `the lead, sub-lead, reviewer, verifier, mapper and designer each run on their configured tier in Settings → Models`.
 
 ### 4. Reworked Settings → Models & Usage and balancing UI (`viewer/pages/settings.js`, `viewer/pages/settings.css`)
 
@@ -199,7 +203,7 @@ Match the agreed v5 desktop (`1280 × 900`) and phone (`390 × 844`) mockups in 
 - Do not remove `lead` or `sub-lead` slots from `codex/model.sh`.
 - Do not change how usage polling, account ranking, or `save_for_leads` / `held_back` forecasting work in `viewer/app/usage.js` or `viewer/app/usage-poll.js`.
 - Do not redesign unrelated Settings categories (only remove the moved provider-order controls from **Usage and balancing**, update its subtitle, and point the AI providers ladder link to `#models`).
-- Update existing unit and Playwright tests that asserted on the removed `lead-models` block, the moved `lead-order`/`worker_order` blocks in Usage and balancing (including `viewer/test/background-settings-surfaces.spec.js`), or the old `sub-lead` lock to `thread.provider`; add `'app-settings.spec.js'` to `viewer/test/firefox-specs.js` (per `CONTRIBUTING.md:92-94`, since it tests phone horizontal scroll/overflow); and add new unit and browser tests covering all new behaviors (10 agent tiers, `provider_orders` validation/normalization/placement, shared enabled-lead-ladder 409 guard across all three write routes, legacy lead-pin notice + recovery button, `sub-lead`/`assistant`/`project-lead` tier & ladder resolution, atomic slot carry-through, pinned-lead `Not used` wait reason & thread banner, provider tabs, effort pills, live previews, and phone layout).
+- Update existing unit and Playwright tests that asserted on the removed `lead-models` block, the moved `lead-order`/`worker_order` blocks in Usage and balancing (including `viewer/test/background-settings-surfaces.spec.js`), the old 409 message (`viewer/test/app-harnesses.test.js:113`, `viewer/test/app-harnesses.spec.js:482,485`) and link matcher (`viewer/test/app-harnesses.spec.js:501`), or the old `sub-lead` lock to `thread.provider`; add `'app-settings.spec.js'`, `'app-harnesses.spec.js'`, `'app-accounts.spec.js'`, and `'background-settings-surfaces.spec.js'` to `viewer/test/firefox-specs.js` (per `CONTRIBUTING.md:92-94`, since they test horizontal scroll containment); and add new unit and browser tests covering all new behaviors (10 agent tiers, `provider_orders` validation/normalization/placement, shared enabled-lead-ladder 409 guard across all three write routes, legacy lead-pin notice + recovery button, `sub-lead`/`assistant`/`project-lead` tier & ladder resolution, atomic slot carry-through, empty-ladder & `Not used` wait reasons & thread banner, provider tabs, effort pills, live previews, and phone layout).
 
 ### 6. Validation commands
 
@@ -207,13 +211,14 @@ Targeted unit and browser tests covering the changed areas (the full test suite 
 
 - `node --test viewer/test/app-settings.test.js viewer/test/app-balancer.test.js viewer/test/char-settings-defaults.test.js viewer/test/app-kimi-settings.test.js viewer/test/app-openrouter-settings.test.js viewer/test/assistant.test.js viewer/test/project-lead.test.js viewer/test/app-hub.test.js viewer/test/app-harnesses.test.js`
 - `node --test machine/test/name-guard.test.js`
-- `npm --prefix viewer run test:browser -- app-settings.spec.js app-harnesses.spec.js app-accounts.spec.js app-settings-hold.spec.js background-settings-surfaces.spec.js`
+- `npm --prefix viewer run test:browser -- browser.spec.js app-settings.spec.js app-harnesses.spec.js app-accounts.spec.js app-settings-hold.spec.js background-settings-surfaces.spec.js`
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | `Object.hasOwn(PROVIDERS, v)` in array validation coerces nested single-element arrays like `['gpt']` to string keys. | Rare path per `realism.md`: neither the UI nor any real tool writes nested arrays into `provider_orders` or `lead_order`. | review-round-1 |
+| Clicking the one-time legacy pin recovery button in one tab while manually editing the same tier cell in a second open Settings tab could overwrite the other tab's edit. | Rare path per `realism.md`: requires concurrent manual edits to the same tier cell across two open Settings tabs during the one-time notice. | review-round-3 |
 
 ## Check Once Built
 
@@ -276,7 +281,7 @@ Targeted unit and browser tests covering the changed areas (the full test suite 
 
 ### Round 3 — 2026-11-27
 
-**Lanes:** pending
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 2:**
 - §1.3, §4.2: Legacy `lead`/`sub-lead` pin diff reads explicit saved lines from the raw pins file (never flagging defaults/inheritance), covers effort-only diffs and explicit `none`, and adds an explicit `Use <legacy_model> for <Tier>` recovery button when the target tier is `Not used`.
@@ -284,6 +289,29 @@ Targeted unit and browser tests covering the changed areas (the full test suite 
 - §3.4: Added `is set to Not used for ` handling to `viewer/pages/thread.js` `waitingLine()` and made `viewer/app/harnesses.js` startup repair hints name the actual owning control for Leads' provider order.
 - §4.3: Added `Applies to new threads` hint to the Leads row/disclosure and defined deterministic Custom ladder initialization from `'lead'`/`'worker'` for lead-family vs worker-family roles.
 - §5–6: Added `background-settings-surfaces.spec.js`, `machine/test/name-guard.test.js`, and adding `'app-settings.spec.js'` to `viewer/test/firefox-specs.js`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Turning off a provider can leave a custom assistant/project-lead/sub-lead ladder with no enabled provider, falling through to `"no account has room"`. | upheld | Added explicit empty-ladder wait reason in `balancer.js` and rendered it in `thread.js` `waitingLine()` (§3.3–3.4). |
+| intent | minor | `linkReasons()` still splits on `Workers try first\|Leads try`, and `harnesses.js` already appends `in Settings.`. | upheld | Updated `linkReasons()` regex to `Lead ladder\|Worker ladder\|Leads provider order` and removed duplicate `in Settings` (§3.4). |
+| intent | minor | Two existing tests (`app-harnesses.test.js:113`, `app-harnesses.spec.js:482,485`) assert the old 409 message. | upheld | Listed both tests for updating in §5. |
+| mechanics | major | A new thread, assistant, or project lead whose enabled ladder providers are all `Not used` at its tier falls through to a quota wait and `harnesses.js` reports a quota problem. | upheld | Generalized `Not used` configuration wait in `balancer.js` to any role whose enabled ladder has zero configured models at `slot`, surfaced in `harnesses.js` and `thread.js` (§3.3–3.4). |
+| mechanics | major | Recovery button in legacy pin notice can overwrite a tier cell edited in a second open Settings tab. | accepted-risk | Rare path per `realism.md` (concurrent manual edits across two tabs during a one-time notice); recorded in Accepted Risks. |
+| mechanics | minor | Raw saved line in `~/.wheelchair/models` includes installer-written shipped defaults, triggering false notices on fresh installs. | upheld | Compared `models(hub)` against shipped defaults and `Not used` instead (§1.3). |
+| mechanics | minor | Reading `~/.wheelchair/models` via undefined `hub.modelsFile` bypasses `WHEELCHAIR_MODELS` and `viewer/AGENTS.md:27`. | upheld | Switched §1.3 strictly to `models(hub)` (`codex/model.sh show --json`). |
+| mechanics | minor | `linkReasons()` matcher regex and `app-harnesses.spec.js:501` must be updated for new ladder names. | upheld | Updated §3.4 and §5. |
+| mechanics | minor | `protocol/app/lead.md:92` still says Lead and Sub-lead use the old lead model setting. | upheld | Added `protocol/app/lead.md:92` update to §3.4. |
+| mechanics | minor | §6 omits `browser.spec.js` selected by test picker for committed mockups. | upheld | Added `browser.spec.js` to §6 Playwright command. |
+| mechanics | minor | Changed `app-harnesses.spec.js`, `app-accounts.spec.js`, and `background-settings-surfaces.spec.js` also assert horizontal scroll containment and belong in `viewer/test/firefox-specs.js`. | upheld | Added all four specs to `viewer/test/firefox-specs.js` in §5. |
+
+### Round 4 — 2026-11-27
+
+**Lanes:** pending
+
+**Changed since Round 3:**
+- §1.3: Switched legacy `lead`/`sub-lead` pin diff strictly to `models(hub)` (`codex/model.sh show --json`), comparing against manifest shipped defaults and `Not used` so fresh installs never trigger false notices and `WHEELCHAIR_MODELS` / `viewer/AGENTS.md:27` are honored.
+- §3.3–3.4: Added explicit empty-ladder and all-`Not used` configuration wait reasons in `balancer.js` (for any role, not only pinned leads), surfaced them in `harnesses.js` and `thread.js` `waitingLine()`, updated `linkReasons()` regex in `viewer/pages/settings.js:2300` without duplicating `"in Settings"`, and updated `protocol/app/lead.md:92`.
+- §5–6: Added `browser.spec.js` to §6, added `app-harnesses.spec.js`, `app-accounts.spec.js`, and `background-settings-surfaces.spec.js` to `viewer/test/firefox-specs.js`, and noted the 409/link test updates in `app-harnesses.test.js` and `app-harnesses.spec.js`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
