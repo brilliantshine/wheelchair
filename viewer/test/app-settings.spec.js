@@ -1317,6 +1317,7 @@ test('capture shared keys with a chosen project at phone size', async ({ page })
 // Antigravity's levels, from a fake `agy` and its own pins file.
 test.describe('Antigravity levels', () => {
   test.use({ viewport: { width: 1280, height: 900 } });
+  test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'ignoreErrors' }); });
   let agy;
   const ALL = ['CLI default', 'low', 'medium', 'high', 'xhigh', 'max'];
   const THREE = ['CLI default', 'low', 'medium', 'high'];
