@@ -1,6 +1,6 @@
 ---
 slug: theme-options
-status: verifying
+status: done
 created: 2026-11-28
 ---
 
