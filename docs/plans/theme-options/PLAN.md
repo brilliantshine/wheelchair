@@ -23,7 +23,7 @@ None.
 
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
-| 1 | Automatically derive the accent token family (`--accent`, `--accent-ink`, `--accent-hover`, `--accent-hover-ink`, `--accent-soft`, `--accent-line`, `--accent-text`, `--accent-hi`, `--accent-chip`, `--human`) from one chosen base hex color and active color mode, enforcing readable WCAG AA text contrast and replacing hardcoded blue literals (`assistant-popup.css`, etc.). | Users should pick one accent color, not individual CSS tokens; automatic contrast derivation keeps buttons, links, and chips legible in both light and dark modes. | defaulted |
+| 1 | Automatically derive the accent token family (`--accent`, `--accent-ink`, `--accent-hover`, `--accent-hover-ink`, `--accent-vis`, `--accent-soft`, `--accent-line`, `--accent-text`, `--accent-hi`, `--accent-chip`, `--human`) from one chosen base hex color and active color mode, enforcing readable WCAG AA text contrast and replacing hardcoded blue literals (`assistant-popup.css`, etc.). | Users should pick one accent color, not individual CSS tokens; automatic contrast derivation keeps buttons, links, and chips legible in both light and dark modes. | defaulted |
 | 2 | Place Theme controls in Settings → You alongside Background, using a browser-cached pre-paint bootstrap so signed-in pages do not flash the wrong color mode on load. | Matches the existing Appearance/You home in Settings and prevents light/dark FOUC on page load. | defaulted |
 | 3 | Leave `signin.html` on the default theme. | Unauthenticated browsers cannot fetch user settings, and sign-in is a one-time gate. | defaulted |
 | 4 | Apply theme (color mode, preset, custom accent color) to all signed-in app pages, standalone doc (`viewer/doc.html`), and graph viewer (`viewer/index.html` + `picture-export.js`), while keeping the embedded terminal (`xterm.js` in `viewer/pages/term-view.js`) dark. | Keeps all Wheelchair UI and diagrams cohesive without making CLI ANSI colors unreadable in light mode. | user |
@@ -103,7 +103,7 @@ None.
   - **Light:** `--good: #197a48`, `--good-ink: #ffffff`, `--good-bg: #e8f5ee`, `--good-line: #8bc9a8`, `--good-soft: #eef8f2`, `--good-text: #15693e`, `--warn: #7c5000`, `--warn-bg: #fdf5e6`, `--warn-line: #e2c27d`, `--warn-tint: #faf4e8`, `--bad: #c23b3b`, `--bad-text: #a32626`, `--bad-bg: #fdeeee`.
 - **Quick accent swatches** exported as `QUICK_ACCENTS`: `['#5b9dd9', '#10b981', '#d6a53b', '#e06c75', '#a78bfa', '#94a3b8']`.
 - **Accent derivation (`deriveAccent(hex, resolvedMode, surfaces, presetId)`):**
-  - Special-case exact Wheelchair Default in dark mode (`presetId === 'default' && resolvedMode === 'dark' && hex === '#5b9dd9'`): returns exact original tokens (`--accent: #5b9dd9`, `--accent-ink: #0e1114`, `--accent-hover: #a9cdf0`, `--accent-hover-ink: #0e1114`, `--accent-soft: #1a2230`, `--accent-line: #3a5778`, `--accent-text: #7fb4e6`, `--accent-hi: #a9cdf0`, `--accent-chip: #1f2b3a`, `--human: #23303f`) so existing default appearance is pixel-identical.
+  - Special-case exact Wheelchair Default in dark mode (`presetId === 'default' && resolvedMode === 'dark' && hex === '#5b9dd9'`): returns exact original tokens (`--accent: #5b9dd9`, `--accent-ink: #0e1114`, `--accent-hover: #a9cdf0`, `--accent-hover-ink: #0e1114`, `--accent-vis: #5b9dd9`, `--accent-soft: #1a2230`, `--accent-line: #3a5778`, `--accent-text: #7fb4e6`, `--accent-hi: #a9cdf0`, `--accent-chip: #1f2b3a`, `--human: #23303f`) so existing default appearance is pixel-identical.
   - Helper `pickContrastInk(bgHex)`: computes WCAG 2.1 contrast ratio against `#0e1114`, `#000000`, and `#ffffff`. If `#0e1114` meets `>= 4.5` and is at least as high as `#ffffff`, return `#0e1114`; otherwise return whichever of `#000000` and `#ffffff` has the higher contrast ratio (mathematically `>= 4.58:1` for every RGB color, including mid-gray `#777777`).
   - For any other `(hex, resolvedMode, surfaces)`:
     - `--accent`: normalized `#rrggbb` chosen color.
@@ -186,9 +186,9 @@ None.
      - Keep `:root` dark defaults unchanged (add `--accent-hover: #a9cdf0; --accent-hover-ink: #0e1114; --accent-vis: #5b9dd9;`).
      - Set `color-scheme: dark;` on `html` only (removing `color-scheme: dark` from `body` in `app.css:29`), and override with `html[data-theme-mode="light"], html[data-theme-mode="light"] body { color-scheme: light; }` so native controls (such as `<input type="color">` and scrollbars) follow light mode while `.tv-host` keeps `color-scheme: dark`.
      - `#app-nav .logo` uses `color: var(--accent-ink)` instead of `color: var(--bg)`.
-     - `:focus-visible` outline (`app.css:81`) uses `outline: 2px solid var(--accent-vis);` instead of raw `var(--accent)` so keyboard focus stays visible (`>= 3.0:1`) even with a `#ffffff` accent in light mode.
+     - `:focus-visible` outline (`app.css:81`) uses `outline: 2px solid var(--accent-vis);` instead of raw `var(--accent)` so keyboard focus stays visible (`>= 3.0:1`) even with a `#ffffff` accent in light mode; also update the two thread textareas (`viewer/pages/thread.css:147-150,462-466`) to keep a visible `var(--accent-vis)` focus ring instead of `outline: none` + `--accent-line`.
      - Filled primary button/FAB hover rules (`app.css:70`, `app.css:121-122`, `assistant-popup.css:16`) use `background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-hover-ink);` instead of `--accent-hi` with `--accent-ink`.
-     - Replace raw `color: var(--accent)` text rules (`app.css:141`, `views.css:249` `.latest-running`, and any other text-color uses of `var(--accent)` in `viewer/pages/*.css`) with `color: var(--accent-text)` so text always meets `>= 4.5:1` contrast.
+     - Replace raw `color: var(--accent)` text rules (`app.css:141`, `views.css:249` `.latest-running`, and any other text-color uses of `var(--accent)` in `viewer/pages/*.css`) with `color: var(--accent-text)` so text always meets `>= 4.5:1` contrast (explicitly noting that in Default Dark those two labels shift slightly from `#5b9dd9` to `#7fb4e6` for uniform accent-text contrast).
      - `.spinner` (`app.css:203-206`): use `background-image: var(--spinner-svg, url(...))` and under `@media (prefers-reduced-motion: reduce)` use `background-image: var(--spinner-svg-reduced, url(...))` so the wheelchair spinner's wheel highlight uses `--accent-vis` and its outline/spokes use `--ink`/`--idle` (Decision #10).
    - `viewer/pages/assistant-popup.css:40`: replace hardcoded `#23303f` with `var(--human)`.
    - Audit `viewer/pages/*.css` for any remaining hardcoded blue hex/rgba literals or dark-only text/surface literals that break in light mode and replace them with theme tokens.
@@ -235,8 +235,9 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
      - Exact pixel-identical default dark tokens and `--spinner-svg` / `--spinner-svg-reduced` color injection.
    - Covers `GET /wheelchair/api/settings/theme` and `PUT /wheelchair/api/settings/theme`: defaults, malformed `theme` field normalization vs unparseable `settings.json` returning 500 without overwriting, valid save + revision increment, idempotent no-op save, 400 invalid input (`{ error }`), 409 revision conflict (`{ error, mode, preset, accent, revision }`), 413 oversized payload, preservation across unrelated `settings.update()` calls.
    - Command: `node --test viewer/test/theme.test.js`
-2. **Existing settings, background, and name-guard regression tests:**
+2. **Existing settings, background, name-guard, and mockup-browser regression tests:**
    - Command: `node --test viewer/test/background.test.js viewer/test/app-settings.test.js machine/test/name-guard.test.js`
+   - Command: `npm --prefix viewer run test:browser -- browser.spec.js`
 3. **Browser Settings editor & sync spec (`viewer/test/theme-editor.spec.js`, listed in `viewer/test/firefox-specs.js`):**
    - Isolated server via `viewer/test/helpers/server.js`.
    - Tests Settings → You Theme controls: live preview of mode/preset/custom hex/quick swatch without saving, status line `"Previewing on this page · Save to apply across devices"`, preset switch preserving custom accent, Reset to preset, Reset to default preserving color mode, Reset discarding preview, Save persisting across reload, invalid hex validation disabling Save, 409 conflict with stale baseRevision after concurrent update, delayed stale GET not overwriting newer PUT/storage state, navigating away (mobile Back link, header navigation + browser Back, plus same-document `pagehide` → `pageshow({ persisted: true })` lifecycle test with a live unsaved preview asserting both applied theme CSS vars and form controls return to saved values), 6-column desktop / 3-column phone (390×844) preset grid with zero horizontal overflow.
@@ -385,7 +386,7 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 
 ### Round 6 — 2026-11-28
 
-**Lanes:** pending.
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 5:**
 - Scoped all graph viewer light-mode overrides (`#controls button:hover:not(:disabled)` using `var(--line)`, `.node .node-box`, `.node.selected .node-box`, `.open-child-bg`, `#marquee`, banners, `--success`/`--danger`) under `html[data-theme-mode="light"]` in Spec §5.2 so Default Dark stays completely verbatim (explicitly noting pre-existing dark `--danger` exception).
@@ -394,6 +395,18 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Default Dark special case in `deriveAccent` omitted `--accent-vis`, leaving `viewer/index.html` selection cues undefined | upheld | Added `--accent-vis: #5b9dd9` to Default Dark special case in Spec §2; graph `:root` pending split decision |
+| intent | major | Shared graph rules in §5.2 still changed Default Dark (`#d8b45f` -> `#d9a441`, `#5b9dd9` -> `#7fb4e6`, sequence opacity `.85` -> `1`) | upheld | Pending Collin's split decision on graph viewer theming |
+| intent | minor | Replacing `color: var(--accent)` with `var(--accent-text)` shifts two Default Dark labels (`app.css:141`, `views.css:249`) from `#5b9dd9` to `#7fb4e6` | upheld | Documented as intentional contrast improvement in Spec §5.1 |
+| intent | minor | `viewer/index.html` lacks `:root` fallback defaults for new theme tokens on uncached first load | upheld | Pending Collin's split decision on graph viewer theming |
+| intent | minor | Decision #1 token list omitted `--accent-vis` | upheld | Updated Decision #1 token list to include `--accent-vis` |
+| mechanics | blocking | Scoped light-mode base node rule in `viewer/index.html` outranks shared selected/run-status stroke rules | upheld | Pending Collin's split decision on graph viewer theming |
+| mechanics | blocking | Selected edge handle (90% opacity) and detail leader (80% opacity) drop below 3:1 in Default Light + `#ffffff` accent | upheld | Pending Collin's split decision on graph viewer theming |
+| mechanics | blocking | Shared graph rules contradict exact Default Dark preservation (duplicate of intent #2) | upheld | Pending Collin's split decision on graph viewer theming |
+| mechanics | blocking | Dark graph `--danger` (`#c4645f` on `#21252c`) fails 4.5:1 in non-default dark presets too | upheld | Pending Collin's split decision on graph viewer theming |
+| mechanics | minor | `viewer/index.html` lacks `:root` defaults for uncached load path (duplicate of intent #4) | upheld | Pending Collin's split decision on graph viewer theming |
+| mechanics | minor | Two thread textareas (`thread.css:147-150,462-466`) override `:focus-visible` with `outline: none` + `--accent-line` | upheld | Updated Spec §5.1 to keep `var(--accent-vis)` focus ring on those two textareas |
+| mechanics | minor | Validation list omitted `npm --prefix viewer run test:browser -- browser.spec.js` (selected by test picker for mockups) | upheld | Added `npm --prefix viewer run test:browser -- browser.spec.js` to §7.2 |
 
 ## Prior Work
 
