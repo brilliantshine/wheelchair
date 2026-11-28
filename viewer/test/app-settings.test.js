@@ -675,6 +675,25 @@ test('notice dismissal follows successful model and role saves', async () => {
   });
 });
 
+test('heads-up switch dismisses only an empty legacy notice', async () => {
+  for (const legacy of [false, true]) {
+    await withContext(async c => {
+      if (legacy) await fs.writeFile(c.models, 'gpt.lead = legacy-model\n');
+      const before = (await api(c, '/settings')).body;
+      assert.equal(before.lead_tier_notice_dismissed, false);
+      assert.equal(before.legacy_lead_diffs.length > 0, legacy);
+      const switched = await api(c, '/settings/models/heads-up', { method: 'POST', body: { action: 'switch', tier: 'heavy', model: 'custom-heavy' } });
+      assert.equal(switched.status, 200);
+      const after = (await api(c, '/settings')).body;
+      assert.equal(after.lead_tier_notice_dismissed, !legacy);
+      if (!legacy) assert.deepEqual(after.legacy_lead_diffs, []);
+      else assert.ok(after.legacy_lead_diffs.length > 0);
+      const saved = JSON.parse(await fs.readFile(path.join(c.state, 'settings.json'), 'utf8'));
+      assert.equal(saved.lead_tier_notice_dismissed, !legacy);
+    });
+  }
+});
+
 test('legacy lead comparisons include effort and distinct sub-lead cells', () => {
   const value = settings.defaults();
   for (const p of Object.keys(value.harnesses)) value.harnesses[p] = p === 'gpt';
