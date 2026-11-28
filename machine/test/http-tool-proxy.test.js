@@ -126,3 +126,41 @@ test('initialization deadline aborts late replies', async () => {
     assert.equal(replies.length, 1); assert.equal(replies[0].id, 1); assert.equal(replies[0].error.code, -32603);
   } finally { child.kill(); fixture.s.close(); }
 });
+
+test('handshake handles null JSON and deletes the session', async () => {
+  let deleted;
+  const fixture = await server((req, res) => {
+    if (req.method === 'DELETE') { deleted = req.headers['mcp-session-id']; res.writeHead(204); res.end(); return; }
+    req.resume(); res.writeHead(200, { 'content-type': 'application/json', 'mcp-session-id': 's-null' }); res.end('null');
+  });
+  try { const result = await httpHandshake({ url: fixture.url, timeoutMs: 3000 }); assert.equal(result.ok, false); assert.equal(deleted, 's-null'); } finally { fixture.s.close(); }
+});
+
+test('request rejects errors thrown by message callbacks', async () => {
+  const fixture = await server((req, res) => { req.resume(); res.writeHead(200, { 'content-type': 'application/json' }); res.end('{}'); });
+  try { await assert.rejects(request({ url: fixture.url, message: {}, onMessage: () => { throw new SyntaxError('callback failed'); } }), /callback failed/); } finally { fixture.s.close(); }
+});
+
+test('proxy forwards a client reply during initialization', async () => {
+  const fs = require('node:fs/promises'), path = require('node:path'), { spawn } = require('node:child_process'), readline = require('node:readline'), { makeTemp } = require('../../test-support/run-dir');
+  const root = await makeTemp(), dir = path.join(root, 'web'), state = path.join(root, 'state'); await fs.mkdir(dir); await fs.mkdir(path.join(state, 'shared-keys'), { recursive: true });
+  await fs.writeFile(path.join(state, 'shared-keys', 'keys.json'), JSON.stringify({ shared: true, revision: 1, keys: { API_KEY: 'secret123456' } }));
+  let stream, received, replySession;
+  const fixture = await server((req, res) => { let body = ''; req.on('data', b => { body += b; }); req.on('end', () => {
+    if (req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+    const msg = JSON.parse(body);
+    if (msg.method === 'initialize') { stream = res; res.writeHead(200, { 'content-type': 'text/event-stream', 'mcp-session-id': 'init-session' }); res.write(`data: ${JSON.stringify({ jsonrpc: '2.0', id: 'init-ping', method: 'ping' })}\n\n`); }
+    else { received = msg; replySession = req.headers['mcp-session-id']; res.writeHead(202); res.end(); stream.end(`data: ${JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18', capabilities: {} } })}\n\n`); }
+  }); });
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'web', description: 'x', kind: 'server', url: fixture.url, keys: ['API_KEY'] }));
+  const child = spawn(process.execPath, [path.join(__dirname, '../lib/http-tool-proxy.js'), '--project-dir', root, '--tool', dir, '--state-dir', state, '--key-store', 'shared', '--key', 'API_KEY'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+  const next = async () => JSON.parse((await Promise.race([lines.next(), new Promise((_, reject) => setTimeout(() => reject(new Error('reply timed out')), 3000))])).value);
+  try {
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n');
+    assert.deepEqual(await next(), { jsonrpc: '2.0', id: 'init-ping', method: 'ping' });
+    const reply = { jsonrpc: '2.0', id: 'init-ping', result: {} }; child.stdin.write(JSON.stringify(reply) + '\n');
+    assert.deepEqual(await next(), { jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18', capabilities: {} } });
+    assert.deepEqual(received, reply); assert.equal(replySession, 'init-session');
+  } finally { child.kill(); fixture.s.close(); }
+});

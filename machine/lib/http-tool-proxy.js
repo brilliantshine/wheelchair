@@ -48,7 +48,7 @@ async function start() {
         return null;
       };
       request({ url, headers, sessionId: sid, protocolVersion: version, message: msg, signal: controller.signal,
-        onHeaders: h => { responseHeaders = h; if (!isRequest) finish(null, { headers: h }); },
+        onHeaders: h => { responseHeaders = h; if (forward && msg.method === 'initialize' && h['mcp-session-id']) sessionId = h['mcp-session-id']; if (!isRequest) finish(null, { headers: h }); },
         onMessage: response => { const result = apply(checker.line(Buffer.from(JSON.stringify(response)))); if (result) finish(null, { message: result, headers: responseHeaders, original: response }); },
         onOversized: prefix => { const result = apply(checker.oversized(prefix)); if (result) finish(null, { message: result, headers: responseHeaders }); }
       }).then(() => { controllers.delete(controller); if (!done) finish(new Error('HTTP stream ended without a matching response')); }, e => { controllers.delete(controller); finish(e); });
@@ -94,6 +94,8 @@ async function start() {
         const controller = new AbortController();
         const notice = deadline((async () => { if (initGate) await initGate; initialized = false; await send(msg, true, controller); initialized = true; })(), Math.max(0, initDeadline - (Date.now() - initStarted)), controller);
         initNotice = notice; try { await notice; } finally { if (initNotice === notice) initNotice = null; }
+      } else if (typeof msg.method !== 'string') {
+        await send(msg, false);
       } else {
         if (initGate) await initGate;
         if (initNotice) await initNotice;
@@ -101,7 +103,7 @@ async function start() {
         if (!initialized && typeof msg.method === 'string') await recover(sessionId);
         await send(msg);
       }
-    } catch (e) { if (msg.method === 'initialize' || msg.method === 'notifications/initialized') initialized = false; if (isRequest && !closing && !e.replied) errorReply(msg.id, e.status ? `HTTP status ${e.status}` : e.code ? `HTTP error ${e.code}` : 'HTTP request failed'); }
+    } catch (e) { if (msg.method === 'initialize') sessionId = null; if (msg.method === 'initialize' || msg.method === 'notifications/initialized') initialized = false; if (isRequest && !closing && !e.replied) errorReply(msg.id, e.status ? `HTTP status ${e.status}` : e.code ? `HTTP error ${e.code}` : 'HTTP request failed'); }
   }
   const input = readline.createInterface({ input: process.stdin });
   input.on('line', raw => { try { const msg = JSON.parse(raw); if (msg && typeof msg === 'object' && (typeof msg.method === 'string' || (Object.hasOwn(msg, 'id') && (Object.hasOwn(msg, 'result') || Object.hasOwn(msg, 'error'))))) handle(msg); } catch {} });

@@ -20,7 +20,7 @@ function request({ url, headers = {}, sessionId, protocolVersion, message, metho
       const sse = /^text\/event-stream\b/i.test(res.headers['content-type'] || '');
       let buffer = Buffer.alloc(0), oversized = false;
       const eventData = raw => Buffer.from(raw.toString('utf8').split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).replace(/^ /, '')).join('\n'));
-      const parse = raw => { try { onMessage(JSON.parse(raw.toString('utf8')), res.headers); } catch (e) { if (!(e instanceof SyntaxError)) throw e; } };
+      const parse = raw => { let msg; try { msg = JSON.parse(raw.toString('utf8')); } catch (e) { if (!(e instanceof SyntaxError)) finish(e); return; } try { onMessage(msg, res.headers); } catch (e) { finish(e); } };
       res.on('data', chunk => {
         if (oversized) return;
         buffer = Buffer.concat([buffer, chunk]);
@@ -53,7 +53,7 @@ async function httpHandshake({ url, headers, timeoutMs, signal }) {
   const cancel = () => controller.abort(); signal?.addEventListener('abort', cancel, { once: true }); if (signal?.aborted) cancel();
   const call = (message, capture) => new Promise((resolve, reject) => {
     let got = false;
-    request({ url, headers, sessionId, protocolVersion: version, message, signal: controller.signal, onHeaders: h => { if (capture) sessionId = h['mcp-session-id']; if (message.id === undefined) { got = true; resolve(); } }, onMessage: msg => { if (msg.id === message.id && message.id !== undefined) { got = true; msg.error ? reject(new Error(msg.error.message || 'Server error')) : resolve(msg.result); } } }).then(() => { if (!got) reject(new Error('Server ended without a response')); }, reject);
+    request({ url, headers, sessionId, protocolVersion: version, message, signal: controller.signal, onHeaders: h => { if (capture) sessionId = h['mcp-session-id']; if (message.id === undefined) { got = true; resolve(); } }, onMessage: msg => { if (!msg || typeof msg !== 'object') return; if (msg.id === message.id && message.id !== undefined) { got = true; msg.error ? reject(new Error(msg.error.message || 'Server error')) : resolve(msg.result); } } }).then(() => { if (!got) reject(new Error('Server ended without a response')); }, reject);
   });
   try {
     const init = await call({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'wheelchair', version: '1' } } }, true);
