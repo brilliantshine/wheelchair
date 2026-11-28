@@ -1,120 +1,204 @@
 {
- "schema": 1,
- "title": "what happens to each line a keyed server tool sends back",
- "source": "plan-proposal",
- "source_detail": "docs/plans/server-tool-keys/PLAN.md, Spec S4-S6",
- "explanation": "Every line takes one of three ways out, in order, and none waits for more output. The interesting part is [held back](#held): the agent still gets an answer for its request, using the request's own id, so nothing hangs. Leaves out the error output, which is hidden the same way folder tools' output is.",
- "groups": [
-  {
-   "id": "held",
-   "label": null,
-   "note": null,
-   "visible": false,
-   "nodes": [
-    "kind",
-    "reply",
-    "sreq",
-    "drop"
-   ]
-  }
- ],
- "nodes": [
-  {
-   "id": "line",
-   "label": "a complete line from the server",
-   "kind": "step"
-  },
-  {
-   "id": "has",
-   "label": "does any spelling of a key appear?",
-   "kind": "decision",
-   "exclusive": true
-  },
-  {
-   "id": "same",
-   "label": "passed on byte for byte",
-   "kind": "step"
-  },
-  {
-   "id": "swap",
-   "label": "replace each key with [key]; is it still valid, same id, and key-free?",
-   "kind": "decision",
-   "exclusive": true
-  },
-  {
-   "id": "out",
-   "label": "replaced line passed on",
-   "kind": "step"
-  },
-  {
-   "id": "kind",
-   "label": "what was the line?",
-   "kind": "decision",
-   "exclusive": true
-  },
-  {
-   "id": "reply",
-   "label": "agent gets an error reply carrying the same id",
-   "kind": "step"
-  },
-  {
-   "id": "sreq",
-   "label": "the server gets an error reply to its own request",
-   "kind": "step"
-  },
-  {
-   "id": "drop",
-   "label": "dropped (a notice or not a message)",
-   "kind": "step"
-  }
- ],
- "edges": [
-  {
-   "id": "line->has",
-   "from": "line",
-   "to": "has"
-  },
-  {
-   "id": "has->same",
-   "from": "has",
-   "to": "same",
-   "label": "no"
-  },
-  {
-   "id": "has->swap",
-   "from": "has",
-   "to": "swap",
-   "label": "yes"
-  },
-  {
-   "id": "swap->out",
-   "from": "swap",
-   "to": "out",
-   "label": "yes"
-  },
-  {
-   "id": "swap->kind",
-   "from": "swap",
-   "to": "kind",
-   "label": "no"
-  },
-  {
-   "id": "kind->reply",
-   "from": "kind",
-   "to": "reply",
-   "label": "a reply"
-  },
-  {
-   "id": "kind->sreq",
-   "from": "kind",
-   "to": "sreq",
-   "label": "the server asking something"
-  },
-  {
-   "id": "kind->drop",
-   "from": "kind",
-   "to": "drop",
-   "label": "anything else"
-  }
- ]
+  "schema": 1,
+  "title": "what happens to each line a keyed server tool sends back",
+  "source": "plan-proposal",
+  "source_detail": "docs/plans/server-tool-keys/PLAN.md, Spec S4-S6",
+  "explanation": "Every line takes one of three ways out, in order, and none waits for more output. The interesting part is [held back](#held): the agent still gets an answer for its request, using the request's own id, so nothing hangs. Leaves out the error output, which is hidden the same way folder tools' output is.",
+  "groups": [
+    {
+      "id": "held",
+      "label": null,
+      "note": null,
+      "visible": false,
+      "nodes": [
+        "drop",
+        "kind",
+        "reply",
+        "sreq"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "drop",
+      "label": "dropped (a notice or not a message)",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": -2,
+      "y": -8
+    },
+    {
+      "id": "has",
+      "label": "does any spelling of a key appear?",
+      "kind": "decision",
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "kind",
+      "label": "what was the line?",
+      "kind": "decision",
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "line",
+      "label": "a complete line from the server",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "out",
+      "label": "replaced line passed on",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "reply",
+      "label": "agent gets an error reply carrying the same id",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "same",
+      "label": "passed on byte for byte",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "sreq",
+      "label": "the server gets an error reply to its own request",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "swap",
+      "label": "replace each key with [key]; is it still valid, same id, and key-free?",
+      "kind": "decision",
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "has->same",
+      "from": "has",
+      "to": "same",
+      "label": "no",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "has->swap",
+      "from": "has",
+      "to": "swap",
+      "label": "yes",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "kind->drop",
+      "from": "kind",
+      "to": "drop",
+      "label": "anything else",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "kind->reply",
+      "from": "kind",
+      "to": "reply",
+      "label": "a reply",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "kind->sreq",
+      "from": "kind",
+      "to": "sreq",
+      "label": "the server asking something",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "line->has",
+      "from": "line",
+      "to": "has",
+      "label": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "swap->kind",
+      "from": "swap",
+      "to": "kind",
+      "label": "no",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "swap->out",
+      "from": "swap",
+      "to": "out",
+      "label": "yes",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    }
+  ]
 }
