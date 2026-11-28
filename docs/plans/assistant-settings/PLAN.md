@@ -276,11 +276,33 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 
 ### Round 3 — 2026-11-28
 
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
+
 **Changed since Round 2:**
 - Added cheap `GET /wheelchair/api/settings/revision` counter (`hub.settingsRevision`, bumped by `settings.update`, mutating `modelCommand`, and `background.commit`) and switched Settings polling to check revision before fetching `GET /settings` (Spec §3, §5, Decision 12).
 - Dropped `--section` from `wc.js assistant settings`, keeping `--include-history` only (Spec §2, §4, §6, Decision 12).
 - Simplified Spec §5 to one uniform clean-repaints / dirty-keeps-draft-with-note rule, fixing all concrete UI details: `null` clean drafts for `nameDraft`/`folderDraft`, `behavior` unified block with `draftBaseline`, DOM-only inputs ("Never say", custom "Other" model), Shared tools `<option>` update + clean key refresh, `leadNames` upload/dropdown guard, `accountsBusy()`/`refreshUsage()` triggered on both `accounts` and `harnesses` changes (dropping `retired_accounts`), and including lesson import `fetch` + `reload()` in `localWriteGen`/`inFlightWrites`.
 - Clarified project-lead 400 vs `assistant-actions.run` 403 refusal (Spec §4, §7) and added machine-relay partial-diagram + fresh-session prompt assertions in `machine/test/assistant.test.js` (Spec §7).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|---|---|---|---|---|
+| intent | minor | `pollSettings` still calls `GET /settings/diagram-sensitivity` every 5 s on `you`; bump `hub.settingsRevision` on diagram writes and only re-read on revision change | upheld | Pending user choice on review budget |
+| intent | minor | In-memory `hub.settingsRevision` starting at 1 can repeat after hub restart; start at boot time / unique boot identity | upheld | Pending user choice on review budget |
+| intent | minor | Per-block `renderedSlices` / `flushDeferredRepaints` could be simplified to page-level refresh when clean | upheld | Pending user choice on review budget |
+| mechanics | blocking | `protocol/app/assistant.md:11` restricts assistant to `wc.js`/`card.js`/read-only; explicitly authorize writing scratch JSON payload files outside any project | upheld | Pending user choice on review budget |
+| mechanics | major | Read/stamp `settingsRevision` before `settings.describe()` async reads (or retry if changed) so old preferences aren't stamped with a newer revision | upheld | Pending user choice on review budget |
+| mechanics | major | Hub restart reuses revision `1`, causing stale tabs to miss persisted pre-restart writes | upheld | Pending user choice on review budget |
+| mechanics | major | Deferred slices can overwrite a newer local save when `flushDeferredRepaints` runs after clearing draft | upheld | Pending user choice on review budget |
+| mechanics | major | `reload()` and account-save GETs bypass `localWriteGen` / guarded snapshot application | upheld | Pending user choice on review budget |
+| mechanics | major | External lesson removal causes 409 on `saveLessons()` with no draft-preserving in-page recovery path | upheld | Pending user choice on review budget |
+| mechanics | major | Behavior clean check uses `lessonDirty()` even when a template is selected (`select()` leaves old `lessonEdit`) | upheld | Pending user choice on review budget |
+| mechanics | major | Shared tools `readKeys()` response can overwrite key inputs typed while request was pending | upheld | Pending user choice on review budget |
+| mechanics | major | Accounts has a second repaint guard for connected waiting sign-in beyond `accountsBusy()` | upheld | Pending user choice on review budget |
+| mechanics | major | Protocol does not specify preserving existing fields on replacement payloads (e.g. model effort, style, balancing) | upheld | Pending user choice on review budget |
+| mechanics | minor | Focus guard should include focusable buttons (radio buttons in Diagrams/preferences) and check focus on Background repaint | upheld | Pending user choice on review budget |
+| mechanics | minor | Use `youShown()` instead of `section === 'you'` so phone category list doesn't poll machines | upheld | Pending user choice on review budget |
+| mechanics | minor | Validate allowed preference keys at assistant boundary so excluded keys like `enter_to_send` are rejected instead of silently returning `{ok:true}` | upheld | Pending user choice on review budget |
+| mechanics | minor | Add `app-diagram-sensitivity.spec.js` and `viewer/test/background.test.js` to Spec §7 | upheld | Pending user choice on review budget |
 
 ## Prior Work
 
