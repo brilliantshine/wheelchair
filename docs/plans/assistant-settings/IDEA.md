@@ -1,6 +1,6 @@
 ---
 slug: assistant-settings
-status: draft
+status: confirmed
 mode: thorough
 created: 2026-11-28
 ---
