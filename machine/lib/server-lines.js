@@ -29,7 +29,7 @@ function readLine(buf, { prefix = false, visit = () => {} } = {}) {
     const start = p++; let segment = p, decoded = null, used = 0;
     function ensure() {
       if (!decoded) {
-        let closing = p;
+        let closing = start + 1;
         while (closing < buf.length) {
           if (buf[closing] === 92) { closing = Math.min(closing + 2, buf.length); continue; }
           if (buf[closing++] === 34) break;

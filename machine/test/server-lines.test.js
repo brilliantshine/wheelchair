@@ -74,6 +74,22 @@ test('reader decodes UTF-8 and escapes byte-for-byte', () => {
     assert.deepEqual(tokens[1].text, Buffer.from([0xef, 0xbf, 0xbd]));
   }
 });
+test('reader decodes strings whose first escape is an escaped quote', () => {
+  for (const raw of ['a\\"bcdefghijk', '\\"abc', '\\"\\"x\\\\y\\n', 'x\\"' + 'y'.repeat(1000)]) {
+    const tokens = [];
+    const result = readLine(Buffer.from('{"result":"' + raw + '"}'), { visit: t => tokens.push(t) });
+    assert.equal(result.wellFormed, true, raw);
+    assert.deepEqual(tokens[1].text, Buffer.from(JSON.parse('"' + raw + '"')), raw);
+  }
+});
+test('escaped quote cannot truncate a percent-encoded key in a reply', () => {
+  const secret = 'Secret12345XYZ';
+  const encoded = [...Buffer.from(secret)].map(byte => '%' + byte.toString(16).toUpperCase().padStart(2, '0')).join('');
+  const c = createLineChecker({ name: 'demo', values: [secret] });
+  const result = c.line(Buffer.from('{"jsonrpc":"2.0","id":1,"result":{"text":"\\"' + 'x'.repeat(40) + ' ' + encoded + '"}}\n'));
+  assert.equal(result.out.toString(), '{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"tool demo: its reply contained one of its keys and was held back"}}\n');
+  assert.equal(result.note, 'tool demo: held back a reply that contained one of its keys');
+});
 test('large clean replies and long escape runs stay bounded', () => {
   const c = createLineChecker({ name: 'demo', values: ['e3' + 'x'.repeat(38), 'n6' + 'y'.repeat(38)] });
   for (const payload of ['A'.repeat(8 * 1024 * 1024), 'A'.repeat(4 * 1024 * 1024) + '\\/' + 'A'.repeat(4 * 1024 * 1024), '\\n\\"é'.repeat(2796203)]) {
