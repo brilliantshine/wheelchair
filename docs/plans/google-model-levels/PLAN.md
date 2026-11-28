@@ -163,6 +163,15 @@ Claude, GPT, Kimi, OpenRouter models and their effort; asides (Gemini has none);
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Launch machine's list never refreshes after first fetch. | upheld | Pending: refetch on launch when stale or effort/model missing. |
+| intent | minor | Scout loses level when hub has no list. | upheld | Pending. |
+| intent | minor | Failed fetch retried on every read (10 s each). | upheld | Pending: back off after a failure. |
+| intent | minor | model.sh USAGE and codex/AGENTS.md not updated. | upheld | Pending. |
+| mechanics | blocking | Settings, sub-lead lines and scout still use the hub's list when Antigravity is only on another machine. | user-decision | Asked: support Antigravity only on another machine, or not. |
+| mechanics | blocking | Launch machine list has no refresh path. | upheld | Pending (same as intent major). |
+| mechanics | major | Skip-duplicate-tier rule can discard a reachable higher level. | upheld | Pending: skip only when that tier offers no untried level. |
+| mechanics | minor | PUT ok then GET fails looks like a rejected save. | upheld | Pending. |
+| mechanics | minor | Synchronous argv builder would block on discovery. | upheld | Pending: async preparation. |
 
 ## Implementation Tasks
 
