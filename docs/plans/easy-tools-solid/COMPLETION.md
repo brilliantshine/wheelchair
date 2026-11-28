@@ -1,8 +1,14 @@
 ---
 slug: easy-tools-solid
 date: 2026-11-28
-implemented-by: standard (gpt / gpt-6.1-terra: T1, T2, T3, T4, T6, T7; claude / claude-sonnet-5-5: T5)
-verified-by: []
+implemented-by: standard (gpt / gpt-6.1-terra: T1, T2, T3, T4, T6, T7, R1-A, R1-B; claude / claude-sonnet-5-5: T5)
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5
+    checks: standard (gpt / gpt-6.1-terra, claude / claude-sonnet-5-5)
+  - round: 1
+    lane: gpt / gpt-6.2-sol
+    checks: standard (gpt / gpt-6.1-terra, claude / claude-sonnet-5-5)
 ---
 
 # Completion Report — Make folder tools solid
@@ -12,7 +18,7 @@ verified-by: []
 | Spec item | Origin | Implemented at (file:line) | Validated by |
 |-----------|--------|----------------------------|--------------|
 | S1.1 Keyless launcher output-drain fix (`pipeKeyless`) | this run | `machine/lib/tool-launch.js:55,62-79` | `node --test machine/test/folder-tools-run.test.js` (32/32 pass) |
-| S1.2 Deterministic flush/EPIPE unit test + 1 MB keyed drain test | this run | `machine/test/folder-tools-run.test.js:158-190` | `node --test machine/test/folder-tools-run.test.js` (32/32 pass) |
+| S1.2 Deterministic flush/EPIPE unit test + 1 MB keyed drain test | this run | `machine/test/folder-tools-run.test.js:50-77` | `node --test machine/test/folder-tools-run.test.js` (32/32 pass) |
 | S2.1 Windows executable detection (`resolveProgram`, `isWindowsExecutable`, `shouldWrapWindowsProxy`) | this run | `machine/lib/folder-tools.js:65-85` | `node --test machine/test/win-tool-service.test.js` (10/10 pass) |
 | S2.2 WSL readiness/proxy wiring for stdio servers, scripts, and Windows-marked HTTP servers; optional `--list-cache` + `waitReady` | this run | `machine/service.js:981-984,1003-1056`, `machine/lib/folder-tools.js:115-124`, `machine/lib/tool-launch.js:12-13,40-44`, `machine/lib/tool-bridge.js:6-11,24-36`, `machine/lib/win-tool-proxy.js:9-27,38,46,68,100` | `node --test machine/test/win-tool-proxy.test.js` (29/29 pass), `node --test machine/test/win-tool-service.test.js` (10/10 pass) |
 | S2.3 `WSLENV` reservation, connector `windows`/`wrapped`/`unity` propagation, Unity prompt, Codex `WSLENV` passthrough | this run | `machine/lib/project-keys.js:12`, `machine/lib/win-prompt.js:8`, `machine/service.js:1152`, `connectors/claude/machine.js:86`, `connectors/codex/machine.js:174,189`, `connectors/agy/machine.js:108` | `node --test machine/test/project-keys.test.js` (11/11 pass), `node --test machine/test/win-launch.test.js` (2/2 pass), `node --test machine/test/win-tool-service.test.js` (10/10 pass) |
@@ -71,4 +77,16 @@ Full-run `summary.txt` will be appended once the full run completes on the verif
 
 ## Remediation rounds
 
-(None yet.)
+### Remediation 1 (for Attempt 1 commit `858dfa51934cceb91976b751384d10e559a5728c`)
+
+Attempt 1 verifiers (`claude / claude-opus-5-5` and `gpt / gpt-6.2-sol`) reported 4 normal-use/repo-law gaps plus Check Once Built #1 (recorded in `PLAN.md` Accepted Risks under `verification-1` per lead decision). All 4 gaps were fixed:
+
+1. **R1-A (`machine/lib/http-tool-proxy.js`, `machine/test/http-tool-proxy.test.js`, `gpt / gpt-6.1-terra`):**
+   - Forward client JSON-RPC responses (messages without `method` carrying `id` + `result`/`error`) to the HTTP server without waiting for a response matching `msg.id` or emitting `-32603` on failure.
+   - Pass an `AbortController` into `deadline()` so expiring `initGate`/`initNotice`/`recover` deadlines abort the in-flight HTTP request and suppress late stdout writes, ensuring at most one terminal reply per request ID.
+   - Validated: `node --test machine/test/http-tool-proxy.test.js` — 9/9 pass (including server-initiated `roots/list` on an open SSE stream and aborted late `initialize` reply).
+2. **R1-B (`viewer/test/wc-tool.test.js`, `gpt / gpt-6.1-terra`):**
+   - Guard only the Python starter live `wc.js tool check` assertions on `python3` availability on `PATH`, keeping template creation, mode, and flag checks unconditional.
+   - Validated: `node --test viewer/test/wc-tool.test.js` — 15/15 pass with `python3` on `PATH` and 15/15 pass on an isolated Python-free `PATH`.
+3. **R1-C (`docs/plans/easy-tools-solid/COMPLETION.md`):**
+   - Corrected S1.2 evidence line reference from `machine/test/folder-tools-run.test.js:158-190` to `machine/test/folder-tools-run.test.js:50-77`.
