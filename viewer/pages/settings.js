@@ -359,6 +359,8 @@
       data.heads_up = res.heads_up;
       repaint('tiers');
       repaintPreviews();
+      // A switched tier can change the notice, or bring one where nothing differed before.
+      await refreshDiffs(true);
     } catch (e) { inlineErr(host, e.message); }
   }
 
@@ -674,9 +676,9 @@
     if (host) inlineErr(host, message);
   };
 
-  // The notice's rows follow the tiers; read them again while it is showing.
-  async function refreshDiffs() {
-    if (!data.legacy_lead_diffs?.length) return;
+  // The notice's rows follow the tiers; read them again while it is showing, or when forced.
+  async function refreshDiffs(force) {
+    if (!force && !data.legacy_lead_diffs?.length) return;
     try {
       const fresh = await api('/settings');
       data.legacy_lead_diffs = fresh.legacy_lead_diffs;
@@ -746,8 +748,8 @@
     return 'Custom: ' + (orderNames(entry).join(' → ') || 'no provider switched on');
   }
 
-  // A provider order as an editable list. Switched-off providers are hidden here and keep their
-  // index in the saved array; 'any' ("then whatever's left") stays last.
+  // A provider order as an editable list. Switched-off providers are hidden here; they keep their
+  // order, and their index in the saved array unless a shorter list moves them up; 'any' ("then whatever's left") stays last.
   function ladderList({ order, name, allowAny, change, attr }) {
     const all = order.filter((p) => p !== 'any');
     const hasAny = order.includes('any');
@@ -757,10 +759,10 @@
     const commit = (list) => {
       const total = left.length + list.length;
       const out = new Array(total).fill(null);
-      const rest = [];
-      for (const p of left) { const i = all.indexOf(p); if (i < total && out[i] === null) out[i] = p; else rest.push(p); }
+      // Capping each at the room the later ones need keeps them in order at the end.
+      left.forEach((p, k) => { out[Math.min(all.indexOf(p), total - left.length + k)] = p; });
       const visible = list.slice();
-      for (let i = 0; i < total; i++) if (out[i] === null) out[i] = visible.length ? visible.shift() : rest.shift();
+      for (let i = 0; i < total; i++) if (out[i] === null) out[i] = visible.shift();
       change(hasAny && allowAny ? [...out, 'any'] : out);
     };
     const move = (i, d) => { const next = real.slice(); const [item] = next.splice(i, 1); next.splice(i + d, 0, item); commit(next); };

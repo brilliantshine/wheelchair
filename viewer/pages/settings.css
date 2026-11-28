@@ -329,8 +329,9 @@ button.danger { color: var(--bad-text); }
 .m-block .hu { margin-bottom: 10px; }
 .m-agent { padding: 10px 16px; border-bottom: 1px solid var(--panel-2); min-width: 0; }
 .m-box > .m-agent:last-child { border-bottom: 0; }
-.m-agent-main { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; }
-.m-id { flex: 1 1 0; min-width: 0; }
+.m-agent-main { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+/* The controls drop to their own line before the preview gets narrower than this. */
+.m-id { flex: 1 1 240px; min-width: 220px; }
 .m-role { font-size: 13px; font-weight: 600; }
 .m-preview { margin-top: 2px; font-family: var(--mono); font-size: 11px; line-height: 1.45; color: var(--dim); overflow-wrap: anywhere; }
 .m-controls { display: flex; align-items: center; gap: 8px; flex: none; }
@@ -384,7 +385,7 @@ button.danger { color: var(--bad-text); }
 .model-row { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 8px 18px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--panel-2); }
 .model-row:last-child { border-bottom: 0; }
 .tier-title { display: flex; flex-direction: column; font-size: 13px; grid-column: 1; }
-.model-controls { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.model-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .model-controls select { flex: 1; min-width: 120px; min-height: 36px; background: var(--bg); border: 1px solid var(--line-2); font-family: var(--mono); font-size: 12px; }
 .model-controls .effort { flex: none; max-width: 100%; }
 .panel .m-block .effort button { padding: 4px 8px; }

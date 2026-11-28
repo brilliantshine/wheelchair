@@ -21,4 +21,5 @@ module.exports = [
   'app-agents-decks.spec.js', // Wheel scrolling.
   'app-threads.spec.js', // Scrolling and jump to bottom.
   'app-assistant-phone.spec.js', // Scrolling and jump to bottom.
+  'app-assistant-popup.spec.js', // Horizontal scroll containment.
 ];
