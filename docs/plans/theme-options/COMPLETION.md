@@ -21,6 +21,12 @@ verified-by:
   - round: 3
     lane: heavy / gpt-6.2-sol
     checks: standard / claude-sonnet-5-5 (R2-1)
+  - round: 4
+    lane: heavy / claude-opus-5-5
+    checks: standard / claude-sonnet-5-5 (R3-1)
+  - round: 4
+    lane: heavy / gpt-6.2-sol
+    checks: standard / claude-sonnet-5-5 (R3-1)
 ---
 
 # Completion Report — Custom accent color and theme options
@@ -100,3 +106,22 @@ Addressed the Attempt 3 verification gap (`wc-11c53653de4e-verifier-5` passed; `
 Validation after Remediation 3:
 - `npm --prefix viewer run test:browser -- test/theme-rendering.spec.js` — 28/28 pass across Chromium and Firefox (exit 0).
 - `node --test machine/test/name-guard.test.js` — 2/2 pass (exit 0).
+
+### Full run (`bash test-support/full-run.sh` on commit `15b35972faa267a5c92ecb12b31ffc9cf995c169`, `TMPDIR=/var/tmp/wc-fr WHEELCHAIR_BROWSER_WORKERS=4`)
+
+```text
+commit 15b35972faa267a5c92ecb12b31ffc9cf995c169
+suite viewer-browser exit 1 seconds 1223
+suite viewer-node exit 1 seconds 111
+suite machine exit 1 seconds 147
+suite test-support exit 0 seconds 33
+suite sensitivity exit 0 seconds 15
+suite codex exit 0 seconds 48
+suite install exit 0 seconds 150
+suite sudo-helper exit 0 seconds 11
+```
+
+Failures in `full-run.sh` (all 3 outside `theme-options`; 100% of `theme.test.js`, `theme-editor.spec.js`, and `theme-rendering.spec.js` passed):
+- `viewer-node`: `viewer/test/registration.test.js:162` ("twenty concurrent opens all land in the running server registry", `assert.ok(results.every((result) => result.code === 0))`) — **confirmed already failing on comparison commit `9517d3bc06afb8ca3f94c22ee760e8bf5ec48faf`** with the exact same `AssertionError`.
+- `machine`: `machine/test/win-apps.test.js:42` ("job remains running until the wrapper closes; timeout terminates it") — transient host-load flake (`machine/` untouched by this branch); **passed 8/8** on isolated re-run (`node --test machine/test/win-apps.test.js`).
+- `viewer-browser`: `[chromium] viewer/test/app-views.spec.js:111` ("desktop › tree viewport supports pan, zoom, refresh, selection and terminal", 1532/1533 passed) — transient host-load flake; **passed** on isolated Chromium re-run.
