@@ -92,3 +92,28 @@ Screenshot of the Settings grid (a level group with its levels, a no-level model
 - Plan Accepted Risks stand as written.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-27
+
+Verification attempt 1 (commit 0eadce68; claude-opus-5-5 and gpt-6.2-sol) failed with four gaps; see `REMEDIATION-1.md`. G1 (overlapping refreshes) is a rare path, recorded in PLAN.md Accepted Risks.
+
+| Gap | Fix | Lane | At | Validated by |
+|-----|-----|------|----|--------------|
+| G3 sub-lead start refreshed a list under an hour old | new `model.sh agy-refresh` (only when missing, old format or over an hour old; S1.6 back-off; silent, exit 0), used once by `levelLines` | R1, standard / gpt-6.1-terra | `codex/model.sh:41`, `:344`–`346`, `:543`–`545`; `viewer/app/settings.js:474` | `codex/test/run.sh` agy-refresh cases; `viewer/test/app-settings.test.js:589` (two-minute list, no agy run) |
+| G2 a save wiped another cell's Other… draft | the saved cell alone is redrawn after the PUT and after the re-read | R2, standard / claude-sonnet-5-5 | `viewer/pages/settings.js` (`redrawCell`, `refreshModels`) | `viewer/test/app-settings.spec.js:1424`, `:1446` |
+| G4 a test server could run the real agy and write the real `~/.wheelchair` | `startServer` defaults `WHEELCHAIR_AGY=''` and `WHEELCHAIR_MODELS` inside the state dir unless the caller sets them; same defaults in `pages.spec.js` | R2 | `viewer/test/helpers/server.js:75`–`80`, `viewer/test/pages.spec.js:180`, `:326` | R2 report's scratch-HOME proof (agy call before, none after) |
+
+The S5.1 deviation in "Deviations from plan" (refresh through `agy-launch`) is superseded by G3's fix: the sub-lead start now refreshes only a list that is missing, in the old format, or over an hour old.
+
+Task checks on the merged tip (f5a2d1ff), run by the sub-lead:
+
+```text
+bash codex/test/run.sh                         RESULT 217 passed, 0 failed
+node connectors/export.js --check              exit 0
+node --test machine/test/{name-guard,project-mcp-agy,agy-launch-service,connectors-model-roundtrip-real}.test.js   # pass 9 # fail 0
+node --test viewer/test/{model-options,app-settings,app-hub,worker-effort-membership}.test.js                      # pass 146 # fail 0
+npm --prefix viewer run test:browser -- --grep 'effort'                                                            12 passed
+bash install/test/run.sh                       RESULT 217 passed, 0 failed
+```
+
+Known residual: direct `model.sh` spawns in `viewer/test/app-balancer.test.js:35`, `:153` and `viewer/test/app-hub.test.js` `pinned()` do not set `WHEELCHAIR_AGY`; attempt 1's verifier saw no agy call from the Spec files other than G4's.
