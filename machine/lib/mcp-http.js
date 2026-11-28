@@ -48,8 +48,8 @@ async function deleteSession(url, headers, { timeoutMs = 1000, sessionId, protoc
   try { await request({ url, headers, sessionId, protocolVersion, method: 'DELETE', signal: controller.signal }); } catch {} finally { clearTimeout(timer); }
 }
 async function httpHandshake({ url, headers, timeoutMs, signal }) {
-  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs); let timedOut = false, sessionId, version, serverInfo = null;
-  const timeout = setTimeout(() => { timedOut = true; }, timeoutMs);
+  const controller = new AbortController(); let timedOut = false, sessionId, version, serverInfo = null;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   const cancel = () => controller.abort(); signal?.addEventListener('abort', cancel, { once: true }); if (signal?.aborted) cancel();
   const call = (message, capture) => new Promise((resolve, reject) => {
     let got = false;
@@ -62,6 +62,6 @@ async function httpHandshake({ url, headers, timeoutMs, signal }) {
     let tools = null; if (init.capabilities?.tools) { const list = await call({ jsonrpc: '2.0', id: 2, method: 'tools/list' }); if (!Array.isArray(list?.tools)) throw new Error('Invalid tools/list response'); tools = list.tools.map(t => t.name); }
     return { ok: true, serverInfo, tools, error: null };
   } catch (e) { return { ok: false, serverInfo: signal?.aborted ? null : serverInfo, tools: null, error: signal?.aborted ? 'cancelled' : timedOut ? 'Server handshake timed out' : e.message }; }
-  finally { clearTimeout(timer); clearTimeout(timeout); signal?.removeEventListener('abort', cancel); controller.abort(); if (sessionId && !signal?.aborted) await deleteSession(url, headers, { sessionId, protocolVersion: version }); }
+  finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); controller.abort(); if (sessionId && !signal?.aborted) await deleteSession(url, headers, { sessionId, protocolVersion: version }); }
 }
 module.exports = { request, deleteSession, httpHandshake };
