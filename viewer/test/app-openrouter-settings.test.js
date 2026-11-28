@@ -26,7 +26,7 @@ test('OpenRouter settings defaults, migration and page display', () => {
   assert.equal(settings.normalize({ review_families: 'openrouter' }).review_families, 'openrouter');
   assert.match(source, /const PROVIDERS = TOOLS\.map\(\(t\) => \[t\.provider, t\.label, t\.settings\.cliLabel\]\)/);
   assert.deepEqual([pi.provider, pi.label, pi.settings.cliLabel], ['openrouter', 'OpenRouter', 'Pi']);
-  assert.ok(source.includes("text: toolOf(provider).settings.familyHint"));
+  assert.ok(source.includes("text: tool.settings.familyHint"));
   assert.equal(pi.settings.familyHint, 'Counts as its own family for cross-checked reviews, even when it runs a Claude or GPT model.');
   assert.equal(pi.settings.modelError, 'Use vendor/model with an optional :variant, up to 128 lowercase letters, digits, dots, dashes and underscores.');
   assert.ok(source.includes('inlineErr(wrap, toolOf(provider).settings.modelError)'));

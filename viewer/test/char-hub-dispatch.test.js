@@ -221,12 +221,18 @@ test('session model resolution uses provider cells and tier aliases', async () =
   for (const [provider,cli] of tools) {
     const thread = { id: `scout-${provider}`, provider, cli, machine: 'hub', project: '/tmp/project', sessions: [], cards: [], queues: {}, sent: [] };
     const started = await sessions.startSession(hub, thread, { role: 'sub-lead' });
-    assert.equal(started.provider, provider);
+    assert.equal(started.provider, 'claude');
+    assert.equal(started.model, 'claude-heavy');
   }
   const scoutCalls = (await fs.readFile(path.join(root, 'codex', 'calls'), 'utf8')).trim().split('\n');
-  for (const [provider] of tools) for (const slot of ['light','standard']) {
-    assert.ok(scoutCalls.includes(provider === 'claude' ? `family claude ${slot}` : `${provider} ${slot}`), `${provider} ${slot}`);
+  for (const slot of ['light','standard']) {
+    assert.ok(scoutCalls.includes(`family claude ${slot}`), `claude ${slot}`);
   }
+  await settings.update(hub, s => { s.provider_orders['sub-lead'] = ['gpt', 'claude']; s.other_agents['sub-lead'] = 'standard'; });
+  const thread = { id: 'configured-sub-lead', provider: 'claude', cli: 'claude', machine: 'hub', project: '/tmp/project', sessions: [], cards: [], queues: {}, sent: [] };
+  const started = await sessions.startSession(hub, thread, { role: 'sub-lead' });
+  assert.equal(started.provider, 'gpt');
+  assert.equal(started.model, 'gpt-standard');
 });
 
 test('switch placement runs preflight only for GPT', async () => {
