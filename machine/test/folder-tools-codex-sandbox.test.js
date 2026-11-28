@@ -11,7 +11,8 @@ const { makeTempSync } = require('../../test-support/run-dir');
 const { writeSharedKeys } = require('../lib/shared-keys');
 
 const found = spawnSync('sh', ['-c', 'command -v codex'], { encoding: 'utf8' });
-const codex = found.status === 0 ? found.stdout.trim() : (fs.existsSync('/home/collin/.local/bin/codex') ? '/home/collin/.local/bin/codex' : null);
+const localCodex = path.join(os.homedir(), '.local', 'bin', 'codex');
+const codex = found.status === 0 ? found.stdout.trim() : (fs.existsSync(localCodex) ? localCodex : null);
 for (const kind of ['script', 'server']) test(`real Codex sandbox confines keyed ${kind} tool`, { skip: codex ? false : 'codex is not installed', timeout: 30000 }, async () => {
   const root = makeTempSync('codex-sandbox-', path.join(os.homedir(), '.cache', 'wheelchair-test-runs'));
   const worktree = path.join(root, 'worktree'), outside = path.join(root, 'outside'), state = path.join(root, 'state'), home = path.join(root, 'account');
