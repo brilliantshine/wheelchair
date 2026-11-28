@@ -15,13 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q3: Should Personal assistant and Project leads share the Lead tier or have their own?
-- **Context:** Today Personal assistant and Project leads silently use the Lead slot with no mention on the Models page.
-- **Options:**
-  - `share-lead`: Keep sharing the Lead tier and label it clearly ("Leads (also Personal assistant & Project leads)").
-  - `separate`: Give Personal assistant and Project leads their own tier switches in the Agents block.
-- **Recommendation:** `share-lead` unless Collin wants a lighter or different tier for chat assistants.
-
 ### Agree the mockups
 - **Context:** Designer started for desktop (`1280x900`) and phone (`390x844`) mockups of the reworked **Settings → Models** page.
 - **Options:** Agree the mockups or request changes.
@@ -50,13 +43,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 1 | Every agent role — including Leads and Sub-leads — picks a model tier (`light`, `standard`, `heavy`, `critical`) rather than maintaining separate per-provider Lead/Sub-lead model pickers. | One unified tier system for all agents removes the separate Leads block and lets you define each provider's models once in Tiers. | user |
 | 2 | Layout for **Settings → Models**: **Agent tier buttons + Provider tabs** — top **Agents** block with 4-way segmented tier switches (`Light | Standard | Heavy | Critical`) and live model previews per role, followed by **Tier models** with tabs per enabled provider and inline effort pills instead of a second dropdown. | One-tap tier switching for every agent and single-provider tabs keep the page clean on both desktop and phone. | user |
 | 3 | Place the `Reviewers and checkers` family mix control in the Agents block alongside Plan reviewers and Checker, and keep `Escalation` as a compact block below Tier models. | Keeps review/check settings together and keeps worker escalation visible without competing with the main tier/agent controls. | defaulted |
+| 4 | Give Personal assistant and Project leads their own tier switches in the Agents block (separate from thread Leads). | Lets Collin run Personal assistant and Project leads on a different tier from thread Leads. | user |
 
 ## Spec
 
 ### 1. Unified tier-based agent model preferences
-- Every configurable agent role picks a model tier (`light`, `standard`, `heavy`, `critical`): Leads, Sub-leads, Plan reviewers, Checker, Code mapping, Mockups, Scout, and Scout for bigger changes.
+- Every configurable agent role picks a model tier (`light`, `standard`, `heavy`, `critical`): Leads, Sub-leads, Personal assistant, Project leads, Plan reviewers, Checker, Code mapping, Mockups, Scout, and Scout for bigger changes.
 - The separate per-provider `Leads` model-picker block is removed from **Settings → Models**.
-- Session placement for `lead` and `sub-lead` resolves through their configured tier (exact default and migration/backward-compatibility rules to be specified once remaining questions settle).
+- Session placement for `lead`, `sub-lead`, Personal assistant, and Project leads resolves through each role's configured tier.
 
 ### 2. Reworked Settings → Models layout
 - **Agents block (top):** Lists each agent role with a 4-way segmented tier control (`Light | Standard | Heavy | Critical`) and a subtle live preview of the models that tier resolves to across enabled providers. Includes the `Reviewers and checkers` family mix control alongside Plan reviewers and Checker.
