@@ -494,3 +494,7 @@ Also review the rendered `protocol/tools.md` edits per `CONTRIBUTING.md:93-95` t
 - 2026-11-28 — R1-A accepted (band: self): `http-tool-proxy.js` forwards client replies without `method` and aborts initialization/recovery POSTs at deadline (`http-tool-proxy.test.js` 9/9 pass).
 - 2026-11-28 — Choice: R1-B, `viewer/test/wc-tool.test.js`: guard only the Python starter live `wc.js tool check` assertions on `hasPython3` inside the server-languages test.
 - 2026-11-28 — R1-B accepted (band: scout): Python starter live handshake guarded when `python3` is absent (`wc-tool.test.js` 15/15 pass both with and without `python3` on `PATH`).
+- 2026-11-28 — Verification Attempt 2 (`23f5ffa4`): full run passed all 8 suites (exit 0); Claude and GPT verifiers reported 3 gaps (`REMEDIATION-2.md`).
+- 2026-11-28 — Choice: R2-A, `machine/lib/http-tool-proxy.js`: send client replies without 404 recovery, avoiding a recovery wait for a response to an in-flight server request.
+- 2026-11-28 — Choice: R2-A, `machine/lib/mcp-http.js`: distinguish `JSON.parse` `SyntaxError` from callback exceptions so callback errors reject consistently.
+- 2026-11-28 — R2-A accepted (band: self): client replies during `initialize` forward immediately without deadlocking, and `httpHandshake` handles JSON `null` cleanly with `DELETE` teardown (`http-tool-proxy.test.js` 12/12, `wc-tool.test.js` 15/15 pass).
