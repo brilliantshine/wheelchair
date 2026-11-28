@@ -1610,6 +1610,56 @@ test.describe('Models: tiers, ladders and notices', () => {
     await expect.poll(async () => (await orders(page)).mapper).toEqual(['gpt', 'kimi', 'claude']);
   });
 
+  test('removing an enabled provider keeps two switched-off ones in their order', async ({ page }) => {
+    await seed(page);
+    const full = ['claude', 'gpt', 'gemini', 'kimi', 'openrouter'];
+    await call(page, '/settings/balancing', { lead_order: full, worker_order: full });
+    await open(page);
+    for (const key of ['lead_order', 'worker_order']) {
+      await page.locator(`[data-order="${key}"]`).getByRole('button', { name: 'Leave Claude out' }).click();
+      await expect.poll(async () => (await settings(page))[key]).toEqual(['gpt', 'gemini', 'kimi', 'openrouter']);
+    }
+  });
+
+  test('at 900px with every provider on and a custom ladder, the preview stays readable', async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 900 });
+    await openPage(page, own, '/app/settings#models');
+    await expect(page.getByRole('tab')).toHaveCount(5);
+    await disclosure(page, 'mapper').locator('summary').click();
+    await mode(page, 'mapper', 'Custom').click();
+    await expect(disclosure(page, 'mapper').locator('summary')).toContainText('Custom: ');
+    await expect.poll(async () => Array.isArray((await orders(page)).mapper)).toBe(true);
+    for (const box of await page.locator('.m-preview').all()) expect((await box.boundingBox()).width).toBeGreaterThanOrEqual(200);
+    await noSideScroll(page);
+    // The page can clip what sticks out without scrolling, so check each provider tab's edges too.
+    for (const name of ['Claude', 'GPT', 'Antigravity', 'Kimi Code', 'OpenRouter']) {
+      await tab(page, name);
+      const outside = await page.evaluate(() => [...document.querySelectorAll('[data-block] button, [data-block] select, [data-block] summary')]
+        .filter((el) => el.offsetParent && el.getBoundingClientRect().right > el.closest('[data-block]').getBoundingClientRect().right + 1)
+        .map((el) => el.textContent.trim()));
+      expect(outside).toEqual([]);
+    }
+    // At the mockup's width each row stays on one line.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    for (const role of ['lead', 'mapper']) {
+      const id = await row(page, role).locator('.m-id').boundingBox();
+      const controls = await row(page, role).locator('.m-controls').boundingBox();
+      expect(controls.x).toBeGreaterThanOrEqual(id.x + id.width);
+    }
+  });
+
+  test('switching a GPT heads-up model updates the saved Lead models notice without a reload', async ({ page }) => {
+    await fs.writeFile(own.cache, JSON.stringify({ models: [{ slug: 'gpt-9-sol', visibility: 'list' }] }));
+    await fs.writeFile(own.models, 'gpt.heavy = gpt-6.1-sol @high\ngpt.lead = gpt-6.1-sol @low\n');
+    await seed(page);
+    await open(page);
+    const notice = page.locator('.m-legacy li[data-provider="gpt"][data-role="lead"]');
+    await expect(notice).toContainText('Heavy is gpt-6.1-sol (high)');
+    await tab(page, 'GPT');
+    await page.locator('.model-row[data-tier="heavy"] .hu').getByRole('button', { name: 'Switch' }).click();
+    await expect(notice).toContainText('Heavy is gpt-9-sol (high)');
+  });
+
   test('the shared ladders save at once and the role rows follow', async ({ page }) => {
     await seed(page);
     await open(page);
