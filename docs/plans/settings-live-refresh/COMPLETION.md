@@ -1,8 +1,14 @@
 ---
 slug: settings-live-refresh
 date: 2026-11-28
-implemented-by: standard / gpt / gpt-6.1-terra (T1), standard / claude / claude-sonnet-5-5 (T2)
-verified-by: []
+implemented-by: standard / gpt / gpt-6.1-terra (T1), standard / claude / claude-sonnet-5-5 (T2), light / gpt / gpt-6-luna (R1-1), standard / claude / claude-sonnet-5-5 (R1-2)
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5
+    checks: standard / gpt / gpt-6.1-terra (T1), standard / claude / claude-sonnet-5-5 (T2)
+  - round: 1
+    lane: gpt / gpt-6.2-sol
+    checks: standard / gpt / gpt-6.1-terra (T1), standard / claude / claude-sonnet-5-5 (T2)
 ---
 
 # Completion Report — Auto-refresh an open Settings page when settings change
@@ -67,4 +73,15 @@ Sub-lead independent runs (note: host `/tmp` tmpfs was at 100% / load avg ~100 d
 
 ## Remediation rounds
 
-*(None yet.)*
+### Remediation 1 (after Verification Attempt 1 on `81dadd44`)
+
+- **Accepted rare path (`PLAN.md` Accepted Risks, `verification-1`):** delayed pre-restart `/settings` response arriving after a post-restart response.
+- **Deferred (`PLAN.md` Deferred, `d6`, source `verification`):** refresh clean Behavior template Scope picker when a saved directory is removed elsewhere.
+- **R1-1 (`773285e9`, `light / gpt / gpt-6-luna`):** guarded `hub.bumpSettingsRevision?.(...)` at `viewer/app/settings.js:435`, `viewer/app/diagram-sensitivity.js:48`, and `viewer/app/routes.js:110,401` so minimal stub hubs (e.g. `viewer/test/app-usage.test.js:494`) do not throw.
+  - Validation: `node --test viewer/test/app-usage.test.js viewer/test/app-settings.test.js viewer/test/app-diagram-sensitivity.test.js machine/test/name-guard.test.js` -> `71/71 pass`, exit 0.
+- **R1-2 (`25e396f8`, `standard / claude / claude-sonnet-5-5`):**
+  - Gap 2 (§3.1 template Delete focus): added template-scoped `data-focus="tpl:<id>:delete"` and `tpl:<id>:confirm-delete` in `viewer/pages/settings.js`, plus Playwright test in `viewer/test/app-settings.spec.js`.
+  - Gap 3 (§4.2 delayed `refreshDiffs()` test): added Playwright test in `viewer/test/app-settings.spec.js` (supersedes the earlier manual-only note in Deviations above).
+  - Gap 4 (§3.1 background focus): added `data-focus="background:remove"` on Remove background in `viewer/pages/settings.js`, plus Playwright test in `viewer/test/background-editor.spec.js`.
+  - Gap 5 (§3.4 Shared tools key save after external project change): added `rereadAfterWrite()` in `viewer/pages/settings.js` so saving/removing a key (200 and 409) repaints `shared-tools` when `shared_tools_repo`/`saved_dirs` moved, plus Playwright tests (200 and 409) in `viewer/test/app-settings.spec.js`.
+  - Validation: worker run `npm --prefix viewer run test:browser -- viewer/test/app-settings.spec.js viewer/test/background-editor.spec.js` -> `232 passed, 2 skipped` (Chromium & Firefox), exit 0; sub-lead independent run of `live refresh` (`44/44`) + `background-editor.spec.js` (`24/24`) -> `68/68 passed`, exit 0.
