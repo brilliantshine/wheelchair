@@ -565,8 +565,8 @@ test('keyed discovery omits missing keys and keeps secrets out of launch artifac
 
 test('shared project uses shared store and missing shared tool identifies its source', async t => {
   const {writeSharedKeys}=require('../lib/shared-keys'); const f=await fixture(t); const remote=await sharedRepo(f);
-  await keyedTool(remote.source,'shared',['TOKEN'],'server'); git(remote.source,'add','.wheelchair'); git(remote.source,'commit','-m','keyed'); git(remote.source,'push','origin','main');
-  const missing=await f.start({cli:'claude',choice:remote.choice}); assert.equal(missing.project_tools.folder[0].text,'shared tool shared needs key TOKEN, not set on this machine'); assert.ok(!missing.command.includes('--mcp-config'));
+  await keyedTool(remote.source,'shared'); await keyedTool(remote.source,'shared-server',['TOKEN'],'server'); git(remote.source,'add','.wheelchair'); git(remote.source,'commit','-m','keyed'); git(remote.source,'push','origin','main');
+  const missing=await f.start({cli:'claude',choice:remote.choice}); assert.equal(missing.project_tools.folder.find(line=>line.names?.includes('shared'))?.text,'shared tool shared needs key TOKEN, not set on this machine'); assert.equal(missing.project_tools.folder.find(line=>line.names?.includes('shared-server'))?.text,'shared tool shared-server needs key TOKEN, not set on this machine'); assert.ok(!missing.command.includes('--mcp-config'));
   git(f.worktree,'init'); git(f.worktree,'remote','add','origin',origin); git(f.worktree,'config',`url.file://${remote.bare}.insteadOf`,origin);
   const dir=await keyedTool(f.worktree,'own'); await writeSharedKeys(f.stateDir,{set:{TOKEN:'sharedvalue'}});
   const own=await f.start({cli:'claude',choice:remote.choice}); assert.equal(own.shared_tools.own,true);
@@ -582,16 +582,18 @@ test('keyed server discovery checks keys and keeps values out of entries', async
   const present=await f.start({cli:'claude'}), entry=(await f.config(present)).bad;
   assert.ok(entry.args.includes('--state-dir')); assert.ok(entry.args.includes(f.stateDir)); assert.ok(entry.args.includes('--key-store')); assert.ok(entry.args.includes('project')); assert.ok(entry.args.includes('--key')); assert.ok(entry.args.includes('TOKEN')); assert.ok(!JSON.stringify(entry).includes(value));
   for (const options of [{cli:'kimi'},{cli:'pi'},{mode:'sandboxed'}]) { const session=await f.start(options); assert.ok(!session.project_tools.folder.some(line=>line.text.includes('needs key TOKEN'))); }
+  const files=await fs.readdir(path.join(f.stateDir,'project-keys')); await fs.writeFile(path.join(f.stateDir,'project-keys',files[0]),'{');
+  const unreadable=await f.start({cli:'claude'}); assert.equal(unreadable.project_tools.folder.find(line=>line.names?.includes('bad'))?.text,"the key store on this machine can't be read");
 });
 
 test('agent routes report key status and sandbox restriction without values', async t => {
   const {projectIdentity,writeKeyStore}=require('../lib/project-keys'); const f=await fixture(t); git(f.worktree,'init');
-  await keyedTool(f.worktree,'secret',['SET','MISSING','BAD'],'server'); await writeKeyStore(f.stateDir,await projectIdentity(f.worktree),{set:{SET:'sentinelvalue',BAD:'short'}});
+  await keyedTool(f.worktree,'secret',['SET','MISSING','BAD']); await keyedTool(f.worktree,'srv',['SET'],'server'); await writeKeyStore(f.stateDir,await projectIdentity(f.worktree),{set:{SET:'sentinelvalue',BAD:'short'}});
   const unrestricted=await f.start(), sandbox=await f.start({mode:'sandboxed'}), eligible=await f.start({cli:'kimi'}); const server=http.createServer((req,res)=>f.machine.handle(req,res)); server.listen(0,'127.0.0.1'); await once(server,'listening');
   try {
     const request=async (session,route)=>{const response=await fetch(`http://127.0.0.1:${server.address().port}/v1/agent/${route}`,{method:'POST',headers:{'x-wheelchair-session-token':session.token},body:'{}',signal:AbortSignal.timeout(4000)}); assert.equal(response.status,200); return response.json();};
     assert.equal((await request(eligible,'tools')).keyed_run,'machine'); assert.equal((await request(unrestricted,'tools')).keyed_run,'local'); assert.equal((await request(unrestricted,'tools')).keyed_unavailable,null); assert.equal((await request(sandbox,'tools')).keyed_unavailable,connectors.machine('codex').keyedToolsReason(sandbox));
-    const result=await request(unrestricted,'tool-keys'); assert.ok(!JSON.stringify(result).includes('sentinelvalue')); assert.deepEqual(result.tools[0].keys,[{name:'SET',set:true,reason:null},{name:'MISSING',set:false,reason:'not set on this machine'},{name:'BAD',set:false,reason:'value too short (under 8 characters)'}]);
+    const result=await request(unrestricted,'tool-keys'); assert.ok(!JSON.stringify(result).includes('sentinelvalue')); assert.deepEqual(result.tools.find(row=>row.name==='secret').keys,[{name:'SET',set:true,reason:null},{name:'MISSING',set:false,reason:'not set on this machine'},{name:'BAD',set:false,reason:'value too short (under 8 characters)'}]); assert.deepEqual(result.tools.find(row=>row.name==='srv').keys,[{name:'SET',set:true,reason:null}]);
   } finally { await new Promise(resolve=>server.close(resolve)); }
 });
 

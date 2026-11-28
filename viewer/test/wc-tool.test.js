@@ -63,6 +63,34 @@ test('check deadline and SIGTERM kill stalled server and grandchild', async () =
 
 test('keyed lists report session status, unavailable sessions, failure and scratch checkout', async () => {
   const dir = repo();
+  tool(dir, 'keyed', { kind: 'script', inputs: {}, run: ['node'], keys: ['ALPHA', 'BETA', 'GAMMA'] });
+  tool(dir, 'plain', { kind: 'script', inputs: {}, run: ['node'] });
+  const entry = { name: 'keyed', source: 'project', store: 'project', keys: [{ name: 'ALPHA', set: true, reason: null }, { name: 'BETA', set: false, reason: 'not set on this machine' }, { name: 'GAMMA', set: false, reason: 'value too short' }] };
+  let unavailable = null, fail = false;
+  const server = http.createServer((req, res) => {
+    assert.equal(req.headers['x-wheelchair-session-token'], 'secret');
+    if (req.url === '/v1/agent/tools') res.end(JSON.stringify({ worktree: dir, shared_copy: null, keyed_unavailable: unavailable }));
+    else if (req.url === '/v1/agent/tool-keys') { if (fail) { res.statusCode = 503; res.end('offline'); } else res.end(JSON.stringify({ tools: [entry] })); }
+    else { res.statusCode = 404; res.end(); }
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const extra = { WHEELCHAIR_SESSION_TOKEN: 'secret', WHEELCHAIR_MACHINE_URL: `http://127.0.0.1:${server.address().port}/v1/agent` };
+  const list = async (...args) => { const result = await done(child(dir, ['list', ...args], extra)); assert.equal(result.code, 0, result.stderr); return result.stdout; };
+  try {
+    assert.equal(await list(), 'keyed\tscript\tproject\tok\tkeys: ALPHA set, BETA not set, GAMMA value too short\nplain\tscript\tproject\tok\n');
+    let rows = JSON.parse(await list('--json')); assert.deepEqual(rows[0].key_status, entry); assert.equal(rows[0].keyed_unavailable, null); assert.equal(rows[1].key_status, null); assert.equal('keyed_unavailable' in rows[1], false);
+    unavailable = "sandboxed Codex can't use; set Codex to unrestricted in Settings to use it";
+    assert.match(await list(), /needs keys, which sandboxed Codex can't use; set Codex to unrestricted in Settings to use it/);
+    rows = JSON.parse(await list('--json')); assert.equal(rows[0].keyed_unavailable, unavailable);
+    unavailable = null; fail = true;
+    assert.match(await list(), /key status unavailable: offline/);
+    rows = JSON.parse(await list('--json')); assert.equal(rows[0].key_status, null);
+  } finally { server.close(); }
+  assert.equal(run(dir, ['list']).stdout, 'keyed\tscript\tproject\tok\tkeys: ALPHA, BETA, GAMMA (key status unknown outside a session)\nplain\tscript\tproject\tok\n');
+});
+
+test('keyed server lists report key status', async () => {
+  const dir = repo();
   tool(dir, 'keyed', { kind: 'server', start: ['node'], keys: ['ALPHA', 'BETA', 'GAMMA'] });
   tool(dir, 'plain', { kind: 'script', inputs: {}, run: ['node'] });
   const entry = { name: 'keyed', source: 'project', store: 'project', keys: [{ name: 'ALPHA', set: true, reason: null }, { name: 'BETA', set: false, reason: 'not set on this machine' }, { name: 'GAMMA', set: false, reason: 'value too short' }] };
