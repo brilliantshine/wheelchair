@@ -1,6 +1,6 @@
 ---
 slug: agent-model-preferences
-status: draft
+status: confirmed
 mode: thorough
 created: 2026-11-27
 ---
