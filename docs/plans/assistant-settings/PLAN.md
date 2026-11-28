@@ -36,6 +36,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 9 | Invoke `handleSettings` directly through a lightweight exported `invokeSettings` adapter in `viewer/app/routes.js` (and `background.commit`/`background.metadata` directly) instead of extracting a new `settings-ops.js` module | Guarantees 100% identical validation, status codes, and side effects without duplicating or relocating ~300 lines of route code | review-round-1 |
 | 10 | Require confirmation before turning off `project_leads` or discarding a waiting lesson (`lesson-waiting` with `action: "discard"`), and require the approved `revision` on `background` removal | Turning off project leads stops live sessions; discarding a waiting lesson has no history entry; tying background removal to the approved revision prevents deleting a newer image | review-round-1 |
 | 11 | Support optional `--section` and `--include-history` on `wc.js assistant settings`, omitting `lesson_history` by default | Keeps routine setting lookups compact in the assistant's context while still allowing full history inspection when needed | review-round-1 |
+| 12 | Supersedes #11 on `--section`: drop `--section` and keep `--include-history` only; poll a lightweight hub `GET /settings/revision` counter before fetching full `GET /settings`; use one uniform clean-repaints / dirty-keeps-draft-with-note rule across Settings blocks instead of per-field draft rebasing | Eliminates underspecified section key maps, avoids spawning `model.sh` subprocesses every 5 s on idle Settings tabs, and removes brittle per-field merge logic while fully meeting Decision 8 | review-round-2 |
 
 ## Spec
 
@@ -44,7 +45,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 Let the personal assistant read and update hub-stored settings through `wc.js assistant`, reusing the hub's existing Settings handlers and side effects, while keeping an open Settings page in sync automatically.
 
 - **In scope (personal assistant only; project leads never have access):**
-  - Read current hub settings (`settings` action), including `settings.describe(hub)` + `reserved_provider`, `diagram_sensitivity`, and `background` metadata, with optional section filtering and compact default (omitting `lesson_history` unless requested). Never exposes secret values (project keys, shared keys, sign-in tokens).
+  - Read current hub settings (`settings` action), returning `GET /settings` + `diagram_sensitivity` + `background` metadata, omitting `lesson_history` unless `--include-history` is passed. Never exposes secret values (project keys, shared keys, sign-in tokens).
   - Write hub-stored settings (`setting` action) across the 19 supported targets below:
     - **You**: `user_name`, writing `style`, `diagram-sensitivity`, `background` (opacity change or remove image; not raw image upload).
     - **AI providers (metadata only)**: enable/disable `harness`, `account-add`, `account-update`, `account-remove`, `account-restore`.
@@ -68,9 +69,9 @@ Let the personal assistant read and update hub-stored settings through `wc.js as
 Extend `assistantRequest(operation, tail, projectLead)` in `viewer/app/wc.js`:
 
 - Add `'settings'` and `'setting'` to the personal assistant allowlist ONLY (when `projectLead` is false). `projectLead === true` MUST continue to reject `'settings'` and `'setting'` with `'unsupported assistant action'`.
-- **`wc.js assistant settings [--section <name>] [--include-history]`** (read-only):
-  - Optional `--section <name>` (`all`, `preferences`, `style`, `models`, `balancing`, `accounts`, `harnesses`, `templates`, `lessons`, `diagrams`, `background`) and boolean flag `--include-history` (filtered out before `flags()` just like `--archived`).
-  - Sends `POST /assistant` with `{ action: 'settings', ...(section ? { section } : {}), ...(includeHistory ? { include_history: true } : {}) }`.
+- **`wc.js assistant settings [--include-history]`** (read-only):
+  - Optional boolean flag `--include-history` (filtered out before `flags()` just like `--archived`).
+  - Sends `POST /assistant` with `{ action: 'settings', ...(includeHistory ? { include_history: true } : {}) }`.
   - Retries on HTTP 503 ("hub unavailable") using `postSessionWithRetry`, the same as `projects`, `threads`, and `thread`.
   - Prints one JSON line.
 - **`wc.js assistant setting <target> --file <json-file>`** (write):
@@ -80,34 +81,34 @@ Extend `assistantRequest(operation, tail, projectLead)` in `viewer/app/wc.js`:
   - **Never retries automatically on 503** (only `settings` is added to the read-retry allowlist in `wc.js`).
   - Prints one JSON line (`{"ok":true,...}` on success; `{"ok":false,"error":...}` on failure, exit 0, matching existing `wc.js assistant` behavior).
 
-### 3. Direct Settings Handler Adapter (`viewer/app/routes.js`)
+### 3. Direct Settings Handler Adapter & Revision Counter (`viewer/app/routes.js`, `viewer/app/settings.js`, `viewer/app/background.js`)
 
-Export a lightweight helper `invokeSettings(hub, method, relPath, body)` from `viewer/app/routes.js` that invokes `handleSettings(hub, fakeRequest, fakeResponse, fakeUrl, bits, body)` directly and returns `{ status, body }`:
-
-- `relPath` is the path under `/settings` (for example `'/preferences'`, `'/harnesses/claude'`, `'/accounts'`, `'/accounts/abc/restore'`, `'/lessons/lead'`, `'/diagram-sensitivity'`). `bits` is `['settings', ...segments]`.
-- `fakeRequest` provides `{ method }`; `fakeUrl` is `new URL('http://localhost/wheelchair/api/settings' + relPath)`; `fakeResponse` captures `statusCode`, headers (no-op `setHeader`), and the JSON body written by `send(...)`.
-- Existing HTTP routes in `routes.js` are unchanged. No separate `settings-ops.js` file is created.
-- Background reads and writes call `background.metadata(hub)` and `background.commit(...)` directly (`viewer/app/background.js`).
+- **Settings revision counter:** Maintain a monotonic in-memory integer `hub.settingsRevision` (initialized to `1`) bumped whenever hub settings change: after a successful `settings.update(...)` (`viewer/app/settings.js`), after a mutating `settings.modelCommand(...)` (`set`, `skip`, `reset`), and after a successful `background.commit(...)` (`viewer/app/background.js`).
+  - Add `GET /wheelchair/api/settings/revision` in `handleSettings` (`bits[1] === 'revision' && bits.length === 2 && request.method === 'GET'`), returning `200 { revision: hub.settingsRevision || 1 }` with zero subprocesses or disk reads.
+  - Include `revision: hub.settingsRevision || 1` in `GET /wheelchair/api/settings`.
+- **`invokeSettings` adapter:** Export `invokeSettings(hub, method, relPath, body)` from `viewer/app/routes.js` that invokes `handleSettings(hub, fakeRequest, fakeResponse, fakeUrl, bits, body)` directly and returns `{ status, body }`:
+  - `relPath` is the path under `/settings` (for example `''`, `'/preferences'`, `'/harnesses/claude'`, `'/accounts'`, `'/accounts/abc/restore'`, `'/lessons/lead'`, `'/diagram-sensitivity'`). `bits` is `['settings', ...segments]`.
+  - `fakeRequest` provides `{ method }`; `fakeUrl` is `new URL('http://localhost/wheelchair/api/settings' + relPath)`; `fakeResponse` captures `statusCode`, headers (no-op `setHeader`), and the JSON body written by `send(...)`.
+  - Existing HTTP routes in `routes.js` keep their exact status codes and response bodies (with `revision` added to `GET /settings`).
+  - Background reads and writes call `background.metadata(hub)` and `background.commit(...)` directly (`viewer/app/background.js`).
 
 ### 4. Hub Assistant Dispatcher (`viewer/app/assistant-actions.js`)
 
-- In `dispatch(hub, input)` (personal assistant only), pass `allowSettings: true` in `policy`. Project-lead callers (`project-lead-actions.js`) do NOT pass `allowSettings: true`.
+- In `dispatch(hub, input)` (personal assistant only), pass `allowSettings: true` in `policy`. Project-lead callers (`viewer/app/project-lead-actions.js:76`) already reject `'settings'` and `'setting'` with HTTP 400 (`unsupported project lead action`) before reaching `assistant-actions.run`; as defense-in-depth, `run` also requires `policy.allowSettings === true` (throwing `appError(403, 'only the personal assistant may do that')` otherwise).
 - In `run(hub, input, policy)`:
   - If `action === 'settings'` or `action === 'setting'`:
     - Require `policy.allowSettings === true`; otherwise throw `appError(403, 'only the personal assistant may do that')`.
     - Do not require `input.thread`.
   - **`action === 'settings'`**:
-    - Validate optional `input.section` (must be undefined or one of `'all'`, `'preferences'`, `'style'`, `'models'`, `'balancing'`, `'accounts'`, `'harnesses'`, `'templates'`, `'lessons'`, `'diagrams'`, `'background'`; otherwise throw `appError(400, 'invalid settings section')`).
-    - Fetch base snapshot via `routes.invokeSettings(hub, 'GET', '')` (same payload as `GET /wheelchair/api/settings`, including `reserved_provider`), plus `diagramSensitivity.read(hub)` when section is `'all'` or `'diagrams'`, and `background.metadata(hub)` when section is `'all'` or `'background'`.
-    - When `section` is omitted or `'all'`: return the combined snapshot with `diagram_sensitivity` and `background`, omitting `lesson_history` unless `input.include_history === true`.
-    - When a specific `section` is given: return only that section's relevant keys (e.g., `lessons` includes `lessons`, `lesson_waiting`, and `lesson_history` when `include_history` is true; `models` includes `models`, `heads_up`, `other_agents`, `provider_orders`, `review_families`, `escalation`, `lead_tier_notice_dismissed`, `lead_order`, `worker_order`; `preferences` includes the preference fields; `diagrams` includes `{ diagram_sensitivity }`; `background` includes `{ background }`; etc.).
+    - Fetch base snapshot via `routes.invokeSettings(hub, 'GET', '')` (same payload as `GET /wheelchair/api/settings`, including `reserved_provider` and `revision`), plus `diagramSensitivity.read(hub)` and `background.metadata(hub)`.
+    - Return `{ ...base, diagram_sensitivity, background }`, omitting `lesson_history` unless `input.include_history === true`.
   - **`action === 'setting'`**:
     - Require `typeof input.target === 'string' && input.target.trim()` and `input.payload` to be a plain non-null, non-array object; otherwise throw `appError(400, 'target and object payload are required')`.
     - Map each allowed `target` to `routes.invokeSettings(...)` (or `background.commit(...)` for `background`), propagating any `appError` thrown by `handleSettings`:
       1. `preferences`: if `Object.hasOwn(payload, 'assistant')`, throw `appError(403, 'the assistant cannot change its own on/off setting; change it under Settings → Assistant and project leads')`. Otherwise call `invokeSettings(hub, 'PUT', '/preferences', payload)` and return `{ ok: true, result: res.body }`.
       2. `style`: `PUT /style` with `payload`; return `{ ok: true, result: res.body }`.
       3. `diagram-sensitivity`: `POST /diagram-sensitivity` with `payload`. Invalid `level` throws `appError(400, ...)`. On `res.status === 200`, return `{ ok: true, result: res.body }`. On non-200 (partial/all machine failure, e.g. 502), return `{ ok: false, error: 'one or more machines did not update diagram sensitivity', result: res.body }` (HTTP 200 so the assistant receives the full `machines` map and can report which machine failed).
-      4. `background`: accept `payload.action === 'opacity'` (requires integer `payload.opacity` 0–100; optional integer `payload.revision` — if omitted, reads current `background.metadata(hub)` revision; if `!current.image_id`, throw `appError(400, 'no background image is set')`; calls `background.commit(hub, rev, payload.opacity, current.image_id, current.media_type, null)`) or `payload.action === 'remove'` (**requires** integer `payload.revision`, matching the revision the user approved removing; if missing or not a non-negative safe integer, throw `appError(400, 'background remove requires revision')`; calls `background.commit(hub, payload.revision, 35, null, null, null)`). If `background.commit` throws 409 (`Background changed elsewhere`), propagate the 409 error so the assistant re-reads `settings` and asks Collin again before removing a newly uploaded image. Any other `action` throws `appError(400, 'background action must be opacity or remove')`. Return `{ ok: true, result }`.
+      4. `background`: accept `payload.action === 'opacity'` (requires integer `payload.opacity` 0–100; optional integer `payload.revision` — if omitted, reads current `background.metadata(hub)` revision; if `!current.image_id`, throw `appError(400, 'no background image is set')`; calls `background.commit(hub, rev, payload.opacity, current.image_id, current.media_type, null)`) or `payload.action === 'remove'` (**requires** non-negative safe integer `payload.revision`, matching the revision the user approved removing; if missing or invalid, throw `appError(400, 'background remove requires revision')`; calls `background.commit(hub, payload.revision, 35, null, null, null)`). If `background.commit` throws 409 (`Background changed elsewhere`), propagate the 409 error so the assistant re-reads `settings` and asks Collin again before removing a newly uploaded image. Any other `action` throws `appError(400, 'background action must be opacity or remove')`. Return `{ ok: true, result }`.
       5. `harness`: require non-empty string `payload.provider` (URL-encoded) and boolean `payload.enabled`; `PUT /harnesses/${encodeURIComponent(payload.provider)}` with `{ enabled: payload.enabled }`; return `{ ok: true, result: res.body }`.
       6. `account-add`: `POST /accounts` with `payload`; return `{ ok: true, result: res.body }`.
       7. `account-update`: require non-empty string `payload.id`; `PUT /accounts/${encodeURIComponent(payload.id)}` with `{ ...payload }` (without `id`); return `{ ok: true, result: res.body }`.
@@ -127,39 +128,40 @@ Export a lightweight helper `invokeSettings(hub, method, relPath, body)` from `v
 
 ### 5. Live Refresh on the Settings Page (`viewer/pages/settings.js`)
 
-Keep an already-open Settings page in sync when settings change externally (for example, via the assistant popup or another tab) without disrupting active edits or racing local saves:
+Keep an already-open Settings page in sync when settings change externally (for example, via the assistant popup or another tab) using one simple, uniform rule across all blocks:
 
-- **Polling & triggers:**
-  - Reuse `window.wcPoller(refreshSettings, 5000)` (`viewer/pages/nav.js:6`) so polling runs every 5,000 ms while visible, pauses when hidden, and fires once on becoming visible. Also trigger `refreshSettings` on `window` `focus`.
-  - Guard against overlapping in-flight refreshes with a single `refreshInFlight` boolean; silently ignore transient network errors.
-- **Ordering against local browser saves:**
-  - Track `localWriteGen` (monotonic counter) and `inFlightWrites` (active mutation count). Every mutating `api(...)` call in `settings.js` (any method other than `GET`) increments `localWriteGen` and `inFlightWrites` before the fetch and decrements `inFlightWrites` in `finally`.
-  - `refreshSettings` skips starting when `inFlightWrites > 0`, and captures `const gen = localWriteGen` before `GET /settings`. When the `GET` resolves, if `inFlightWrites > 0 || localWriteGen !== gen`, discard the stale response.
-- **Deferred repaint tracking (never consuming skipped updates):**
-  - Track `renderedSlices` (map of block key → last rendered JSON string) independently of the latest fetched `data`, plus a `flushDeferredRepaints()` helper invoked on `focusout` (after a microtask so `document.activeElement` settles) and after local save/cancel actions, as well as on each refresh tick.
-  - A block is repainted whenever its current slice in `data` differs from `renderedSlices[key]` AND its edit/focus guard is clear; `renderedSlices[key]` is updated ONLY when the block actually repaints (never when skipped). Thus blurring a control or cancelling a draft immediately paints any change that arrived while editing.
-- **Per-block refresh & edit-preservation rules:**
-  - **`renderName`**: skip repaint if `nameDraft !== (prev.user_name || '')` or the name input is focused.
-  - **`renderWriting` (Style)**: compare `styleDraft` against previous saved `prev.style` field-by-field. If completely clean, replace `styleDraft = structuredClone(next.style)` and repaint (if unfocused). If dirty, rebase only untouched fields (fields equal to `prev.style`) to `next.style` while preserving edited fields; repaint only if unfocused.
-  - **`renderBalancing` (Balancing)**: same field-by-field rebase on `balDraft` against previous saved balancing fields (`prev` vs `next`), preserving any edited fields and repainting only when unfocused.
-  - **`renderTemplates` (Behavior templates)**: an editor is open by default on visit (`selected` initialized), so NEVER skip merely because an editor is open. Guard by actual dirty state (`draft` differs from the selected template's saved fields in `prev.templates`, or an input/textarea/select inside the templates block is focused). When clean and unfocused, update `templates` and re-initialize `draft` from the updated selected template (or select the first template / empty draft if the selected template was deleted), then repaint.
-  - **`renderLessons` (Lessons)**: if `lessonDirty()` is true when `next.lessons` arrives, run the existing `keepLessonEdits()` + `showLessonLost()` recovery path (`viewer/pages/settings.js:1322–1363`) so edits to surviving lessons are preserved and any unsaved text for an externally removed lesson is surfaced in the lost-text notice rather than silently cleared. Skip repaint while an input/textarea inside lessons is focused (deferring via `renderedSlices`).
-  - **`renderSharedTools` (Shared tools)**: when `shared_tools_repo` changes, update ONLY the repository `<select>` value in place (when that `<select>` is not focused) without calling `renderSharedTools()` or `paintKeys()`, so machine-local key inputs and drafts are never erased.
-  - **`renderAccounts` & `renderHarnesses` (AI providers)**:
-    - When `accounts` or `retired_accounts` change in `/settings`, trigger `refreshUsage()` (so `accountRows()` gets the updated `/usage` snapshot) and repaint `renderAccounts` when the add-account or inline edit form is not open/dirty and no input/select inside it is focused, preserving active sign-in flows.
-    - When `harnesses` change in `/settings`, update `hz.data` enabled flags (and call `loadHarnesses()` if the AI providers category is active and no install poll would be disrupted) and repaint `renderHarnesses` when unfocused.
-  - **`renderThreadView` (Threads)**: skip repaint if `folderDraft !== (prev.default_project_folder || '')` or an input inside its container is focused.
-  - **`renderLeadNames` (Lead names)**: skip repaint if the custom lead-names input/textarea has unsaved edits or is focused.
-  - **Other hub blocks**: `renderConversations` (owns `assistant` and `project_leads` toggles), `renderAssistants` (assistant role tiers under Models), `renderAgents`, `renderLadders`, `renderTiers`, `renderEscalation`, `renderPermission` repaint whenever their slice differs from `renderedSlices[key]` and no input/select inside their container is focused.
-  - **`renderDiagrams` (You → Diagrams)**: when the active category is `you`, `refreshSettings` also fetches `GET /wheelchair/api/settings/diagram-sensitivity` (honoring `localWriteGen` / `diagramReads`) and repaints `renderDiagrams` if changed and unfocused.
-  - **`renderBackground`**: already polls via `viewer/pages/background.js`; no duplicate fetch needed.
+- **Cheap revision polling & triggers:**
+  - Reuse `window.wcPoller(pollSettings, 5000)` (`viewer/pages/nav.js:6`) plus a `window` `focus` listener. Guard against overlapping polls with `refreshInFlight`; silently ignore transient network errors.
+  - Each poll calls `GET /wheelchair/api/settings/revision`. Only when `revision !== lastRevision` (and `inFlightWrites === 0`) does it fetch `GET /wheelchair/api/settings` (avoiding `model.sh` subprocesses when nothing changed).
+  - When the active category is `you`, `pollSettings` also checks `GET /wheelchair/api/settings/diagram-sensitivity` (honoring `localWriteGen` / `diagramReads`) and repaints `renderDiagrams` if changed and unfocused.
+  - `renderBackground` already polls via `viewer/pages/background.js`; no duplicate background fetch is needed.
+- **Ordering against all local browser saves and reloads:**
+  - Track `localWriteGen` (monotonic counter) and `inFlightWrites` (active write count). Every mutating call in `settings.js` — every non-GET `api(...)` call AND the raw `fetch` used by lesson import (`viewer/pages/settings.js:1450–1466`) — increments `localWriteGen` and `inFlightWrites` before starting and decrements `inFlightWrites` in `finally`. `reload()` (`viewer/pages/settings.js:1049–1054`) also increments `localWriteGen` and updates `lastRevision` from the fetched snapshot.
+  - `pollSettings` skips when `inFlightWrites > 0`, captures `const gen = localWriteGen` before fetching, and discards the response if `inFlightWrites > 0 || localWriteGen !== gen` when it resolves.
+- **Uniform clean-repaints / dirty-keeps-draft rule & deferred repaint flush:**
+  - Keep `pendingSnapshot` (the latest accepted `/settings` response) and `renderedSlices` (map of block key → last rendered JSON string). Update `renderedSlices[key]` **only** when that block actually repaints (never when skipped).
+  - Register a `flushDeferredRepaints()` helper invoked on `focusout` (after a microtask so `document.activeElement` settles), after any local save/cancel/reload, and at the end of each accepted refresh.
+  - For each block whose slice in `pendingSnapshot` differs from `renderedSlices[key]`:
+    - **If clean AND no `input`/`textarea`/`select` inside the block is focused:** apply that block's slice into `data`, reset any clean draft in that block, clear any `"Changed elsewhere"` note for that block, repaint it, and update `renderedSlices[key]`.
+    - **If dirty OR focused:** do **not** overwrite the block's draft, saved baseline (`data` fields that Save compares against, such as `data.lessons` or `draftBaseline`), or focused control. Leave `renderedSlices[key]` unchanged so `flushDeferredRepaints()` repaints as soon as the guard clears. If the block is **dirty** (not merely focused), show a subtle inline note `"Changed elsewhere — save to overwrite or reload to see the latest"` in that block.
+- **Exact clean/dirty definitions for blocks with drafts or external state:**
+  - **`name` (`renderName`):** clean when `nameDraft === null || nameDraft === (data.user_name || '')`.
+  - **`writing` (`renderWriting`):** clean when `(!styleDraft || JSON.stringify(styleDraft) === JSON.stringify(data.style))` AND the pending "Never say" phrase input (`input` for adding a phrase) is empty.
+  - **`balancing` (`renderBalancing`):** clean when `!balDraft` or `balDraft` matches `data`'s saved balancing fields (including every `held_back` role).
+  - **`behavior` (`renderTemplates` — owns BOTH templates and lessons as one block):** watches `templates`, `lessons`, `lesson_waiting`, and `lesson_history` together. Store `draftBaseline` (snapshot of the selected template's saved fields) whenever `select()` initializes `draft`. Clean when `!lessonDirty()` AND `draft` matches `draftBaseline` (never skipped merely because an editor is open!). When clean & unfocused: update `data`'s behavior fields, preserve `selected` if it still exists (re-initializing `draft` and `draftBaseline`), or select the first template / empty draft if the selected template was deleted, and repaint. When dirty: keep `data.lessons` and `draftBaseline` untouched and show the `"Changed elsewhere"` note; when Collin later saves or clicks reload, the existing `keepLessonEdits()` + `showLessonLost()` recovery path runs against the true baseline.
+  - **`tiers` (`renderTiers`):** clean when no custom "Other" model input inside the block is visible with a non-empty unsaved value.
+  - **`threadView` (`renderThreadView`):** clean when `folderDraft === null || folderDraft === (data.default_project_folder || '')`.
+  - **`leadNames` (`renderLeadNames`):** clean when no file upload is in progress (`!leadUploadInFlight`) and no dropdown save is pending.
+  - **`sharedTools` (Shared tools):** watches `shared_tools_repo`. Clean when the repository `<select>` is not focused and no shared-key input has an unsaved typed value. When clean: update the `<select>`'s `<option>` list (adding the new repo option if absent) and value in place, and re-read repository-dependent key metadata. When dirty/focused: defer and show `"Changed elsewhere"`.
+  - **`harnesses` (`renderHarnesses`) & `accounts` (`renderAccounts`):** watch `harnesses` and `accounts` (the fields `settings.describe` returns). When `harnesses` changes: update `hz.data` enabled flags (and call `loadHarnesses()` if AI providers is active without disrupting active install pollers) and repaint `renderHarnesses` when unfocused. When `accounts` OR `harnesses` changes: call existing `refreshUsage()` (`viewer/pages/settings.js:1756`, which already checks `accountsBusy()` before repainting Accounts and preserves active sign-ins and open add/edit forms); if `accountsBusy()` is true, leave `renderedSlices.accounts` unchanged and show `"Changed elsewhere"` so Accounts repaints once the form or sign-in closes.
+  - **Other hub blocks (no local draft):** `renderConversations` (owns `assistant` and `project_leads` toggles), `renderAssistants` (assistant role tiers under Models), `renderAgents`, `renderLadders`, `renderEscalation`, `renderPermission` — clean whenever no `input`/`select` inside their container is focused.
 
 ### 6. Assistant Protocol Rules (`protocol/app/assistant.md`) & Rollout
 
 Update `protocol/app/assistant.md`:
 
 - Replace `"Do not change Settings."` with a **Settings** rule block:
-  - You can inspect and change hub settings when Collin asks in chat using `wc.js assistant settings [--section <name>] [--include-history]` (read) and `wc.js assistant setting <target> --file <json-file>` (write).
+  - You can inspect and change hub settings when Collin asks in chat using `wc.js assistant settings [--include-history]` (read) and `wc.js assistant setting <target> --file <json-file>` (write).
   - Read `settings` first when you need current values, ids (accounts, templates, lessons), or revisions (background), and report clearly what changed (before → after).
   - **Confirm first with a `question` card** (naming the exact change and its effect) before applying:
     - Loosening session permissions (`permission_mode: "bypass"`, `codex_mode: "unrestricted"`) or broadening aside access (`aside_access: "full"`).
@@ -176,8 +178,8 @@ Update `protocol/app/assistant.md`:
     - Shared tools keys (`Settings → Shared tools`).
     - Uploading a new background image file (`Settings → You`).
   - `settings` retries on hub unavailability; `setting` never retries automatically. After "hub unavailable" on `setting`, check `settings` before trying again. Report the returned outcome (including per-machine results on `diagram-sensitivity`).
-- Add `settings` and `setting <target> --file <f>` rows to the **Actions** table, listing the supported targets.
-- **Activation / Rollout (`CONTRIBUTING.md:67`):** Role file edits reach sessions started after the edit, never an already-running session. After merging and updating, restart the personal assistant session (or toggle it off and on in Settings) so it picks up the new `protocol/app/assistant.md` rules. Verification must test from a fresh assistant session.
+- Add `settings [--include-history]` and `setting <target> --file <f>` rows to the **Actions** table, listing the supported targets.
+- **Activation / Rollout (`CONTRIBUTING.md:67`):** Role file edits reach sessions started after the edit, never an already-running session. After merging and updating, restart the personal assistant session (or toggle it off and on in Settings) so it picks up the new `protocol/app/assistant.md` rules. Verification checks the composed prompt of a fresh assistant session.
 
 ### 7. Validation Commands & Required Assertions
 
@@ -187,22 +189,23 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
   ```bash
   node --test viewer/test/wc-cli.test.js
   ```
-  Required assertions: `wc.js assistant settings` (with/without `--section` and `--include-history`) retries on 503; `wc.js assistant setting <target> --file <f>` rejects missing target/file or non-object JSON and never retries on 503; `wc.js project-lead` rejects both `settings` and `setting`.
+  Required assertions: `wc.js assistant settings` (with and without `--include-history`) retries on 503; `wc.js assistant setting <target> --file <f>` rejects missing target/file or non-object JSON and never retries on 503; `wc.js project-lead` rejects both `settings` and `setting`.
 - **Machine relay & name guard (`machine/service.js`):**
   ```bash
-  node --test machine/test/name-guard.test.js
+  node --test machine/test/name-guard.test.js machine/test/assistant.test.js
   ```
-- **Hub settings adapter, routes, and assistant actions (`viewer/app/routes.js`, `viewer/app/assistant-actions.js`):**
+  Required assertions (in `machine/test/assistant.test.js`): partial `diagram-sensitivity` result (`{ ok: false, error, result: { machines } }`) passes through `/v1/agent/assistant` intact, and a fresh assistant session's composed startup prompt includes the Settings action rules and no longer contains `"Do not change Settings."`.
+- **Hub settings adapter, revision counter, routes, and assistant actions (`viewer/app/routes.js`, `viewer/app/settings.js`, `viewer/app/background.js`, `viewer/app/assistant-actions.js`):**
   ```bash
   node --test viewer/test/assistant.test.js viewer/test/app-settings.test.js viewer/test/app-shared-tools-setting.test.js
   ```
-  Required assertions: live personal assistant reads settings (full and filtered by section, compact default without `lesson_history` unless requested) and writes across supported targets; project-lead and non-assistant sessions are refused (403); `preferences` containing `assistant` is refused (403); unknown target is refused (400); `diagram-sensitivity` partial machine failure returns `{ ok: false, error, result: { machines } }` cleanly through the relay; `background` `remove` requires `revision` and returns 409 on stale revision.
+  Required assertions: live personal assistant reads settings (omitting `lesson_history` by default, including it with `include_history: true`) and writes across supported targets; `GET /settings/revision` increments on settings/model/background writes; `project-lead-actions.dispatch` rejects `settings`/`setting` with 400 and `assistant-actions.run` without `allowSettings` rejects with 403; `preferences` containing `assistant` is refused with 403; unknown target is refused with 400; `diagram-sensitivity` partial machine failure returns `{ ok: false, error, result: { machines } }`; `background` `remove` requires `revision` and returns 409 on stale revision.
 - **Settings page live refresh and assistant popup UI (`viewer/pages/settings.js`):**
   ```bash
   npm --prefix viewer run test:browser -- app-settings.spec.js app-assistant-popup.spec.js
   ```
   (Runs both Chromium and Firefox via `viewer/playwright.config.js` and `viewer/test/firefox-specs.js`.)
-  Required assertions: external preference/conversation/template/account/shared-repo changes update an open Settings page automatically without reload; clean default-open template editor refreshes when templates change; deferred repaint fires after a focused input blurs; dirty `styleDraft`/`balDraft` preserves edited fields while rebasing untouched fields; external lesson removal while editing surfaces the lost-text recovery notice; shared-repo update preserves unsaved shared-key drafts; stale GET responses crossing a local write are discarded.
+  Required assertions: external preference (`name`, `folder`, `project_leads`), template, harness/account, and shared-repo (including a repo absent from initial options) changes update an open Settings page via revision poll without reload; clean default-open template editor refreshes when templates change; deferred repaint fires after a focused input blurs; dirty drafts (including "Never say" DOM input, Balancing, Behavior templates/lessons, and Shared tools key inputs) are preserved with a `"Changed elsewhere"` note and never clobbered; stale GET responses crossing a local save or lesson import are discarded.
 - **Protocol (`protocol/app/assistant.md`):**
   - Review rendered prose for consistency with `viewer/app/wc.js` and `viewer/app/assistant-actions.js`, and verify activation guidance.
 
@@ -227,16 +230,16 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |---|---|---|---|---|
 | intent | minor | Call `handleSettings` directly via allowlist + stub response instead of extracting `settings-ops.js` | upheld | Replaced `settings-ops.js` with `routes.invokeSettings` adapter in Spec §3–§4 (Decision 9) |
-| intent | minor | Reuse `window.wcPoller` (`viewer/pages/nav.js:6`) instead of custom `setInterval` + `visibilitychange` | upheld | Updated Spec §5 to reuse `window.wcPoller(refreshSettings, 5000)` |
+| intent | minor | Reuse `window.wcPoller` (`viewer/pages/nav.js:6`) instead of custom `setInterval` + `visibilitychange` | upheld | Updated Spec §5 to reuse `window.wcPoller(pollSettings, 5000)` |
 | intent | minor | Add `project_leads: "off"` to confirmation list since it stops live sessions | upheld | Added `project_leads: "off"` to confirm list in Spec §6 (Decision 10) |
-| intent | minor | `settings` read returns large `settings.describe` blob including `lesson_history` | upheld | Added optional `--section` and `--include-history`, omitting `lesson_history` by default in Spec §2, §4, §6 (Decision 11) |
+| intent | minor | `settings` read returns large `settings.describe` blob including `lesson_history` | upheld | Added optional `--include-history`, omitting `lesson_history` by default in Spec §2, §4, §6 (Decision 11, refined in Decision 12) |
 | mechanics | blocking | Templates editor is open by default; skipping whenever open leaves templates stale | upheld | Guard by actual dirty `draft` / focus, and refresh/reselect clean editor in Spec §5 |
 | mechanics | major | Deferred repaints consumed when snapshot advances while skipped | upheld | Track `renderedSlices` independently and flush deferred repaints on `focusout`, save/cancel, and next tick in Spec §5 |
-| mechanics | major | `balDraft` and `styleDraft` persist after blur; whole-form save risks stale or lost edits | upheld | Specified field-by-field rebase of untouched fields preserving dirty edits in Spec §5 |
-| mechanics | major | External lesson removal during edit silently clears typed text on Save | upheld | Required existing `keepLessonEdits()` + `showLessonLost()` recovery path on refresh in Spec §5 |
-| mechanics | major | `renderSharedTools` rebuilds key inputs and can erase unsaved key drafts | upheld | Update only the repository `<select>` in place without rebuilding key fields in Spec §5 |
+| mechanics | major | `balDraft` and `styleDraft` persist after blur; whole-form save risks stale or lost edits | upheld | Simplified in Round 2 to uniform clean-repaints / dirty-keeps-draft + `"Changed elsewhere"` note (Decision 12) |
+| mechanics | major | External lesson removal during edit silently clears typed text on Save | upheld | Keep `data.lessons` untouched while `lessonDirty()`, so Save/Reload runs `keepLessonEdits()` + `showLessonLost()` cleanly in Spec §5 |
+| mechanics | major | `renderSharedTools` rebuilds key inputs and can erase unsaved key drafts | upheld | Update only the repository `<select>` options and value in place, refreshing keys only when clean in Spec §5 |
 | mechanics | major | Refresh GETs not ordered against local browser saves | upheld | Added `localWriteGen` + `inFlightWrites` stale-GET discard rule in Spec §5 |
-| mechanics | major | Accounts uses `/usage` snapshot and Harnesses uses `/harnesses` (`hz.data`) | upheld | Specified refreshing `/usage` and updating/refreshing `hz.data` on account/harness changes in Spec §5 |
+| mechanics | major | Accounts uses `/usage` snapshot and Harnesses uses `/harnesses` (`hz.data`) | upheld | Specified refreshing `/usage` via `refreshUsage()`/`accountsBusy()` and updating/refreshing `hz.data` in Spec §5 |
 | mechanics | major | Background removal confirmation not tied to approved revision | upheld | Required `revision` on `background` `remove` and re-confirm on 409 conflict in Spec §4, §6 (Decision 10) |
 | mechanics | major | `lesson-waiting` `discard` removes pending lesson without history or confirmation | upheld | Added `lesson-waiting` `action: "discard"` to confirmation list in Spec §6 (Decision 10) |
 | mechanics | minor | `renderConversations` (not `renderAssistants`) owns `project_leads` toggle | upheld | Named `renderConversations` explicitly in Spec §5 |
@@ -247,12 +250,37 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 
 ### Round 2 — 2026-11-28
 
-**Changed since Round 1:**
-- Replaced `settings-ops.js` extraction with exported `routes.invokeSettings` adapter in `viewer/app/routes.js` (Spec §3–§4, Decision 9).
-- Added optional `--section` and `--include-history` flags to `wc.js assistant settings`, omitting `lesson_history` by default (Spec §2, §4, §6, Decision 11).
-- Required `revision` on `background` `remove` (propagating 409 conflict to re-confirm), and added `project_leads: "off"` and `lesson-waiting` `action: "discard"` to the confirmation list (Spec §4, §6, Decision 10).
-- Rewrote Spec §5 live refresh to reuse `window.wcPoller`, order GETs against local writes (`localWriteGen`/`inFlightWrites`), track deferred repaints via `renderedSlices` + `focusout` flush, guard templates by actual `draft` dirtiness rather than open state, rebase `styleDraft`/`balDraft` untouched fields, use `keepLessonEdits()`/`showLessonLost()` on external lesson removal, update only the Shared tools repo `<select>` in place, refresh `/usage` and `/harnesses` on account/harness changes, and name `renderConversations`.
-- Added activation/rollout note (Spec §6), fixed Playwright command for Firefox coverage, added `name-guard.test.js`, and added concrete required test assertions (Spec §7).
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
+
+**Changed since Round 1:** Replaced `settings-ops.js` with `routes.invokeSettings`; added `--section`/`--include-history`; required background `revision` and added `project_leads`/`lesson-waiting discard` confirmation; rewrote Spec §5 live refresh; added rollout note and updated Spec §7 validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|---|---|---|---|---|
+| intent | minor | Polling full `GET /settings` every 5 s runs two `model.sh` subprocesses; poll a cheap revision counter instead | upheld | Added `GET /settings/revision` counter (`hub.settingsRevision`) in Spec §3 & §5 (Decision 12) |
+| intent | minor | `--section` had 11 names with incomplete key maps; omitting `lesson_history` by default already meets Decision 11 | upheld | Dropped `--section` and kept `--include-history` only in Spec §2, §4, §6 (Decision 12) |
+| intent | minor | Reuse existing `accountsBusy()` and `refreshUsage()` instead of restating a second Accounts guard | upheld | Updated Spec §5 to reuse `accountsBusy()` and `refreshUsage()` directly |
+| intent | minor | Replace ~15 per-block merge rules with uniform clean-repaints / dirty-keeps-draft-with-note | upheld | Replaced per-field rebasing in Spec §5 with uniform clean-repaints / dirty-keeps-draft + `"Changed elsewhere"` note (Decision 12) |
+| mechanics | blocking | `nameDraft` and `folderDraft` clean value is `null`, not `''` | upheld | Fixed clean checks in Spec §5 to `nameDraft === null || ...` and `folderDraft === null || ...` |
+| mechanics | blocking | Shared tools `<select>` must also add missing repo option and refresh key metadata when clean | upheld | Updated Spec §5 Shared tools rule to update `<option>` list + value in place and re-read keys when clean |
+| mechanics | major | Template draft needs saved `draftBaseline` so clean focused draft isn't falsely marked dirty and dirty draft doesn't overwrite silently | upheld | Added `draftBaseline` and uniform dirty-keeps-draft + `"Changed elsewhere"` rule in Spec §5 |
+| mechanics | major | Lessons and Templates share one repaintable block (`behavior`) | upheld | Unified Templates and Lessons into one `behavior` block watching `templates`, `lessons`, `lesson_waiting`, `lesson_history` in Spec §5 |
+| mechanics | major | DOM-only edits ("Never say" input in Style, custom "Other" model input in Tiers) missed by draft guards | upheld | Added both DOM-only inputs to clean/dirty checks in Spec §5 |
+| mechanics | major | Balancing `held_back` object needs per-role merge under field-by-field rebasing | upheld | Eliminated by switching to uniform clean-repaints / dirty-keeps-draft + `"Changed elsewhere"` rule in Spec §5 |
+| mechanics | major | Lesson import raw `fetch` and `reload()` bypass `localWriteGen`/`inFlightWrites` | upheld | Included lesson import `fetch` and `reload()` in the `localWriteGen`/`inFlightWrites` guard in Spec §5 |
+| mechanics | major | Harness-only change must also refresh Accounts (reusing `accountsBusy()`/`refreshUsage()`) | upheld | Updated Spec §5 so `harnesses` changes also trigger `refreshUsage()` and respect `accountsBusy()` |
+| mechanics | major | Lead names uses a dropdown and file upload, not a text editor | upheld | Updated Spec §5 `leadNames` guard to track `leadUploadInFlight`, pending dropdown save, and focus |
+| mechanics | minor | `project-lead-actions.js:76` rejects new actions with 400 before reaching `assistant-actions.run`'s 403 | upheld | Clarified 400 at `project-lead-actions.dispatch` and 403 defense-in-depth at `assistant-actions.run` in Spec §4 & §7 |
+| mechanics | minor | Omitted `section` wasn't normalized to `'all'` before supplemental fetches | upheld | Eliminated by dropping `--section` (Spec §2, §4) |
+| mechanics | minor | Section key maps incomplete and `retired_accounts` is not returned by `settings.describe` | upheld | Dropped `--section` and removed `retired_accounts` watch (Spec §4, §5) |
+| mechanics | minor | Targeted checks lacked a machine-relay test for partial diagram results and a fresh-session prompt check | upheld | Added `machine/test/assistant.test.js` relay and fresh-session prompt assertions in Spec §7 |
+
+### Round 3 — 2026-11-28
+
+**Changed since Round 2:**
+- Added cheap `GET /wheelchair/api/settings/revision` counter (`hub.settingsRevision`, bumped by `settings.update`, mutating `modelCommand`, and `background.commit`) and switched Settings polling to check revision before fetching `GET /settings` (Spec §3, §5, Decision 12).
+- Dropped `--section` from `wc.js assistant settings`, keeping `--include-history` only (Spec §2, §4, §6, Decision 12).
+- Simplified Spec §5 to one uniform clean-repaints / dirty-keeps-draft-with-note rule, fixing all concrete UI details: `null` clean drafts for `nameDraft`/`folderDraft`, `behavior` unified block with `draftBaseline`, DOM-only inputs ("Never say", custom "Other" model), Shared tools `<option>` update + clean key refresh, `leadNames` upload/dropdown guard, `accountsBusy()`/`refreshUsage()` triggered on both `accounts` and `harnesses` changes (dropping `retired_accounts`), and including lesson import `fetch` + `reload()` in `localWriteGen`/`inFlightWrites`.
+- Clarified project-lead 400 vs `assistant-actions.run` 403 refusal (Spec §4, §7) and added machine-relay partial-diagram + fresh-session prompt assertions in `machine/test/assistant.test.js` (Spec §7).
 
 ## Prior Work
 
@@ -269,3 +297,4 @@ Targeted tests per area (whole-suite and full-run checks are run by the pusher b
 - 2026-11-28: IDEA.md confirmed (`mode: thorough`). Checked `session leads`: only one active thread (`75365a4c3d07`, "Add account button under each provider", verifying a small UI fix in `renderAccounts`); no overlap.
 - 2026-11-28: All Open Questions settled; checked `session leads` again before `ready-for-review` (`75365a4c3d07` still the only active thread, now Verified; no overlap). Set `status: ready-for-review`.
 - 2026-11-28: Round 1 triaged (18 findings upheld: 1 blocking, 8 major, 9 minor; 0 declined). All 18 resolved in Spec and logged; starting Round 2.
+- 2026-11-28: Round 2 triaged (17 findings upheld: 2 blocking, 7 major, 8 minor; 0 declined). Simplified Spec §4 & §5 (Decision 12) and resolved all 17 findings; starting Round 3.
