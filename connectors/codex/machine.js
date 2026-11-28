@@ -174,12 +174,13 @@ module.exports = {
         if (reason) { warnings.push({ names: [extra.name], text: `tool ${extra.name}: skipped on Codex: ${reason}` }); continue; }
         const folder = codexOverrides({ servers: { [extra.name]: extra.entry } });
         const folderArgs = folder.args;
+        if (context.wsl && extra.windows) { const index = folderArgs.findIndex(arg => arg.startsWith(`mcp_servers.project_${extra.name}.env_vars=`)); if (index >= 0) folderArgs[index] = `mcp_servers.project_${extra.name}.env_vars=["WHEELCHAIR_WINDOWS_PROJECT","WSLENV"]`; }
         if (extra.folder === 'bridge') folderArgs.push('-c', `mcp_servers.project_${extra.name}.tool_timeout_sec=260`);
         if (folder.tooLarge || [...args, ...folderArgs].reduce((sum, value) => sum + quotedLength(value), 0) > PROJECT_OVERRIDE_BUDGET) {
           warnings.push({ names: [extra.name], text: `tool ${extra.name}: left out on Codex: over Codex's launch size limit` });
           continue;
         }
-        args.push(...folderArgs); folderNames.push(extra.name);
+        args.push(...folderArgs); folderNames.push(extra);
       }
     }
     argv.push(...args);
@@ -188,7 +189,7 @@ module.exports = {
     for (let i = projectStart + 1; i < argv.length; i += 2) redactions.push(i);
     const names = context?.tools && !tooLarge ? Object.keys(context.mcp?.servers || {}).filter(name => { const entry = Object.hasOwn(context.replaceEntries || {}, name) ? context.replaceEntries[name] : context.mcp.servers[name]; return entry !== null && !codexEntryReason(name, entry); }) : [];
     if (context?.resume) argv.push('resume', session.codex_thread_id);
-    return { argv, warnings, redactions, loaded: [...c.loadedTools(names, context?.mcp, context?.mount, context?.replaceEntries), ...folderNames.map(name => ({ name, windows: false, wrapped: false }))] };
+    return { argv, warnings, redactions, loaded: [...c.loadedTools(names, context?.mcp, context?.mount, context?.replaceEntries), ...folderNames.map(extra => ({ name: extra.name, windows: !!extra.windows, wrapped: !!extra.wrapped, unity: !!extra.unity }))] };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('Ask Codex to do anything'); }, answerPrompts() { return null; },
