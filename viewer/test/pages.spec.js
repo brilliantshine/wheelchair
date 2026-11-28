@@ -84,6 +84,11 @@ function waitForUrl(child) {
   });
 }
 
+// As helpers/server.js does: no real `agy`, and no real ~/.wheelchair pins or model list.
+function offline(root) {
+  return { WHEELCHAIR_AGY: '', WHEELCHAIR_MODELS: path.join(root, 'hub-state', 'models') };
+}
+
 async function startServerEnv({ root, port, env }) {
   let child; let token; let chosenPort;
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -172,7 +177,7 @@ async function buildWorld(prefix = 'pages-') {
   await fs.writeFile(path.join(planDir, 'notes', 'a.md'), '# Note a\n\nSee [b](b.md) for details.\n');
   await fs.writeFile(path.join(planDir, 'notes', 'b.md'), '# Note b\n\nArrived.\n');
 
-  const baseEnv = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+  const baseEnv = { ...process.env, ...offline(root), PATH: `${bin}:${process.env.PATH}` };
 
   const serverEnv = { ...baseEnv, FAKE_TMUX_LIST: 'wheelchair' };
   delete serverEnv.TMUX;
@@ -318,7 +323,7 @@ async function buildRememberWorld() {
     '',
   ].join('\n'));
 
-  const env = { ...process.env };
+  const env = { ...process.env, ...offline(root) };
   delete env.TMUX;
   delete env.TMUX_PANE;
   const server = await startServerEnv({ root, env });

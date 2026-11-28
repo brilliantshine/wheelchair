@@ -49,6 +49,7 @@
   const SAVED = 'Saved, applies to new sessions';
   const NOT_REFRESHED = 'Saved; the list could not be refreshed';
   let modelSaves = 0; // saved model cells, so only the latest save's re-read is drawn
+  const unreadCells = new Map(); // saved cells still waiting for that re-read
 
   let data = null;
   let section = null; // the open category's key; on a phone with no hash the list covers 'you'
@@ -221,12 +222,20 @@
     return levels && !levels.includes(effort) ? '' : effort;
   }
 
-  // After a save the lists are read again, so the model cells show what the hub now holds.
+  // Redraw one model cell in place: every other cell keeps what is typed or open in it.
+  function redrawCell(block, provider, slot) {
+    const host = document.querySelector(`[data-cell="${block}:${provider}:${slot}"]`);
+    if (host) host.replaceWith(modelPicker(block, provider, slot, { allowNone: block === 'tiers', withEffort: Boolean(EFFORTS[provider]) }));
+  }
+
+  // After a save the lists are read again, so the saved cell shows what the hub now holds.
   async function refreshModels(provider, slot, block) {
     const ticket = ++modelSaves;
+    unreadCells.set(`${block}:${provider}:${slot}`, [block, provider, slot]);
     let fresh;
     try { fresh = await api('/settings'); } catch {
       if (ticket !== modelSaves) return;
+      unreadCells.clear();
       const host = document.querySelector(`[data-cell="${block}:${provider}:${slot}"]`);
       if (host) host.append(h('p', { class: 'hint', role: 'status', text: NOT_REFRESHED }));
       return;
@@ -234,7 +243,9 @@
     if (ticket !== modelSaves) return;
     data.models = fresh.models;
     data.model_options = fresh.model_options;
-    paint('tiers', 'lead-models');
+    // A save overtaken by a later one is drawn here too, by the later save's read.
+    for (const saved of unreadCells.values()) redrawCell(...saved);
+    unreadCells.clear();
   }
 
   // One model picker for a provider and slot. A change saves at once; a refusal shows its
@@ -266,8 +277,7 @@
         return;
       }
       data.models = res.models;
-      inlineErr(wrap, '');
-      paint(block);
+      redrawCell(block, provider, slot);
       setNote(SAVED, false);
       await refreshModels(provider, slot, block);
     }
