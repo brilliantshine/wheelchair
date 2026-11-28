@@ -256,7 +256,7 @@ For a gemini scout whose pin (read by S2) has an effort, the scout line names th
 | T2 | Launch fix-up in the agy connector and service, docs, round-trip isolation (S4.2–S4.4) | connectors/agy/machine.js, machine/service.js (launchContext call), connectors/README.md, machine/API.md, machine/test agy and round-trip files | standard / gpt-6.1-terra | wc-7a9ed2b4b850-worker-2 | node --test machine/test/project-mcp-agy.test.js, service start test, machine/test/connectors-model-roundtrip-real.test.js | done |
 | T3 | Settings picker, PUT checks, sub-lead level lines, scout lines (S3, S5, S6); after T1 | viewer/app/{settings,routes,sessions}.js, viewer/pages/settings.js, named viewer tests | standard / claude-sonnet-5-5 | wc-7a9ed2b4b850-worker-4 | node --test viewer model/settings/hub/effort tests; npm --prefix viewer run test:browser -- --grep 'effort' | done |
 | T4 | Follow-up to T1: base-id filters (S1.2), no failure marker without agy, missing S4.1 refresh and suffix tests | codex/model.sh, codex/test/run.sh | standard / gpt-6.1-terra | wc-7a9ed2b4b850-worker-3 | bash codex/test/run.sh; node --test machine/test/project-mcp-agy.test.js machine/test/agy-launch-service.test.js | done |
-| T5 | Follow-up: replace four literal tool-name checks in codex/model.sh so the name guard passes | codex/model.sh | light / gpt-6-luna | wc-7a9ed2b4b850-worker-5 | node --test machine/test/name-guard.test.js; bash codex/test/run.sh | in progress |
+| T5 | Follow-up: replace four literal tool-name checks in codex/model.sh so the name guard passes | codex/model.sh | light / gpt-6-luna | wc-7a9ed2b4b850-worker-5 | node --test machine/test/name-guard.test.js; bash codex/test/run.sh | done |
 
 ## Log
 - 2026-11-27 — Choice: T2, connectors/agy/machine.js: test seams `WHEELCHAIR_AGY_MODEL_SCRIPT` (helper path) and `WHEELCHAIR_AGY_LAUNCH_TIMEOUT_MS` (deadline, default 15 s).
@@ -282,3 +282,4 @@ For a gemini scout whose pin (read by S2) has an effort, the scout line names th
 - 2026-11-27 — Choice: T3, viewer/test/app-settings.test.js: the fake agy is set inside the test server by a NODE_OPTIONS hook, because helpers/app.js forces WHEELCHAIR_AGY=''.
 - 2026-11-27 — Choice: T3, viewer/app/API.md: both settings rows updated; screenshot committed at docs/plans/google-model-levels/reports/T3-grid.png.
 - 2026-11-27 — T3 accepted (band: bigger-scout): validation re-run by the sub-lead (node 145 pass, browser 'effort' 10 pass). machine/test/name-guard.test.js fails on four literal tool-name lines in codex/model.sh from T1; follow-up task T5 fixes them.
+- 2026-11-27 — T5 accepted (band: scout): no choices beyond the brief (the scout agrees); name guard 2 pass and codex 211 pass re-run by the sub-lead.
