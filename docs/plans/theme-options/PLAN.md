@@ -36,6 +36,7 @@ None.
 | 11 | Choosing a preset preserves an existing custom accent override until the user clicks "Reset to preset" or "Reset to default", and "Reset to default" resets preset and accent (`preset: "default", accent: null`) without overwriting the user's color mode. | Keeps accent overrides non-destructive while browsing presets and avoids unexpectedly switching a `system` user back to `dark`. | review-round-1 |
 | 12 | Keep full scope (including light-mode graph viewer and contrast fixes) and continue review. | Collin confirmed keeping the full scope after discussing Round 3's contrast and graph-viewer findings. | user |
 | 13 | Supersedes the graph-viewer portion of Decision #4: split graph viewer (`viewer/index.html`) and graph PNG export theming out of this plan into a follow-up thread (`depends_on_parent: true`). | The rest of the plan (app pages, standalone doc, Settings → You editor, presets, custom accent contrast, loading spinner, dark terminal) has settled; splitting out the graph viewer lets us ship the main app themes cleanly. | idea-change |
+| 14 | Keep full contrast checks (including composer focus ring, assistant popup attribution, mockup error text, and light-mode activity trail) and run another review check. | Collin confirmed keeping full checks so everything ships cleanly without a follow-up. | user |
 
 ## Spec
 
@@ -465,6 +466,21 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 | mechanics | blocking | Main Thread composer `#composer textarea` (`thread.css:221-222`) has `outline: 0`, suppressing `:focus-visible` | upheld | Updated Spec §5.1 & §7.4 to preserve `var(--accent-vis)` `:focus-visible` ring on `#composer textarea` |
 | mechanics | blocking | Mockup comment error (`thread.css:468-470`) uses `--bad` instead of `--bad-text` (4.11:1 on Rose Light `--figure`) | downgraded | Downgraded to minor (borderline 4.11:1 on one error label in Rose Light); updated Spec §5.1 to `var(--bad-text)` and added `--bad-text` on `--figure` to §7.1 |
 | mechanics | minor | Agents activity trail (`views.css:236`) keeps 40% opacity (2.83:1 on light `--panel-3`) | upheld | Updated Spec §5.1 to raise trail opacity to `0.55` under `html[data-theme-mode="light"]` |
+
+### Round 10 — 2026-11-28
+
+**Lanes:** pending.
+
+**Changed since Round 9:**
+- Corrected `.msg.human .msg-from` to `.bubble.human .by-assistant` (`thread.css:476`) and applied `var(--ink-2)` to the assistant popup attribution (`assistant-popup.css:81`) as well (Spec §5.1, §7.4).
+- Clarified adding a new `.wc-asst-send:hover` rule beside `.wc-asst-send` (`assistant-popup.css:62`) with `--accent-hover`/`--accent-hover-ink` (Spec §5.1).
+- Extended `:focus-visible` `var(--accent-vis)` ring preservation to `#composer textarea` (`thread.css:221-222`) (Spec §5.1, §7.4).
+- Changed mockup comment submission error (`thread.css:468-470`) to `var(--bad-text)` and added `--bad-text` on `--figure` to §7.1.
+- Raised Agents activity trail stroke opacity (`views.css:236`) to `0.55` under `html[data-theme-mode="light"]` (Spec §5.1).
+- Recorded pre-existing transient queued-message `opacity: 0.7` dimming (`thread.css:77-81`) in `## Accepted Risks`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
