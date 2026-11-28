@@ -528,3 +528,5 @@ Targeted commands covering all touched files (full-run is handled before push pe
 - 2026-11-28 — Choice: R1-2, `settings.js` `change()`: on 409 the refusal reason moves onto the repainted shared-tools block.
 - 2026-11-28 — Choice: R1-2, `app-settings.spec.js`: Gap 3 test triggers `refreshDiffs()` via a tier save with a real seeded models file and uses an Escalation save as the newer write so only the `startGen` guard protects it.
 - 2026-11-28 — R1-2 accepted (band: scout): merged wc-72ca062b2848-w4 (commit 25e396f8); worker 232 passed / 2 skipped, sub-lead 68/68 live-refresh + background-editor passed.
+- 2026-11-28 — Choice: R2-1, `app-settings.spec.js`: split the extended template-deletion focus test into one test per button (`#delete`, `#duplicate`, `#toggle-use`, `#see-full`, `#save-template`) and added a pre-delete `toBeFocused()` check.
+- 2026-11-28 — R2-1 accepted (band: scout): merged wc-72ca062b2848-w5 (commit d27b4621); worker 216 passed / 2 skipped, sub-lead 12/12 modified tests passed.
