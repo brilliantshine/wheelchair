@@ -1,6 +1,6 @@
 ---
 slug: theme-options
-status: ready-for-review
+status: approved
 created: 2026-11-28
 ---
 
@@ -40,6 +40,16 @@ None.
 
 ## Spec
 
+```mermaid
+flowchart LR
+  Settings["Settings → You<br/>(theme-editor.js)"] -->|PUT /settings/theme<br/>revision-checked| Hub["Hub API<br/>(app/theme.js)"]
+  Hub -->|atomicWrite| Store["settings.json"]
+  Store -->|GET /settings/theme<br/>+ 10s poll / focus| Ctrl["Browser Controller<br/>(pages/theme.js)"]
+  Cache["localStorage<br/>wc-theme-v1"] -->|pre-paint bootstrap| Ctrl
+  Ctrl -->|mode + preset + accent| Palette["Palette & Contrast<br/>(pages/theme-palette.js)"]
+  Palette -->|CSS vars + spinner SVG| Pages["10 App Pages +<br/>Standalone Doc"]
+```
+
 ### Mockups
 
 | Path | Screen / state | Size |
@@ -62,7 +72,7 @@ None.
    - `viewer/app/theme.js` exports `DEFAULT`, `MODES`, `PRESETS`, `normalizeTheme(raw)`, and `handle(hub, request, response, url, bits, send)`.
    - `normalizeTheme(raw)` validates every field strictly; if `raw` is missing, malformed, or any field is out of range, it returns `{ ...DEFAULT }`. Uppercase hex in `accent` is accepted and lowercased on `PUT` input; stored/normalized `accent` is always lowercase `#rrggbb` or `null`.
    - `viewer/app/settings.js`'s `normalize()` calls `theme.normalizeTheme(raw?.theme)` so every `settings.update()` preserves `settings.theme` instead of dropping it.
-   - **Malformed `theme` field vs unparseable `settings.json`:** A malformed `theme` field inside valid `settings.json` normalizes to `{ ...DEFAULT }` on `GET` and can be cleanly overwritten by `PUT` (at revision `0`). An unparseable `settings.json` file (JSON syntax error from `hub.state.settings(null)`) is never silently replaced: both `GET` and `PUT` propagate the read error (`500`) without touching `settings.json`.
+   - **Malformed `theme` field vs unparseable `settings.json`:** A malformed `theme` field inside valid `settings.json` normalizes to `{ ...DEFAULT }` on `GET` and can be cleanly overwritten by `PUT` (at revision `0`). An unparseable `settings.json` file (JSON syntax error from `hub.state.settings(null)`) is never silently replaced: `viewer/app/theme.js` catches the read/parse error and returns `500` with `{ error: "Could not read settings.json" }` on both `GET` and `PUT` without touching `settings.json`.
 
 2. **HTTP routes (`viewer/app/routes.js`):**
    - Dispatch `bits[0] === 'settings' && bits[1] === 'theme'` to `require('./theme.js').handle(hub, request, response, url, bits, send)` (matching `background.js` at `viewer/app/routes.js:49`).
@@ -116,9 +126,9 @@ None.
     - `--accent-line`: RGB mix of `--accent` (42% in dark, 38% in light) over `surfaces['--line']`.
     - `--accent-chip`: RGB mix of `--accent` (20% in dark, 14% in light) over `surfaces['--panel']`.
     - `--accent-vis`: non-text visible accent derived from `--accent` by stepping HSL lightness (lighter in dark mode, darker in light mode) only if needed so its WCAG 2.1 non-text contrast ratio against `--bg`, `--panel`, `--panel-2`, `--panel-3`, `--figure`, `--line-2`, and `--accent-soft` is `>= 3.0:1` (unchanged exact `--accent` whenever it already clears `3.0:1`, including Default Dark `#5b9dd9`). Used for `:focus-visible` outlines, the loading spinner highlight, and non-text accent status indicators (including the Agents memory ring arc over `--line-2`).
-    - `--accent-text`: computed **after** `--accent-soft` and `--accent-chip`; starts from `--accent` in HSL and steps lightness (lighter in dark mode, darker in light mode) until WCAG 2.1 contrast ratio against all five surfaces (`--bg`, `--panel`, `--panel-2`, `--accent-soft`, `--accent-chip`) is `>= 4.5:1` (falling back to `surfaces['--ink']` if needed).
-    - `--accent-hi`: hover/highlight text accent derived from `--accent-text` (slightly lighter in dark mode, slightly darker in light mode) while maintaining `>= 4.5:1` contrast against all five surfaces (`--bg`, `--panel`, `--panel-2`, `--accent-soft`, `--accent-chip`).
     - `--human`: RGB mix of `--accent` (16% in dark, 12% in light) over `surfaces['--panel-2']` (verified `>= 4.5:1` with both `surfaces['--ink']` and `surfaces['--ink-2']`; if a very bright/dark accent lowers either below 4.5:1, reduce mix weight down to 0% until both clear `>= 4.5:1`).
+    - `--accent-text`: computed **after** `--accent-soft`, `--accent-chip`, and `--human`; starts from `--accent` in HSL and steps lightness (lighter in dark mode, darker in light mode) until WCAG 2.1 contrast ratio against all six surfaces (`--bg`, `--panel`, `--panel-2`, `--accent-soft`, `--accent-chip`, `--human`) is `>= 4.5:1` (falling back to `surfaces['--ink']` if needed).
+    - `--accent-hi`: hover/highlight text accent derived from `--accent-text` (slightly lighter in dark mode, slightly darker in light mode) while maintaining `>= 4.5:1` contrast against all six surfaces (`--bg`, `--panel`, `--panel-2`, `--accent-soft`, `--accent-chip`, `--human`).
 - **Spinner SVG derivation (`buildSpinnerUrls(ink, idle, accentVis)`):**
   - Builds the two `url("data:image/svg+xml,...")` strings (normal speed and `prefers-reduced-motion` speed, matching `viewer/pages/app.css:204,206`) with `%23` URI-encoded `ink`, `idle`, and `--accent-vis` hex values, exposed as `--spinner-svg` and `--spinner-svg-reduced` in `vars`.
 - **`resolveTheme(theme, prefersLight)`**: accepts `{ mode, preset, accent }` (normalizing invalid values to defaults) and boolean `prefersLight`, returns `{ mode, preset, accent, resolvedMode: 'light' | 'dark', effectiveAccent, vars }`.
@@ -189,7 +199,7 @@ None.
      - Set `color-scheme: dark;` on `html` only (removing `color-scheme: dark` from `body` in `app.css:29`), and override with `html[data-theme-mode="light"], html[data-theme-mode="light"] body { color-scheme: light; }` so native controls (such as `<input type="color">` and scrollbars) follow light mode while `.tv-host` keeps `color-scheme: dark`.
      - `#app-nav .logo` uses `color: var(--accent-ink)` instead of `color: var(--bg)` (intentional contrast improvement in Default Dark: `#0e1114` vs `#14161a`).
      - `:focus-visible` outline (`app.css:81`) uses `outline: 2px solid var(--accent-vis);` instead of raw `var(--accent)` so keyboard focus stays visible (`>= 3.0:1`) even with a `#ffffff` accent in light mode; also update the two thread textareas (`viewer/pages/thread.css:147-150,462-466`) and the main Thread composer (`#composer textarea` at `viewer/pages/thread.css:221-222`) to keep a visible `var(--accent-vis)` focus ring on `:focus-visible` instead of `outline: none` / `outline: 0` (intentional focus-visibility improvement in Default Dark).
-     - Non-text accent status indicators (`viewer/pages/app.css:104` Threads working dot, `viewer/pages/views.css:241` Agents current-activity outline, and any other non-text accent borders/dots in `viewer/pages/*.css`) use `var(--accent-vis)` instead of raw `var(--accent)` so they stay visible (`>= 3.0:1`) with `#ffffff` and `#000000` accents; raise the Agents activity trail stroke opacity (`viewer/pages/views.css:236`) from `0.4` to `0.55` under `html[data-theme-mode="light"]` so it stays visible over `--panel-3`.
+     - Non-text accent status indicators (`viewer/pages/app.css:104` Threads working dot, `viewer/pages/views.css:241` Agents current-activity outline, and any other non-text accent borders/dots in `viewer/pages/*.css`) use `var(--accent-vis)` instead of raw `var(--accent)` so they stay visible (`>= 3.0:1`) with `#ffffff` and `#000000` accents; raise the Agents activity trail stroke opacity (`viewer/pages/views.css:236`) from `0.4` to `0.75` under `html[data-theme-mode="light"]` so the composited `--accent-hi` stroke clears `>= 3.0:1` over `--panel-3`.
      - Filled primary button/FAB hover rules (`app.css:70`, `app.css:121-122`, `assistant-popup.css:16`) use `background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-hover-ink);` instead of `--accent-hi` with `--accent-ink`; add a new `.wc-asst-send:hover` rule beside `.wc-asst-send` (`assistant-popup.css:62`) with the same `--accent-hover` / `--accent-hover-ink` pair so `button:hover` does not override its foreground.
      - `.bubble.human .by-assistant` (`viewer/pages/thread.css:476`) and the matching assistant-popup attribution (`viewer/pages/assistant-popup.css:81`): use `color: var(--ink-2)` instead of `var(--dim)` so "From your assistant" attribution inside `--human` bubbles clears `>= 4.5:1` across all presets including Default Dark (intentional contrast improvement in Default Dark: 8.0:1 vs 4.28:1).
      - Mockup comment submission error (`viewer/pages/thread.css:468-470`): use `color: var(--bad-text)` instead of `var(--bad)` so 13px error text on `--figure` clears `>= 4.5:1` in every light preset including Rose Light.
@@ -224,9 +234,9 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 1. **Theme unit & API tests (`viewer/test/theme.test.js`):**
    - Covers `theme-palette.js` WCAG 2.1 contrast (`>= 4.5:1`) for:
      - `--ink`, `--ink-2`, `--dim` against `--bg`, `--panel`, and `--panel-2`, `--ink` against `--term-bg`, `--bad-text` against `--figure`, plus `--good-ink` on `--good`, and `--ink`, `--dim`, `--good-text`, `--warn`, `--bad-text` against `--bg`, `--panel`, `--panel-2`, and `--accent-soft` (including `#ffffff` and `#000000` accents) for all 6 presets in both `light` and `dark` modes.
-     - `--accent-ink` on `--accent`, `--accent-hover-ink` on `--accent-hover`, `--accent-text` and `--accent-hi` on `--bg`/`--panel`/`--panel-2`/`--accent-soft`/`--accent-chip`, `--ink` and `--ink-2` on `--human`, and `--accent-vis` (`>= 3.0:1` non-text contrast on `--bg`/`--panel`/`--panel-2`/`--panel-3`/`--figure`/`--line-2`/`--accent-soft`) across all 6 presets, both modes, and edge hex colors (`#000000`, `#6f6f6f`, `#777777`, `#8a8a8a`, `#8d8d8d`, `#8f8f8f`, `#ffffff`, `#ffff00`, `#ff0000`, `#00ff00`, `#5b9dd9`, `#d6a53b`).
+     - `--accent-ink` on `--accent`, `--accent-hover-ink` on `--accent-hover`, `--accent-text` and `--accent-hi` on `--bg`/`--panel`/`--panel-2`/`--accent-soft`/`--accent-chip`/`--human`, `--ink` and `--ink-2` on `--human`, and `--accent-vis` (`>= 3.0:1` non-text contrast on `--bg`/`--panel`/`--panel-2`/`--panel-3`/`--figure`/`--line-2`/`--accent-soft`) across all 6 presets, both modes, and edge hex colors (`#000000`, `#696969`, `#6f6f6f`, `#777777`, `#8a8a8a`, `#8d8d8d`, `#8f8f8f`, `#ffffff`, `#ffff00`, `#ff0000`, `#00ff00`, `#5b9dd9`, `#d6a53b`).
      - Exact pixel-identical default dark tokens and `--spinner-svg` / `--spinner-svg-reduced` color injection.
-   - Covers `GET /wheelchair/api/settings/theme` and `PUT /wheelchair/api/settings/theme`: defaults, malformed `theme` field normalization vs unparseable `settings.json` returning 500 without overwriting, valid save + revision increment, idempotent no-op save, 400 invalid input (`{ error }`), 409 revision conflict (`{ error, mode, preset, accent, revision }`), 413 oversized payload, preservation across unrelated `settings.update()` calls.
+   - Covers `GET /wheelchair/api/settings/theme` and `PUT /wheelchair/api/settings/theme`: defaults, malformed `theme` field normalization vs unparseable `settings.json` returning `500` with `{ error: "Could not read settings.json" }` without overwriting, valid save + revision increment, idempotent no-op save, 400 invalid input (`{ error }`), 409 revision conflict (`{ error, mode, preset, accent, revision }`), 413 oversized payload, preservation across unrelated `settings.update()` calls.
    - Command: `node --test viewer/test/theme.test.js`
 2. **Existing settings, background, name-guard, and mockup-browser regression tests:**
    - Command: `node --test viewer/test/background.test.js viewer/test/app-settings.test.js machine/test/name-guard.test.js`
@@ -236,7 +246,7 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
    - Tests Settings → You Theme controls: live preview of mode/preset/custom hex/quick swatch without saving, status line `"Previewing on this page · Save to apply across devices"`, preset switch preserving custom accent, Reset to preset, Reset to default preserving color mode, Reset discarding preview, Save persisting across reload, System mode reacting to OS `prefers-color-scheme` changes (`emulateMedia`), clean editor adopting refreshed snapshot (fields + `baseRevision`) before first edit, hub sync to a second isolated browser context (no shared `localStorage`, opened and kept visible before Save, updating via polling without reload or focus change), invalid hex validation disabling Save, 409 conflict with stale baseRevision after concurrent update, delayed stale GET not overwriting newer PUT/storage state, navigating away (mobile Back link, header navigation + browser Back, plus same-document `pagehide` → `pageshow({ persisted: true })` lifecycle test with a live unsaved preview asserting both applied theme CSS vars and form controls return to saved values), 6-column desktop / 3-column phone (390×844) preset grid with zero horizontal overflow.
    - Command: `npm --prefix viewer run test:browser -- test/theme-editor.spec.js`
 4. **Browser rendering & cross-page spec (`viewer/test/theme-rendering.spec.js`, listed in `viewer/test/firefox-specs.js`):**
-   - Tests that saved light mode + custom accent color applies to Thread, Threads, Agents, New, Picture (outer page; embedded graph iframes stay dark and are not asserted as light), and Standalone Doc (`viewer/doc.html`, including error banner), including readable contrast on raw-accent-replaced labels, `.bubble.human .by-assistant` and assistant-popup attribution, Thread code blocks / `--term-bg` in light mode, keyboard `:focus-visible` outline (including `#composer textarea` and both other thread textareas, testing `#8a8a8a` on `--figure` and `#ffffff`), Threads working dot and Agents current-activity outline with `#ffffff` and `#000000` accents, standalone doc links, filled button hover pairs (including `.wc-asst-send:hover` with `#ffffff` accent in Default Dark), `body` computed `color-scheme: light`, and spinner `--spinner-svg` containing the contrast-checked `--accent-vis` hex; verifies Terminal (`.tv-host` / xterm) stays dark (`#0c0e10`) with readable `#d9a441` typing cursor when Typing is enabled in light mode, Sign-in stays default dark, pre-paint bootstrap avoids dark flash on reload in light mode, light mode + background image keeps cards opaque, and graph PNG export on a light-mode Picture page still paints a dark canvas background matching the dark graph iframe.
+   - Tests that saved light mode + custom accent color applies to Thread, Threads, Agents, New, Picture (outer page; embedded graph iframes stay dark and are not asserted as light), and Standalone Doc (`viewer/doc.html`, including error banner), including readable contrast on raw-accent-replaced labels, `.bubble.human .by-assistant` and assistant-popup attribution, Thread code blocks / `--term-bg` in light mode, keyboard `:focus-visible` outline (including `#composer textarea` and both other thread textareas, testing `#8a8a8a` on `--figure` and `#ffffff`), Threads working dot, Agents current-activity outline, and composited Agents activity trail over `--panel-3` (`>= 3.0:1`, including `#696969`) with `#ffffff` and `#000000` accents, standalone doc links, filled button hover pairs (including `.wc-asst-send:hover` with `#ffffff` accent in Default Dark), `body` computed `color-scheme: light`, and spinner `--spinner-svg` containing the contrast-checked `--accent-vis` hex; verifies Terminal (`.tv-host` / xterm) stays dark (`#0c0e10`) with readable `#d9a441` typing cursor when Typing is enabled in light mode, Sign-in stays default dark, pre-paint bootstrap avoids dark flash on reload in light mode, light mode + background image keeps cards opaque, and graph PNG export on a light-mode Picture page still paints a dark canvas background matching the dark graph iframe.
    - Command: `npm --prefix viewer run test:browser -- test/theme-rendering.spec.js`
 
 ## Accepted Risks
@@ -469,7 +479,7 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 
 ### Round 10 — 2026-11-28
 
-**Lanes:** pending.
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 9:**
 - Corrected `.msg.human .msg-from` to `.bubble.human .by-assistant` (`thread.css:476`) and applied `var(--ink-2)` to the assistant popup attribution (`assistant-popup.css:81`) as well (Spec §5.1, §7.4).
@@ -481,6 +491,10 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Light-mode Agents activity trail contrast wasn't checked in §7 | upheld | Raised light-mode trail opacity to `0.75` in Spec §5.1 and added composited trail check to §7.4 |
+| mechanics | minor | Activity trail at 55% opacity composites to 2.24:1 over `--panel-3` for `#696969` | upheld | Resolved with intent finding #1 (`0.75` opacity + `#696969` composited check in §7.4) |
+| mechanics | minor | Aside handoff link inside `--human` bubble (`#696969`) reaches 4.14:1 | upheld | Ordered `--human` before `--accent-text`/`--accent-hi` and added `--human` to their >= 4.5:1 surfaces in Spec §2 & §7.1 |
+| mechanics | minor | Propagating unparseable `settings.json` through hub wrapper returns `{ error: "internal" }` instead of plain message | upheld | Specified catching read/parse errors in `app/theme.js` to return `500` `{ error: "Could not read settings.json" }` in Spec §1.1 & §7.1 |
 
 ## Prior Work
 
@@ -493,3 +507,5 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-28: Round 10 passed cleanly (0 blocking, 0 major, 4 minor fixed). Ready check passed (`wc.js session list` ok, `codex/preflight.sh` fresh with 131h remaining). Status set to `approved`.
