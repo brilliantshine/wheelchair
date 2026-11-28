@@ -1,7 +1,7 @@
 ---
 slug: easy-tools-solid
 date: 2026-11-28
-implemented-by: standard (gpt / gpt-6.1-terra: T1, T2, T3, T4, T6, T7, R1-A, R1-B, R2-A, R3-A; claude / claude-sonnet-5-5: T5)
+implemented-by: standard (gpt / gpt-6.1-terra: T1, T2, T3, T4, T6, T7, R1-A, R1-B, R2-A, R3-A, R4-A; claude / claude-sonnet-5-5: T5)
 verified-by:
   - round: 1
     lane: claude / claude-opus-5-5
@@ -19,6 +19,12 @@ verified-by:
     lane: claude / claude-opus-5-5
     checks: standard (gpt / gpt-6.1-terra, claude / claude-sonnet-5-5)
   - round: 3
+    lane: gpt / gpt-6.2-sol
+    checks: standard (gpt / gpt-6.1-terra, claude / claude-sonnet-5-5)
+  - round: 4
+    lane: claude / claude-opus-5-5
+    checks: standard (gpt / gpt-6.1-terra, claude / claude-sonnet-5-5)
+  - round: 4
     lane: gpt / gpt-6.2-sol
     checks: standard (gpt / gpt-6.1-terra, claude / claude-sonnet-5-5)
 ---
@@ -40,9 +46,9 @@ verified-by:
 | S3.3 Tests and `protocol/tools.md` `--lang python` docs | this run | `viewer/test/wc-tool.test.js:31-55`, `protocol/tools.md:123` | `node --test viewer/test/wc-tool.test.js` (15/15 pass); rendered doc reviewed |
 | S4.1 HTTP `tool.json` schema (`url`, `headers`, `windows`, `transport`) and Git-tree exec check skip | this run | `machine/lib/folder-tools.js:20-48,105`, `machine/lib/project-tools.js:102` | `node --test machine/test/folder-tools.test.js` (11/11 pass), `node --test machine/test/project-tools.test.js` (47/47 pass) |
 | S4.2 Unkeyed HTTP folder server entries | this run | `machine/lib/folder-tools.js:116-120` | `node --test machine/test/folder-tools.test.js` (11/11 pass) |
-| S4.3 Shared HTTP MCP client (`mcp-http.js`) and keyed stdio-to-HTTP proxy (`http-tool-proxy.js`) | this run | `machine/lib/mcp-http.js:1-67`, `machine/lib/http-tool-proxy.js:1-113` | `node --test machine/test/http-tool-proxy.test.js` (14/14 pass) |
+| S4.3 Shared HTTP MCP client (`mcp-http.js`) and keyed stdio-to-HTTP proxy (`http-tool-proxy.js`) | this run | `machine/lib/mcp-http.js:1-67`, `machine/lib/http-tool-proxy.js:1-113` | `node --test machine/test/http-tool-proxy.test.js` (16/16 pass) |
 | S4.4 `wc.js tool check` for HTTP folder tools + WSL `windows: true` skip | this run | `viewer/app/tool-cli.js:36-39,136-153` | `node --test viewer/test/wc-tool.test.js` (15/15 pass) |
-| S4.5 HTTP proxy tests, `transport` on tool object, `protocol/tools.md` HTTP docs | this run | `machine/test/http-tool-proxy.test.js:1-200`, `protocol/tools.md:45-68,87,95` | `node --test machine/test/http-tool-proxy.test.js` (14/14 pass); rendered doc reviewed |
+| S4.5 HTTP proxy tests, `transport` on tool object, `protocol/tools.md` HTTP docs | this run | `machine/test/http-tool-proxy.test.js:1-233`, `protocol/tools.md:45-68,87,95` | `node --test machine/test/http-tool-proxy.test.js` (16/16 pass); rendered doc reviewed |
 | S5.1 Remove sandboxed-Codex exclusion; update Tools page/API status strings | this run | `connectors/codex/machine.js:121-125,168-182`, `machine/lib/project-tools.js:160`, `viewer/pages/project-tools.js:314` | `node --test machine/test/folder-tools-launch.test.js` (52/52 pass), `node --test machine/test/project-tools.test.js` (47/47 pass), `npm --prefix viewer run test:browser -- test/app-project-tools.spec.js` (109 passed, 1 skipped) |
 | S5.2 Dedicated `sandboxWrapTool`, `connectors/contract.js` & `README.md`, shared `CODEX_HOME`, `--sandbox-cli` dispatch | this run | `connectors/codex/machine.js:125`, `connectors/contract.js:24`, `connectors/README.md:76,119`, `machine/service.js:865-866,977-978,1043,1056,1139`, `machine/lib/folder-tools.js:115-122`, `machine/lib/tool-bridge.js:10-11,36`, `machine/lib/tool-run.js:17-54`, `machine/lib/tool-launch.js:12-13,44-45` | `node --test machine/test/folder-tools-launch.test.js`, `node --test machine/test/project-mcp-codex.test.js` (18/18 pass), `node --test machine/test/screen.test.js` (46/47 + 1 host-openbox skip), `node --test machine/test/name-guard.test.js` (2/2 pass), `node --test machine/test/connectors-contract.test.js` (5/5 pass) |
 | S5.3 Real Codex sandbox test, `test-support/run-dir.js` custom `base` root, `machine/AGENTS.md` | this run | `machine/test/folder-tools-codex-sandbox.test.js:1-40`, `test-support/run-dir.js`, `machine/AGENTS.md:60-61` | `node --test machine/test/folder-tools-codex-sandbox.test.js` (2/2 pass, 0 skipped on `codex-cli 0.172.0`), `node --test test-support/test/*.test.js` (39/39 pass) |
@@ -65,7 +71,7 @@ All targeted validation commands from `PLAN.md` passed during task acceptance:
 - `node --test machine/test/folder-tools-run.test.js` — 32/32 pass
 - `node --test machine/test/folder-tools-launch.test.js` — 52/52 pass
 - `node --test machine/test/folder-tools-codex-sandbox.test.js` — 2/2 pass, 0 skipped (`codex-cli 0.172.0`)
-- `node --test machine/test/http-tool-proxy.test.js` — 14/14 pass
+- `node --test machine/test/http-tool-proxy.test.js` — 16/16 pass
 - `node --test machine/test/win-tool-proxy.test.js` — 29/29 pass
 - `node --test machine/test/win-tool-service.test.js` — 10/10 pass
 - `node --test machine/test/win-launch.test.js` — 2/2 pass
@@ -93,7 +99,7 @@ Full-run `summary.txt` will be appended once the full run completes on the verif
 
 Attempt 1 verifiers (`claude / claude-opus-5-5` and `gpt / gpt-6.2-sol`) reported 4 normal-use/repo-law gaps plus Check Once Built #1 (recorded in `PLAN.md` Accepted Risks under `verification-1` per lead decision). All 4 gaps were fixed:
 
-1. **R1-A (`machine/lib/http-tool-proxy.js:35-38,43,51,71,91-95,106,109`, `machine/test/http-tool-proxy.test.js:122-162`, `gpt / gpt-6.1-terra`):**
+1. **R1-A (`machine/lib/http-tool-proxy.js:35-38,43,51,71,91-95,106,109`, `machine/test/http-tool-proxy.test.js:155-195`, `gpt / gpt-6.1-terra`):**
    - Forward client JSON-RPC responses (messages without `method` carrying `id` + `result`/`error`) to the HTTP server without waiting for a response matching `msg.id` or emitting `-32603` on failure.
    - Pass an `AbortController` into `deadline()` so expiring `initGate`/`initNotice`/`recover` deadlines abort the in-flight HTTP request and suppress late stdout writes, ensuring at most one terminal reply per request ID.
    - Validated: `node --test machine/test/http-tool-proxy.test.js` — 9/9 pass (including server-initiated `roots/list` on an open SSE stream and aborted late `initialize` reply).
@@ -107,7 +113,7 @@ Attempt 1 verifiers (`claude / claude-opus-5-5` and `gpt / gpt-6.2-sol`) reporte
 
 Attempt 2 verifiers (`claude / claude-opus-5-5` and `gpt / gpt-6.2-sol`) reported 3 gaps (full run passed all 8 suites exit 0). All 3 gaps were fixed:
 
-1. **R2-A (`machine/lib/http-tool-proxy.js:51,97-98,106`, `machine/lib/mcp-http.js:23,56`, `machine/test/http-tool-proxy.test.js:164-200`, `gpt / gpt-6.1-terra`):**
+1. **R2-A (`machine/lib/http-tool-proxy.js:51,97-98,106`, `machine/lib/mcp-http.js:23,56`, `machine/test/http-tool-proxy.test.js:197-233`, `gpt / gpt-6.1-terra`):**
    - Capture `Mcp-Session-Id` on `initialize` response headers (`:51`), reset `sessionId = null` on `initialize` failure (`:106`), and send client replies (`typeof msg.method !== 'string'`) immediately via `send(msg, false)` (`:97-98`) without awaiting `initGate`/`initNotice`/`recovering`, eliminating the initialization-ping deadlock.
    - Separate `JSON.parse` `SyntaxError` handling from `onMessage` exceptions in `mcp-http.js:23` (rejecting via `finish(e)`) and guard `httpHandshake`'s `onMessage` against non-object / `null` JSON (`mcp-http.js:56`), ensuring clean failure and `DELETE` teardown.
    - Validated: `node --test machine/test/http-tool-proxy.test.js` (12/12 pass) and `node --test viewer/test/wc-tool.test.js` (15/15 pass).
@@ -118,9 +124,18 @@ Attempt 2 verifiers (`claude / claude-opus-5-5` and `gpt / gpt-6.2-sol`) reporte
 
 Attempt 3 verifiers returned `PASS` from Claude (`claude-opus-5-5`) and `FAIL` from GPT (`gpt-6.2-sol`). GPT's rare-path trailing-SSE-notification gap was recorded in `PLAN.md` Accepted Risks (`verification-3`). The remaining 3 gaps were fixed:
 
-1. **R3-A (`machine/lib/http-tool-proxy.js:52`, `machine/lib/mcp-http.js:56`, `machine/test/http-tool-proxy.test.js:29-61`, `gpt / gpt-6.1-terra`):**
+1. **R3-A (`machine/lib/http-tool-proxy.js:52`, `machine/lib/mcp-http.js:56`, `machine/test/http-tool-proxy.test.js:34-66`, `gpt / gpt-6.1-terra`):**
    - Answer server-initiated `ping` requests during 404 recovery `initialize` (`http-tool-proxy.js:52`) using `responseHeaders?.['mcp-session-id'] || sid` without forwarding or settling the request.
    - Answer server-initiated `ping` requests during `httpHandshake` (`mcp-http.js:56`) using the active `sessionId` and `protocolVersion`.
    - Validated: `node --test machine/test/http-tool-proxy.test.js` (14/14 pass) and `node --test viewer/test/wc-tool.test.js` (15/15 pass).
 2. **R3-B (`docs/plans/easy-tools-solid/COMPLETION.md`):**
-   - Updated `http-tool-proxy.test.js` line ranges (`:29-61`, `:122-162`, `:164-200`, file length 200 lines), `win-tool-service.test.js:60-172`, and `http-tool-proxy` test count (`14/14`).
+   - Updated `http-tool-proxy.test.js` line ranges and `win-tool-service.test.js:60-172`.
+
+### Remediation 4 (for Attempt 4 commit `d10904010ccc1046a4987e64153493b606c06357`)
+
+Attempt 4 verifiers (`claude / claude-opus-5-5` and `gpt / gpt-6.2-sol`) reported 2 gaps. Both were fixed:
+
+1. **R4-A (`machine/lib/http-tool-proxy.js:89,106`, `machine/test/http-tool-proxy.test.js:8-10,68-94`, `gpt / gpt-6.1-terra`):**
+   - Reset `sessionId = null` at the start of `initialize` (`:89`) and removed the `sessionId = null` reset in `catch` (`:106`) so a mid-initialization disconnect preserves the captured session ID for best-effort `DELETE` teardown on shutdown or recovery.
+   - Added `stopChild(child)` (`http-tool-proxy.test.js:8-10`) to await child exit in `finally` before closing fixture servers across all proxy tests, preventing port-reuse traffic leaks between sequential tests.
+   - Validated: `node --test machine/test/http-tool-proxy.test.js` — 16/16 pass across 5 consecutive runs.
