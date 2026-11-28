@@ -38,7 +38,7 @@ provider_usage = "|".join(PROVIDERS)
 USAGE = (f"usage: model.sh <light|standard|heavy|critical> | <{provider_usage}> <slot> | "
          f"effort <{provider_usage}> <slot> | family claude <slot> | "
          "set [<provider> <slot> | <tier>] <model|none> [effort] | "
-         "levels gemini <model> | agy-launch <model> [effort] | "
+         "levels gemini <model> | agy-refresh | agy-launch <model> [effort] | "
          "skip <model> | init | reset | check [--json] | show --json")
 
 
@@ -342,6 +342,8 @@ def agy_models(pin_path, mode="demand", model=None, effort=None, timeout=10):
     age = now - cached["at"] if cached else float("inf")
     complete = bool(cached) and all("efforts" in entry for entry in listed)
     refresh = not complete or (mode == "show" and not 0 <= age < AGY_TTL)
+    if mode == "refresh" and complete:
+        refresh = age > 3600
     if mode == "launch" and complete:
         normalized, requested = agy_normalize(model, effort, listed)
         entry = next ( (e for e in listed if e["value"] == normalized), None)
@@ -537,6 +539,9 @@ def main(root, argv):
         for level in LEVELS:
             if level in entry["efforts"]:
                 print(level)
+        return
+    if argv == ["agy-refresh"]:
+        agy_models(pin_path, "refresh")
         return
     if len(argv) in (2, 3) and argv[0] == "agy-launch" and (len(argv) == 2 or argv[2] in LEVELS):
         model, effort = argv[1], argv[2] if len(argv) == 3 else None

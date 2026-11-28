@@ -471,10 +471,7 @@ async function levelLines(hub, settings) {
     }
     return found;
   };
-  const before = await cells();
-  if (!before.length) return [];
-  // `agy-launch` is the command that refreshes a saved list over an hour old.
-  await modelCommand(hub, ['agy-launch', before[0].model]);
+  try { await modelCommand(hub, ['agy-refresh']); } catch {}
   const lines = [];
   for (const { slot, model } of await cells()) {
     const levels = await modelLevels(hub, tool.provider, model);
@@ -482,6 +479,7 @@ async function levelLines(hub, settings) {
     const effort = await read(['effort', tool.provider, slot]);
     lines.push(`${tool.label} ${slot[0].toUpperCase()}${slot.slice(1)}: ${model}, ${has}, set to ${effort || 'CLI default'}`);
   }
+  if (!lines.length) return [];
   lines.push(`On ${tool.label}, a tier's highest listed level is its highest effort: once a worker ran there, or the model takes no effort, the next step moves tier if a higher tier is allowed; otherwise report the task blocked.`);
   return lines;
 }

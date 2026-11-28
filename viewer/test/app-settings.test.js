@@ -586,6 +586,16 @@ test('a sub-lead start refreshes an Antigravity list over an hour old', async ()
   });
 });
 
+test('a sub-lead start reuses a recent list even when its first pinned model is unlisted', async () => {
+  const saved = [{ value: 'other-model', label: 'Other', efforts: [] }];
+  await withAgy({ age: 120, saved }, async (context) => {
+    await fs.writeFile(context.models, 'gemini.light = gemini-9\n');
+    const layers = await subLeadLayers(context, 'recent-unlisted');
+    assert.match(layers.sub, /Antigravity Light: gemini-9, levels unknown/);
+    assert.equal(await context.agyRuns(), 0);
+  });
+});
+
 test('an Antigravity scout is named by its member id only when the list has it', async () => {
   await withAgy({}, async (context) => {
     context.machine.status.agy = { installed: true, logged_in: true };
