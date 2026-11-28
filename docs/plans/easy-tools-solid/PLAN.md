@@ -80,12 +80,12 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - **Stdio folder servers:**
        - If the session is sandboxed Codex (`adapter.sandboxed?.(session)`) and `isWindowsExecutable(...)` is true (including `mcp-for-unity`), skip the server with a warning: `tool <name>: skipped in sandboxed Codex (Windows programs cannot run inside Codex's Linux sandbox; set Codex to unrestricted in Settings to use it)`.
        - Otherwise, if `isWindowsExecutable(...)` is true:
-         - Always set `windows: true` on the returned `extraServers` object (so even unwrapped Windows servers like `mcp-for-unity` still trigger Windows project sync and Codex `WSLENV` passthrough).
+         - Always set `windows: true` on the returned `extraServers` object (so even unwrapped Windows servers like `mcp-for-unity` still trigger Windows project sync and Codex `WSLENV` passthrough) and pass `--win` to `tool-launch.js`.
          - If `shouldWrapWindowsProxy(...)` is true, also set `wrapped: true` and pass `--win-ready-file <readyFile>` (and `--win-list-cache <cacheFile>` **only when `row.tool.keys.length === 0`**, keyed with `cacheKey(commonDir, row.name, { command: resolvedProgram, args: row.tool.start.slice(1) })` — keyed servers omit `--list-cache` so unredacted tool lists are never written to disk before `server-relay.js` sees them) to `tool-launch.js`; otherwise set `wrapped: false`.
        - Update `machine/lib/win-tool-proxy.js` so `--list-cache` is optional: when omitted, it never reads or writes a cache file AND it holds `tools/list` requests in stand-in mode (just like `tools/call`) until `--ready-file` settles (`ready` -> forward to the spawned Windows server; `failed` -> return JSON-RPC error), instead of replying with an empty `[]` list.
-       - Inside `tool-launch.js`, when `--win-ready-file` is set:
-         - For keyed servers, append each declared key name in `keys` to `env.WSLENV` (colon-delimited, without duplicates) so WSL passes those key env vars to the Windows process.
-         - Spawn `process.execPath` with `[PROXY, '--ready-file', winReadyFile, ...(winListCache ? ['--list-cache', winListCache] : []), '--name', tool.name, '--', program, ...tool.start.slice(1)]` (keeping `cwd: dir`, `env`, and keyed `server-relay.js` redaction intact).
+       - Inside `tool-launch.js`:
+         - Whenever `--win` or `--win-ready-file` is set on a keyed server, append each declared key name in `keys` to `env.WSLENV` (colon-delimited, without duplicates) so WSL passes those key env vars to both wrapped and unwrapped Windows processes.
+         - When `--win-ready-file` is set, spawn `process.execPath` with `[PROXY, '--ready-file', winReadyFile, ...(winListCache ? ['--list-cache', winListCache] : []), '--name', tool.name, '--', program, ...tool.start.slice(1)]` (keeping `cwd: dir`, `env`, and keyed `server-relay.js` redaction intact).
      - **Folder scripts:**
        - If the session is sandboxed Codex (`adapter.sandboxed?.(session)`), exclude every script where `isWindowsExecutable(...)` is true from `scriptRows` and add a warning per skipped script: `tool <name>: skipped in sandboxed Codex (Windows programs cannot run inside Codex's Linux sandbox; set Codex to unrestricted in Settings to use it)`.
        - Otherwise, mark each Windows-side script row (`row.windows = true`). If any script in `scriptRows` has `row.windows === true`, `bridgeEntry` passes `--win-ready-file <readyFile>` to `tool-bridge.js`, passes `--win` right after each Windows script's `--tool <dir>` (so `tool-bridge.js` uses the service's exact classification rather than re-running `isWindowsProgram` with a default mount), and sets `windows: true, wrapped: true` on the returned bridge `extraServers` object.
@@ -98,7 +98,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
    - In `connectors/codex/machine.js`, when `wsl` is true and an `extraServers` entry has `extra.windows === true`, ensure `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` are included in its `env_vars` passthrough (same as wrapped `.mcp.json` entries at `connectors/codex/machine.js:83-88`).
 4. **Tests:**
    - Extend `machine/test/win-tool-proxy.test.js` to cover optional `--list-cache` (holding `tools/list` until ready without writing a cache file) and `waitReady` timeout/failure behavior.
-   - Extend `machine/test/win-tool-service.test.js` to cover WSL folder tools: wrapped stdio server, unwrapped `mcp-for-unity` server setting `windows: true`, symlinked Windows executable detection, bridge `--win` + `WSLENV` key forwarding, and Windows-marked HTTP forwarding.
+   - Extend `machine/test/win-tool-service.test.js` to cover WSL folder tools: wrapped stdio server, unwrapped `mcp-for-unity` server (including keyed `WSLENV` forwarding and `windows: true`), symlinked Windows executable detection, bridge `--win` + `WSLENV` key forwarding, and Windows-marked HTTP forwarding.
 
 ---
 
@@ -153,16 +153,18 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - Enforces a maximum response/event buffer size of `LINE_LIMIT` (32 MiB, imported from `machine/lib/server-lines.js`): if exceeded, destroys the response stream and reports an oversized error (`{ oversized: true, prefixBuf }`).
      - Parses `202 Accepted` (no messages), `application/json` (single JSON message), and `text/event-stream` (full blank-line-delimited SSE events: buffers lines until `\n\n` or `\r\n\r\n`, joins all `data:` lines per event with `\n`, ignores `:` comments and non-`data` fields).
      - Exposes `deleteSession(url, headers, { timeoutMs: 1000 })` for best-effort bounded HTTP `DELETE` teardown when a `Mcp-Session-Id` was assigned (ignoring errors).
-     - Exposes `httpHandshake({ url, headers, timeoutMs, signal })` performing `initialize` -> capture `Mcp-Session-Id` & negotiated `protocolVersion` -> `notifications/initialized` -> `tools/list` (if `capabilities.tools` is present) -> best-effort `deleteSession` in `finally`.
+     - Exposes `httpHandshake({ url, headers, timeoutMs, signal })` performing `initialize` -> capture `Mcp-Session-Id` & negotiated `protocolVersion` -> `notifications/initialized` -> `tools/list` (if `capabilities.tools` is present) -> best-effort `deleteSession` on normal completion or timeout in `finally` (immediate signal termination in `tool-cli.js:111` stays unchanged).
    - For keyed HTTP folder servers (`tool.keys.length > 0`), `serverEntry` returns a stdio entry launching `process.execPath` with `[path.join(__dirname, 'http-tool-proxy.js'), '--project-dir', worktree, '--tool', row.dir, '--state-dir', stateDir, '--key-store', row.key_store, ...row.tool.keys.flatMap(k => ['--key', k]), ...(urlOverride ? ['--url-override', urlOverride] : [])]` (and `env: {}`).
    - `machine/lib/http-tool-proxy.js` behavior:
      - Validates `tool.json` at startup (same 32 KiB / regular-file / `validateToolJson` checks as `tool-launch.js`), confirms `kind === 'server'` and `transport === 'http'`, and checks that `--key` args match `tool.keys` (exiting non-zero with the same "its keys changed" message if not).
      - Rejects startup if any of `debuglog('child_process').enabled`, `debuglog('http').enabled`, `debuglog('https').enabled`, or `debuglog('net').enabled` is true.
      - Reads declared keys from `readSharedKeys(stateDir)` or `readKeyStore(stateDir, await projectIdentity(projectDir))` (failing with the standard missing-key error if any key is missing/unusable).
      - Uses `machine/lib/mcp-http.js` to POST each newline-delimited JSON-RPC message from `process.stdin` to `urlOverride || tool.url` with `${KEY}` placeholders substituted in memory.
+     - Gates ordinary requests on initialization: track the in-flight promise for `initialize` and `notifications/initialized` (`initGate`), and await `initGate` (and any in-flight `recovering` promise) before POSTing any ordinary request (`tools/list`, `tools/call`, etc.) so `notifications/initialized` always completes before discovery or tool calls are sent.
      - Remembers the client's original `initialize` request params. If a subsequent request that sent `sentSessionId` receives HTTP `404`:
-       - If the proxy's current `sessionId` has **already changed** (`sessionId !== sentSessionId`), skip recovery and retry the request once with the current `sessionId`.
-       - Otherwise coordinate recovery with a single shared in-flight recovery promise keyed to `sentSessionId` (`recovering = { expiredId: sentSessionId, promise }`): concurrent requests failing with 404 for the same `sentSessionId` await that one recovery; recovery clears `sessionId`, re-sends `initialize` + `notifications/initialized` once (updating `sessionId` and `protocolVersion`), and then each affected request retries once with the new session ID.
+       - First, if `recovering` is already in flight, await `recovering.promise` before checking `sessionId`.
+       - Next, if the proxy's current `sessionId` has already changed (`sessionId !== sentSessionId`), skip starting a new recovery and retry the request once with the current `sessionId`.
+       - Otherwise, start a single shared recovery (`recovering = { expiredId: sentSessionId, promise }`) that leaves `sessionId` unchanged until the replacement succeeds (omitting `Mcp-Session-Id` on the recovery `initialize` POST itself), re-sends `initialize` + `notifications/initialized`, updates `sessionId` and `protocolVersion` once both complete, clears `recovering`, and then lets each affected request retry once with the new session ID.
      - Redaction uses `const checker = createLineChecker({ name: tool.name, values })` from `machine/lib/server-lines.js:160`:
        - For each response JSON message (compacted to one JSON line `buf`), call `const res = checker.line(buf)`; for an oversized body/event (`LINE_LIMIT` exceeded), call `const res = checker.oversized(prefixBuf)`.
        - If `res.out` is non-null, write `res.out` + `\n` to `process.stdout`; if `res.toServer` is non-null, POST `res.toServer` back to the HTTP server (ignoring its body) without forwarding to `process.stdout`; if `res.note` is non-null, log `res.note` to `process.stderr` (never raw keys).
@@ -319,13 +321,28 @@ npm --prefix viewer run test:browser -- test/app-project-tools.spec.js
 
 ### Round 4 — 2026-11-28
 
-**Lanes:** (pending)
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:**
 - S2.1, S2.2 & S2.4: `resolveProgram` resolves symlinks (`fs.realpathSync`); set `windows: true` for unwrapped `mcp-for-unity` servers too; added explicit S2 test cases and validation commands.
 - S3.3: added explicit Python starter + `wc.js tool check` test cases in `viewer/test/wc-tool.test.js`.
 - S4.1, S4.3, S4.4 & S4.5: extracted shared `machine/lib/mcp-http.js`; fixed `checker.line()`/`checker.oversized()`; added `LINE_LIMIT` (32 MiB) cap; rejected reserved transport headers in `tool.json`; handled late-arriving 404 after recovery; added bounded best-effort `DELETE` teardown; added `machine/test/http-tool-proxy.test.js`.
 - S5.3 & Validation: added optional `base` root to `test-support/run-dir.js` for the real-Codex sandbox fixture outside `/tmp` and added `test-support/test/*.test.js` plus the new S2/S4 test files to Validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | S4.3 clears `sessionId` mid-recovery, letting a second 404 retry before replacement session is ready | upheld | S4.3 keeps `sessionId` unchanged until recovery completes, awaits `recovering` before comparing IDs, and holds new requests |
+| mechanics | major | S4.3 allows `tools/list` to POST while `notifications/initialized` is still in flight | upheld | S4.3 adds `initGate` so ordinary requests await `initialize` and `notifications/initialized` completion |
+| mechanics | major | S2.2 only adds declared keys to `WSLENV` when `--win-ready-file` is set, missing unwrapped keyed Windows servers | upheld | S2.2 passes `--win` to `tool-launch.js` for all Windows stdio servers and adds unwrapped keyed case to `win-tool-service.test.js` |
+| mechanics | minor | S4.4 best-effort `DELETE` in `finally` conflicts with immediate signal termination in `tool-cli.js:111` | upheld | S4.3/S4.4 narrowed to run best-effort `DELETE` on normal completion or timeout; immediate signal handler stays unchanged |
+
+### Round 5 — 2026-11-28
+
+**Lanes:** (pending)
+
+**Changed since Round 4:**
+- S2.2 & S2.4: pass `--win` to `tool-launch.js` for all Windows stdio servers (wrapped and unwrapped) so `WSLENV` key forwarding applies to both; added unwrapped keyed server test case in `win-tool-service.test.js`.
+- S4.3: added `initGate` to wait for `initialize` + `notifications/initialized` before ordinary requests; kept `sessionId` unchanged until 404 recovery succeeds, awaiting `recovering` before comparing IDs and holding new requests; narrowed `httpHandshake` best-effort `DELETE` to normal completion or timeout (keeping `tool-cli.js:111` signal handler unchanged).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
