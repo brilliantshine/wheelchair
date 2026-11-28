@@ -116,4 +116,4 @@ npm --prefix viewer run test:browser -- --grep 'effort'                         
 bash install/test/run.sh                       RESULT 217 passed, 0 failed
 ```
 
-Known residual: direct `model.sh` spawns in `viewer/test/app-balancer.test.js:35`, `:153` and `viewer/test/app-hub.test.js` `pinned()` do not set `WHEELCHAIR_AGY`; attempt 1's verifier saw no agy call from the Spec files other than G4's.
+Known residual (superseded by Remediation 2): viewer tests outside the Spec list still reached the PATH agy through in-process hubs; see REMEDIATION-2.md.
