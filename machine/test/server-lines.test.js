@@ -12,6 +12,13 @@ test('clean bytes and raw value replacement', () => {
   assert.equal(line('{"id":1,"result":"secret123secret123"}').out.toString(), '{"id":1,"result":"[key][key]"}');
   assert.equal(line('{"method":"note","params":"secret123"}').out.toString(), '{"method":"note","params":"[key]"}');
 });
+test('keys nested inside a non-string top-level id are held back', () => {
+  const input = Buffer.from('{"jsonrpc":"2.0","id":{"x":"secret123"},"result":{}}\n');
+  const result = checker.line(input);
+  assert.notEqual(result.out, input);
+  assert.equal(result.out?.includes(Buffer.from('[key]')) ?? false, false);
+  assert.match(result.note, /held back a reply that contained one of its keys/);
+});
 test('escaped key and names are held with exact reply id', () => {
   for (const id of ['9007199254740993', '"odd id"']) {
     for (const body of ['"secret123":1', '"result":"\\u0073ecret123"']) {
@@ -65,6 +72,14 @@ test('large clean replies and long escape runs stay bounded', () => {
     const after = process.memoryUsage();
     assert.ok(after.heapUsed + after.arrayBuffers - before.heapUsed - before.arrayBuffers < 200 * 1024 * 1024);
   }
+});
+test('many short escaped strings do not allocate the remainder of the line', () => {
+  const c = createLineChecker({ name: 'demo', values: ['abcdefghijklmnop', 'qrstuvwxyzABCDEF'] });
+  const items = Array.from({ length: 300000 }, (_, i) => JSON.stringify('line one\nline two ' + i)).join(',');
+  const input = Buffer.from('{"jsonrpc":"2.0","id":1,"result":{"items":[' + items + ']}}\n');
+  const start = Date.now(), result = c.line(input), elapsed = Date.now() - start;
+  assert.equal(result.out, input);
+  assert.ok(elapsed < 5000, `checked ${input.length} bytes in ${elapsed} ms`);
 });
 test('large repeated URLs and pretty printed content pass unchanged', () => {
   const values = ['a'.repeat(40), 'b'.repeat(40), 'c'.repeat(40), 'd'.repeat(8), 'e'.repeat(8), 'f'.repeat(8)];
