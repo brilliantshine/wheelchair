@@ -210,3 +210,18 @@ test('no banner while an image decodes against an unchanged poll, nor for an unr
   await expect(page.locator('.stale-banner')).toHaveCount(0);
   await expect(page.locator('.background-editor').getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
 });
+
+test('an outside visibility save keeps focus on Remove background', async ({ page }) => {
+  await open(page); await choose(page); await save(page);
+  const remove = page.locator('.background-editor').getByRole('button', { name: 'Remove background' });
+  await expect(page.getByLabel('Visibility')).toHaveValue('35');
+  await remove.focus();
+  await page.evaluate(async () => {
+    const m = window.wcBackground.current().metadata;
+    const response = await fetch('/wheelchair/api/settings/background', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision: m.revision, image_id: m.image_id, opacity: 70 }) });
+    if (!response.ok) throw new Error(`${response.status}`);
+    await window.wcBackground.refresh();
+  });
+  await expect(page.getByLabel('Visibility')).toHaveValue('70');
+  await expect(remove).toBeFocused();
+});
