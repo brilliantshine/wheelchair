@@ -1,7 +1,7 @@
 ---
 slug: settings-live-refresh
 status: confirmed
-mode: thorough
+mode: two-part
 created: 2026-11-28
 ---
 
