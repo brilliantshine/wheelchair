@@ -1402,7 +1402,7 @@ test.describe('Antigravity levels', () => {
     await expect.poll(() => saved(page)).toEqual({ model: 'gemini-3.8-flash', effort: 'low' });
   });
 
-  test('effort save redraws the model cells from a fresh read of the settings', async ({ page }) => {
+  test('effort save redraws the saved cell from a fresh read of the settings', async ({ page }) => {
     await open(page, 'gemini-3.8-flash @low');
     await expect(model(page).locator('option[value="gemini-new"]')).toHaveCount(0);
     await page.route('**/api/settings', async (route) => {
@@ -1413,8 +1413,52 @@ test.describe('Antigravity levels', () => {
     });
     await effort(page).selectOption('high');
     await expect(model(page).locator('option[value="gemini-new"]')).toHaveCount(1);
-    await expect(page.getByLabel('Antigravity lead model', { exact: true }).locator('option[value="gemini-new"]')).toHaveCount(1);
     await expect(page.getByText('Saved; the list could not be refreshed')).toHaveCount(0);
+    // Another cell is left as drawn, and takes the new list the next time it is drawn.
+    const lead = page.getByLabel('Antigravity lead model', { exact: true });
+    await expect(lead.locator('option[value="gemini-new"]')).toHaveCount(0);
+    await page.getByLabel('Antigravity lead effort', { exact: true }).selectOption('low');
+    await expect(lead.locator('option[value="gemini-new"]')).toHaveCount(1);
+  });
+
+  test('effort save leaves the drafts typed in other cells, in both blocks', async ({ page }) => {
+    await open(page, 'gemini-3.8-flash @low');
+    // One draft in the saved cell's own block and one in the other block.
+    const drafts = [['Claude heavy model', 'claude-draft-tier'], ['Claude lead model', 'claude-draft-lead']];
+    for (const [label, text] of drafts) {
+      await page.getByLabel(label, { exact: true }).selectOption('__other');
+      await page.getByLabel(`${label}, other`).fill(text);
+    }
+    await page.route('**/api/settings', async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.model_options.gemini.push({ value: 'gemini-new', label: 'Newly listed', efforts: ['low'] });
+      await route.fulfill({ response, json: body });
+    });
+    await effort(page).selectOption('high');
+    await expect(model(page).locator('option[value="gemini-new"]')).toHaveCount(1);
+    for (const [label, text] of drafts) {
+      await expect(page.getByLabel(`${label}, other`)).toHaveValue(text);
+      await expect(page.getByLabel(label, { exact: true })).toHaveValue('__other');
+    }
+  });
+
+  test('effort saves made while the list is still being re-read each get the fresh list', async ({ page }) => {
+    await open(page, 'gemini-3.8-flash @low');
+    const held = [];
+    await page.route('**/api/settings', (route) => { held.push(route); });
+    await effort(page).selectOption('high');
+    await expect.poll(() => held.length).toBe(1);
+    await page.getByLabel('Antigravity lead effort', { exact: true }).selectOption('low');
+    await expect.poll(() => held.length).toBe(2);
+    for (const route of held) {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.model_options.gemini.push({ value: 'gemini-new', label: 'Newly listed', efforts: ['low'] });
+      await route.fulfill({ response, json: body });
+    }
+    await expect(model(page).locator('option[value="gemini-new"]')).toHaveCount(1);
+    await expect(page.getByLabel('Antigravity lead model', { exact: true }).locator('option[value="gemini-new"]')).toHaveCount(1);
   });
 
   test('effort stays saved, and says so, when the list cannot be re-read after a save', async ({ page }) => {

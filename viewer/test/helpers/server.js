@@ -72,6 +72,10 @@ async function startServer({ open, cacheRoot, stateDir, port, env, cwd = ROOT, n
   const chosenStateDir = stateDir || await makeDir('server-state-');
   const graphDir = path.join(root, 'graphs');
   await fs.mkdir(graphDir, { recursive: true });
+  // No test server runs the real `agy` or reads the real ~/.wheelchair, unless its caller says so.
+  const childEnv = { ...process.env, ...env };
+  if (env?.WHEELCHAIR_AGY === undefined) childEnv.WHEELCHAIR_AGY = '';
+  if (env?.WHEELCHAIR_MODELS === undefined) childEnv.WHEELCHAIR_MODELS = path.join(chosenStateDir, 'models');
   const graphPath = open || path.join(graphDir, 'canonical.json');
   let chosenPort; let child; let token;
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -80,7 +84,7 @@ async function startServer({ open, cacheRoot, stateDir, port, env, cwd = ROOT, n
     args.push('--state-dir', chosenStateDir);
     child = spawn(process.execPath, args, {
       cwd,
-      env: { ...process.env, ...env },
+      env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     trackChild(child);
