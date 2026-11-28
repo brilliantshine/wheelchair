@@ -34,6 +34,7 @@ None.
 | 9 | Default persisted theme for existing and fresh installs is `{ mode: "dark", preset: "default", accent: null, revision: 0 }`. | Preserves Wheelchair's exact current dark slate + `#5b9dd9` blue look on upgrade with zero visual regression until the user changes it. | defaulted |
 | 10 | Apply the active accent color to the Wheelchair loading spinner's wheel/caster highlight (and match its wheelchair outline/spokes to the active light/dark ink and idle colors). | Collin requested that the loading spinner also use the chosen accent color. | user |
 | 11 | Choosing a preset preserves an existing custom accent override until the user clicks "Reset to preset" or "Reset to default", and "Reset to default" resets preset and accent (`preset: "default", accent: null`) without overwriting the user's color mode. | Keeps accent overrides non-destructive while browsing presets and avoids unexpectedly switching a `system` user back to `dark`. | review-round-1 |
+| 12 | Keep full scope (including light-mode graph viewer and contrast fixes) and continue review. | Collin confirmed keeping the full scope after discussing Round 3's contrast and graph-viewer findings. | user |
 
 ## Spec
 
@@ -337,6 +338,19 @@ Targeted tests (run by workers and verifiers; full suite runs before push via `t
 | mechanics | blocking | Light-mode `--good: #1f8a54` with `--good-ink: #ffffff` is 4.35:1 (< 4.5:1) | upheld | Darkened light-mode `--good` to `#197a48` (5.29:1 with `#ffffff`) and added `--good-ink` on `--good` to §7.1 |
 | mechanics | minor | `spinnerAccent` check omitted `--panel-3` (desktop aside surface) | upheld | Extended `spinnerAccent` >= 3.0:1 check to `--bg`, `--panel`, `--panel-2`, `--panel-3` and added `#8f8f8f` to §7.1 |
 | mechanics | minor | `pagehide` discards visit, but bfcache `pageshow` can leave stale DOM values/disabled controls in Theme block | upheld | Added `pageshow` repaint from saved `wcTheme.current().metadata` in Spec §4 |
+
+### Round 4 — 2026-11-28
+
+**Lanes:** pending.
+
+**Changed since Round 3:**
+- Darkened light-mode `--good` to `#197a48` (5.29:1 with `#ffffff`) and `--warn` to `#7c5000` (>= 5.3:1 on `--accent-soft` even for black accent), and added status-on-surface contrast tests to §7.1.
+- Extended `spinnerAccent` `>= 3.0:1` non-text contrast check to `--bg`, `--panel`, `--panel-2`, and `--panel-3` (desktop aside surface), adding `#8f8f8f` to §7.1.
+- Updated `viewer/index.html` in Spec §5.2: re-tokenized `#controls button:hover:not(:disabled)` to `--panel-2`/`--line-2`/`--ink`, mapped `--success: var(--good-text)` and `--danger: var(--bad-text)`, tokenized error/notice banners (`--bad-*`/`--warn-*`), and specified unambiguous `fill: var(--warn)` for `.node .node-fork` and `.detail .detail-inferred`.
+- Added `pageshow` repaint from saved `wcTheme.current().metadata` in `theme-editor.js` (Spec §4) so bfcache Back restores clean form state.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
