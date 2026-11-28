@@ -772,3 +772,88 @@ test('keyless launcher still spawns with inherited stderr', { timeout: 10000 }, 
   const closed = once(child, 'close'); await new Promise(resolve => setTimeout(resolve, 1200)); child.stdin.end(); await closed;
   assert.deepEqual(JSON.parse(await fs.readFile(record, 'utf8')), ['pipe','pipe','inherit']);
 });
+
+// Exercise detection through the launcher, recording the exact bytes delivered in both directions.
+async function detectionLaunch(t, { keys = ['secretvalue123'], lines, injected = 0, timeout = 20000 }) {
+  const f = await keyedLauncherFixture(t);
+  const state = path.join(path.dirname(path.dirname(path.dirname(f.dir))), 'state');
+  f.tool.keys = keys.map((_, i) => `KEY${i}`);
+  await fs.writeFile(f.file, JSON.stringify(f.tool));
+  await require('../lib/shared-keys').writeSharedKeys(state, { set: Object.fromEntries(f.tool.keys.map((name, i) => [name, keys[i]])) });
+  const payload = path.join(f.dir, 'payload'), received = path.join(f.dir, 'received');
+  await fs.writeFile(payload, lines);
+  await fs.writeFile(path.join(f.dir, 'tool.js'), `const fs=require('fs'); let input=''; let started=false; process.stdin.on('data',b=>{ input+=b; fs.writeFileSync(${JSON.stringify(received)},input); if(!started){started=true; process.stdout.write(fs.readFileSync(${JSON.stringify(payload)}),()=>{if(!${injected}) setTimeout(()=>process.exit(0),1200)}); } if(input.split('\\n').length-1 >= ${injected + 1} && ${injected}) process.exit(0); });`);
+  const args = f.args.slice(0, -2); for (const name of f.tool.keys) args.push('--key', name);
+  const child = f.run({}, args), c = collectLaunch(child), start = Date.now();
+  child.stdin.write('client seed\n');
+  let timer; try {
+    const result = await Promise.race([c.closed, new Promise((_, reject) => { timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('detection launcher deadline')); }, timeout); })]);
+    assert.equal(result[0], 0);
+  } finally { clearTimeout(timer); child.stdin.destroy(); }
+  return { stdout: Buffer.concat(c.out).toString(), stderr: Buffer.concat(c.err).toString(), stdin: await fs.readFile(received, 'utf8'), elapsed: Date.now() - start };
+}
+const heldNote = (kind, reason = 'contained one of its keys') => `tool server: held back a ${kind} that ${reason}\n`;
+const heldReply = (id, reason = 'contained one of its keys') => `{"jsonrpc":"2.0","id":${id},"error":{"code":-32603,"message":"tool server: its reply ${reason} and was held back"}}\n`;
+const heldRequest = (id, reason = 'contained one of this tool\'s keys') => `{"jsonrpc":"2.0","id":${id},"error":{"code":-32603,"message":"held back by wheelchair: the request ${reason}"}}\n`;
+
+test('launcher preserves clean bytes and handles keys in replies and notifications', { timeout: 20000 }, async t => {
+  const lines = ' { "id" : 9007199254740993, "result":1.0 }\r\n' +
+    '{"id":1,"result":"secretvalue123"}\n' +
+    '{"id":2,"result":"\\u0073ecretvalue123"}\n' +
+    '{"id":9007199254740993,"result":{"secretvalue123":1}}\n' +
+    '{"id":"odd \\u0069d","result":{"secretvalue123":1}}\n' +
+    '{"id":"secretvalue123","result":0}\n' +
+    '{"method":"note","params":"secretvalue123"}\n' +
+    '{"method":"note","secretvalue123":1}\n' +
+    '{"method":"call","id":4,"params":"secretvalue123"}\n';
+  const r = await detectionLaunch(t, { lines });
+  assert.equal(r.stdout, ' { "id" : 9007199254740993, "result":1.0 }\r\n' + '{"id":1,"result":"[key]"}\n' + heldReply('2') + heldReply('9007199254740993') + heldReply('"odd \\u0069d"') + '{"method":"note","params":"[key]"}\n' + '{"method":"call","id":4,"params":"[key]"}\n');
+  assert.equal(r.stdin, 'client seed\n');
+  assert.equal(r.stderr, heldNote('reply').repeat(4) + heldNote('message'));
+});
+
+test('launcher holds escaped slashes and server methods and sends the request error to the server', { timeout: 20000 }, async t => {
+  const lines = '{"id":5,"result":"roots\\/list"}\n{"id":7,"method":"roots/list"}\n';
+  const r = await detectionLaunch(t, { keys: ['roots/list'], lines, injected: 1 });
+  assert.equal(r.stdout, heldReply('5'));
+  assert.equal(r.stdin, 'client seed\n' + heldRequest('7'));
+  assert.equal(r.stderr, heldNote('reply') + heldNote('request'));
+});
+
+test('launcher holds escaped-only and escape-overlapping matches', { timeout: 20000 }, async t => {
+  const r = await detectionLaunch(t, { keys: ['1secret123', 'ABCDEFGH'], lines: '{"id":1,"result":"\\u0041BCDEFGH"}\n{"id":2,"result":"\\u0031secret123"}\n' });
+  assert.equal(r.stdout, heldReply('1') + heldReply('2')); assert.equal(r.stdin, 'client seed\n'); assert.equal(r.stderr, heldNote('reply').repeat(2));
+});
+
+test('launcher retains matches in early and late detection batches', { timeout: 20000 }, async t => {
+  const filler = '%20xxxxxxxx '.repeat(90000);
+  const escaped = [...'secretvalue123'].map(c => '%' + c.charCodeAt(0).toString(16)).join('');
+  const r = await detectionLaunch(t, { lines: `{"id":1,"result":"${escaped} ${filler}"}\n{"id":2,"result":"${filler}${escaped}"}\n` });
+  assert.equal(r.stdout, heldReply('1') + heldReply('2')); assert.equal(r.stdin, 'client seed\n'); assert.equal(r.stderr, heldNote('reply').repeat(2));
+});
+
+test('launcher handles work exhaustion with clean and unchecked ids and requests', { timeout: 60000 }, async t => {
+  const stretch = ('%41' + 'A'.repeat(38) + ' ').repeat(780000), key = 'A'.repeat(40);
+  const reason = 'could not be checked for keys';
+  const largeLine = (prefix, suffix) => prefix + stretch + ' '.repeat(32 * 1024 * 1024 - Buffer.byteLength(prefix + stretch + suffix)) + suffix;
+  for (const [line, output, note, injected, input] of [
+    [largeLine('{"id":9007199254740993,"result":"', '"}\n'), heldReply('9007199254740993', reason), heldNote('reply', reason), 0, ''],
+    [largeLine('{"id":"', '","result":1}\n'), '', heldNote('reply', reason), 0, ''],
+    [largeLine('{"id":3,"method":"test","params":"', '"}\n'), '', heldNote('request', reason), 1, heldRequest('3', reason)],
+  ]) {
+    const r = await detectionLaunch(t, { keys: [key], lines: line, injected, timeout: 15000 });
+    assert(r.elapsed < 15000, `elapsed ${r.elapsed}`); assert.equal(r.stdout, output); assert.equal(r.stdin, 'client seed\n' + input); assert.equal(r.stderr, note);
+  }
+});
+
+test('launcher reports an oversized server request to that server', { timeout: 20000 }, async t => {
+  const reason = 'was over 32 MiB';
+  const r = await detectionLaunch(t, { lines: '{"id":8,"method":"test","params":"' + 'x'.repeat(33 * 1024 * 1024) + '"}\n', injected: 1 });
+  assert.equal(r.stdout, ''); assert.equal(r.stdin, 'client seed\n' + heldRequest('8', reason)); assert.equal(r.stderr, heldNote('request', reason));
+});
+
+test('launcher passes an 8 MiB base64 reply with absent keys within five seconds', { timeout: 10000 }, async t => {
+  const lines = '{"id":1,"result":"' + 'A'.repeat(4 * 1024 * 1024) + '\\/' + 'A'.repeat(4 * 1024 * 1024) + '"}\n';
+  const r = await detectionLaunch(t, { keys: ['e3' + 'x'.repeat(38), 'n6' + 'y'.repeat(38)], lines, timeout: 5000 });
+  assert(r.elapsed < 5000, `elapsed ${r.elapsed}`); assert.equal(r.stdout, lines); assert.equal(r.stdin, 'client seed\n'); assert.equal(r.stderr, '');
+});
