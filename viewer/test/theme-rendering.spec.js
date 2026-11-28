@@ -324,6 +324,26 @@ test('the timeline connector stays visible with a white accent in light mode', a
   expect(cardRatio, 'against the card surface').toBeGreaterThanOrEqual(3);
 });
 
+test('a hovered recommended answer keeps a visible border with a white accent in light mode', async ({ page }) => {
+  const { made } = await seedThread(page);
+  const saved = await setTheme(page, { accent: '#ffffff' });
+  await open(page, `/app/thread?id=${made.id}`, saved);
+  const option = page.locator('.opt.lean').first();
+  await expect(option).toBeEnabled();
+  const surfaces = [await cssVar(page, '--panel'), await cssVar(page, '--accent-soft')];
+  // Hover and read in one poll: a re-render can replace the button and drop the hover.
+  await expect.poll(async () => {
+    await option.hover();
+    return option.evaluate((n, [panel, soft]) => {
+      if (!n.isConnected || !n.matches(':hover')) return null;
+      const { parse, over, ratio } = window.__color;
+      const base = parse(panel);
+      const border = parse(getComputedStyle(n).borderTopColor);
+      return Math.min(...[base, over(parse(soft), base)].map((under) => ratio(over(border, under), under)));
+    }, surfaces);
+  }).toBeGreaterThanOrEqual(3);
+});
+
 test('the spinner takes the visible accent', async ({ page }) => {
   const { made } = await seedThread(page);
   const saved = await setTheme(page, { accent: '#ffffff' });
