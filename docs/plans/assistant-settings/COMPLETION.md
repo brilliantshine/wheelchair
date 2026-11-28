@@ -2,7 +2,10 @@
 slug: assistant-settings
 date: 2026-11-28
 implemented-by: standard / gpt-6.1-terra (T1, T2, T3)
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5
+    checks: standard / gpt-6.1-terra
 ---
 
 # Completion Report — Let the personal assistant change settings
@@ -80,6 +83,19 @@ $ node --test viewer/test/assistant.test.js viewer/test/app-settings.test.js vie
 $ npm --prefix viewer run test:browser -- app-assistant-popup.spec.js
 Running 44 tests using 2 workers
   44 passed (1.1m)
+```
+
+### Full test run (`bash test-support/full-run.sh`)
+```text
+commit 5d70a45a10a9d265966ada4c074f8d7a638ff406
+suite viewer-browser exit 0 seconds 447
+suite viewer-node exit 0 seconds 133
+suite machine exit 0 seconds 133
+suite test-support exit 0 seconds 27
+suite sensitivity exit 0 seconds 5
+suite codex exit 0 seconds 22
+suite install exit 0 seconds 44
+suite sudo-helper exit 0 seconds 10
 ```
 
 ## Known gaps / residual risks
