@@ -69,9 +69,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 **Required behavior:**
 1. **Detection (`machine/lib/folder-tools.js`, `machine/service.js`):**
-   - Add a helper `resolveProgram(argv0, toolDir, pathText)` in `machine/lib/folder-tools.js` that returns the first existing executable path (matching `findProgram` at `machine/lib/folder-tools.js:37-39`: `path.resolve(toolDir, argv0)` when `argv0` includes `/`, otherwise searching `pathText` entries), or `null` if none exists.
+   - Add a helper `resolveProgram(argv0, toolDir, pathText)` in `machine/lib/folder-tools.js` that finds the first existing executable path (matching `findProgram` at `machine/lib/folder-tools.js:37-39`: `path.resolve(toolDir, argv0)` when `argv0` includes `/`, otherwise searching `pathText` entries) and resolves symlinks via `fs.realpathSync` (falling back to the candidate path on error), returning `null` if none exists.
    - Classify Windows executability separately from proxy wrapping:
-     - `isWindowsExecutable(row, pathText, mount)` is true for a folder `script` or stdio `server` on WSL when `isWindowsProgram(resolveProgram(argv0, row.dir, pathText) || argv0, mount)` is true (covering both explicit paths and `PATH`-resolved `.exe` programs, including `mcp-for-unity`).
+     - `isWindowsExecutable(row, pathText, mount)` is true for a folder `script` or stdio `server` on WSL when `isWindowsProgram(resolveProgram(argv0, row.dir, pathText) || argv0, mount)` is true (covering explicit paths, `PATH`-resolved `.exe` programs, and symlinks to Windows executables, including `mcp-for-unity`).
      - `shouldWrapWindowsProxy(row, pathText, mount)` is true for a stdio `server` when `isWindowsExecutable(...)` is true AND `!row.tool.start.slice(1).includes('mcp-for-unity')`.
    - An HTTP folder server (`kind: 'server'` with `url`) is Windows-side on WSL when `tool.windows === true` (see S4).
 2. **Readiness & proxy wiring (`machine/service.js`, `machine/lib/folder-tools.js`, `machine/lib/tool-launch.js`, `machine/lib/tool-bridge.js`, `machine/lib/win-tool-proxy.js`):**
@@ -79,7 +79,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - Compute `readyFile = path.join(this.stateDir, 'win-ready', name)` and `commonDir` (same git-common-dir lookup as `.mcp.json` at `machine/service.js:1043-1047`, even when `.mcp.json` is absent).
      - **Stdio folder servers:**
        - If the session is sandboxed Codex (`adapter.sandboxed?.(session)`) and `isWindowsExecutable(...)` is true (including `mcp-for-unity`), skip the server with a warning: `tool <name>: skipped in sandboxed Codex (Windows programs cannot run inside Codex's Linux sandbox; set Codex to unrestricted in Settings to use it)`.
-       - Otherwise, if `shouldWrapWindowsProxy(...)` is true, `serverEntry` passes `--win-ready-file <readyFile>` (and `--win-list-cache <cacheFile>` **only when `row.tool.keys.length === 0`**, keyed with `cacheKey(commonDir, row.name, { command: resolvedProgram, args: row.tool.start.slice(1) })` — keyed servers omit `--list-cache` so unredacted tool lists are never written to disk before `server-relay.js` sees them) to `tool-launch.js`, and sets `windows: true, wrapped: true` on the returned `extraServers` object.
+       - Otherwise, if `isWindowsExecutable(...)` is true:
+         - Always set `windows: true` on the returned `extraServers` object (so even unwrapped Windows servers like `mcp-for-unity` still trigger Windows project sync and Codex `WSLENV` passthrough).
+         - If `shouldWrapWindowsProxy(...)` is true, also set `wrapped: true` and pass `--win-ready-file <readyFile>` (and `--win-list-cache <cacheFile>` **only when `row.tool.keys.length === 0`**, keyed with `cacheKey(commonDir, row.name, { command: resolvedProgram, args: row.tool.start.slice(1) })` — keyed servers omit `--list-cache` so unredacted tool lists are never written to disk before `server-relay.js` sees them) to `tool-launch.js`; otherwise set `wrapped: false`.
        - Update `machine/lib/win-tool-proxy.js` so `--list-cache` is optional: when omitted, it never reads or writes a cache file AND it holds `tools/list` requests in stand-in mode (just like `tools/call`) until `--ready-file` settles (`ready` -> forward to the spawned Windows server; `failed` -> return JSON-RPC error), instead of replying with an empty `[]` list.
        - Inside `tool-launch.js`, when `--win-ready-file` is set:
          - For keyed servers, append each declared key name in `keys` to `env.WSLENV` (colon-delimited, without duplicates) so WSL passes those key env vars to the Windows process.
@@ -94,6 +96,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 3. **Connector `loaded` & Codex `WSLENV` propagation:**
    - Update `connectors/claude/machine.js:86`, `connectors/codex/machine.js` (where `loaded` is built), and `connectors/agy/machine.js` so `extraServers` items propagate `windows: !!extra.windows` and `wrapped: !!extra.wrapped` into `built.loaded`, triggering Windows project sync and ready-file creation in `machine/service.js:1072-1073`.
    - In `connectors/codex/machine.js`, when `wsl` is true and an `extraServers` entry has `extra.windows === true`, ensure `WHEELCHAIR_WINDOWS_PROJECT` and `WSLENV` are included in its `env_vars` passthrough (same as wrapped `.mcp.json` entries at `connectors/codex/machine.js:83-88`).
+4. **Tests:**
+   - Extend `machine/test/win-tool-proxy.test.js` to cover optional `--list-cache` (holding `tools/list` until ready without writing a cache file) and `waitReady` timeout/failure behavior.
+   - Extend `machine/test/win-tool-service.test.js` to cover WSL folder tools: wrapped stdio server, unwrapped `mcp-for-unity` server setting `windows: true`, symlinked Windows executable detection, bridge `--win` + `WSLENV` key forwarding, and Windows-marked HTTP forwarding.
 
 ---
 
@@ -120,8 +125,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
        ```
      - `server.py`: executable (`0o755`), Python 3 standard library only (`sys`, `json`), implementing newline-delimited JSON-RPC 2.0 matching `machine/lib/mcp-stdio.js` (`initialize` returning `protocolVersion`, `capabilities: {"tools": {}}`, `serverInfo: {"name": "__NAME__", "version": "1"}`; `ping` returning `{}`; ignoring notifications without `id`; `tools/list` returning one `echo` tool with `{ text: string }` inputSchema; `tools/call` for `echo` returning `{"content": [{"type": "text", "text": ...}], "isError": false}`; `-32601` for unknown methods and `-32603` for errors), flushing stdout after every line.
    - Do NOT copy `mcp-stdio.js` when `--lang python` is used.
-3. **Documentation (`protocol/tools.md`):**
-   - Document `--lang python` alongside the default Node.js server starter and note that `python3` must be on `PATH`.
+3. **Tests & documentation (`viewer/test/wc-tool.test.js`, `protocol/tools.md`):**
+   - Extend `viewer/test/wc-tool.test.js` to test `wc.js tool new <name> --kind server --lang python` (verifying `server.py` and `tool.json` are created without `mcp-stdio.js`, and running `wc.js tool check <name>` to verify the Python starter passes handshake when `python3` is available), `--lang node`, `--lang` with `--kind script` error, and unknown `--lang` error.
+   - Update `protocol/tools.md` to document `--lang python` alongside the default Node.js server starter and note that `python3` must be on `PATH`.
 
 ---
 
@@ -132,7 +138,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
    - For `kind: "server"`, require **exactly one** of `start` (non-empty array of non-empty strings) or `url` (string parsing as an `http:` or `https:` URL with no whitespace or control characters). If both are present, fail with `tool.json cannot have both "start" and "url"`; if neither is present, fail with `tool.json is missing "start"` (keeping existing test expectations intact).
    - When `url` is present:
      - Record `tool.url` and `tool.transport = 'http'` (`start` servers get `tool.transport = 'stdio'`).
-     - Optional `headers`: plain object (not array/null), at most 20 entries; every key is a non-empty valid HTTP header token (`/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/`) with no case-insensitive duplicates; every value is a non-empty string with no `\r` or `\n`.
+     - Optional `headers`: plain object (not array/null), at most 20 entries; every key is a non-empty valid HTTP header token (`/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/`) with no case-insensitive duplicates; every value is a non-empty string with no `\r` or `\n`. Reject reserved transport headers `accept`, `content-type`, `mcp-protocol-version`, and `mcp-session-id` (case-insensitively) with `tool.json has an invalid "headers"`.
      - Placeholder check on `headers` values: every `${...}` occurrence must match `\$\{([A-Za-z_][A-Za-z0-9_]*)\}` (embedded placeholders like `Bearer ${API_KEY}` are allowed). Every referenced key name must appear in `tool.keys`; any unclosed `${`, invalid placeholder syntax, or undeclared key fails validation with `tool.json has an invalid "headers"`.
      - Optional `windows`: boolean (`true` or `false`). If `true`, `windowsTarget({ type: 'http', url: tool.url })` must succeed (localhost HTTP URL); otherwise fail validation with `tool.json has an invalid "windows"`.
    - Reject `headers` or `windows` on `kind: "script"` or on `start` servers.
@@ -140,29 +146,33 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 2. **Unkeyed HTTP folder servers (`tool.keys.length === 0`):**
    - `serverEntry` returns `{ name: row.name, folder: 'server', windows: !!windowsUrl, wrapped: false, entry: { type: 'http', url: effectiveUrl, ...(tool.headers ? { headers: tool.headers } : {}) } }`.
    - Connectors (`claude`, `codex`, `agy`) already handle `{ type: 'http', url, headers }` entries with literal headers.
-3. **Keyed HTTP folder servers (`tool.keys.length > 0`) — local stdio-to-HTTP proxy (`machine/lib/http-tool-proxy.js`):**
-   - `serverEntry` returns a stdio entry launching `process.execPath` with `[path.join(__dirname, 'http-tool-proxy.js'), '--project-dir', worktree, '--tool', row.dir, '--state-dir', stateDir, '--key-store', row.key_store, ...row.tool.keys.flatMap(k => ['--key', k]), ...(urlOverride ? ['--url-override', urlOverride] : [])]` (and `env: {}`).
+3. **Shared HTTP MCP client (`machine/lib/mcp-http.js`) & keyed proxy (`machine/lib/http-tool-proxy.js`):**
+   - Extract shared HTTP MCP transport logic into `machine/lib/mcp-http.js` (used by both `http-tool-proxy.js` and `viewer/app/tool-cli.js`, matching `machine/lib/mcp-stdio.js`):
+     - Sends HTTP `POST` via Node's `http`/`https` without following redirects (any `3xx` status returns an error `HTTP server returned redirect (<status>); redirects are not followed` so headers are never forwarded to another origin).
+     - Attaches `Content-Type: application/json`, `Accept: application/json, text/event-stream`, plus `MCP-Protocol-Version` and `Mcp-Session-Id` when set.
+     - Enforces a maximum response/event buffer size of `LINE_LIMIT` (32 MiB, imported from `machine/lib/server-lines.js`): if exceeded, destroys the response stream and reports an oversized error (`{ oversized: true, prefixBuf }`).
+     - Parses `202 Accepted` (no messages), `application/json` (single JSON message), and `text/event-stream` (full blank-line-delimited SSE events: buffers lines until `\n\n` or `\r\n\r\n`, joins all `data:` lines per event with `\n`, ignores `:` comments and non-`data` fields).
+     - Exposes `deleteSession(url, headers, { timeoutMs: 1000 })` for best-effort bounded HTTP `DELETE` teardown when a `Mcp-Session-Id` was assigned (ignoring errors).
+     - Exposes `httpHandshake({ url, headers, timeoutMs, signal })` performing `initialize` -> capture `Mcp-Session-Id` & negotiated `protocolVersion` -> `notifications/initialized` -> `tools/list` (if `capabilities.tools` is present) -> best-effort `deleteSession` in `finally`.
+   - For keyed HTTP folder servers (`tool.keys.length > 0`), `serverEntry` returns a stdio entry launching `process.execPath` with `[path.join(__dirname, 'http-tool-proxy.js'), '--project-dir', worktree, '--tool', row.dir, '--state-dir', stateDir, '--key-store', row.key_store, ...row.tool.keys.flatMap(k => ['--key', k]), ...(urlOverride ? ['--url-override', urlOverride] : [])]` (and `env: {}`).
    - `machine/lib/http-tool-proxy.js` behavior:
      - Validates `tool.json` at startup (same 32 KiB / regular-file / `validateToolJson` checks as `tool-launch.js`), confirms `kind === 'server'` and `transport === 'http'`, and checks that `--key` args match `tool.keys` (exiting non-zero with the same "its keys changed" message if not).
-     - Rejects startup if any of `debuglog('child_process').enabled`, `debuglog('http').enabled`, `debuglog('https').enabled`, or `debuglog('net').enabled` is true (so Node debug logging cannot leak headers or keys).
+     - Rejects startup if any of `debuglog('child_process').enabled`, `debuglog('http').enabled`, `debuglog('https').enabled`, or `debuglog('net').enabled` is true.
      - Reads declared keys from `readSharedKeys(stateDir)` or `readKeyStore(stateDir, await projectIdentity(projectDir))` (failing with the standard missing-key error if any key is missing/unusable).
-     - Reads newline-delimited JSON-RPC messages from `process.stdin`, substitutes `${KEY}` placeholders in `tool.headers` with loaded key values (in memory only, never written to disk or stderr), and POSTs each message to `urlOverride || tool.url` using Node's `http`/`https` without following redirects (any `3xx` status returns a JSON-RPC error `HTTP server returned redirect (<status>); redirects are not followed for keyed tools` so headers are never sent to another origin).
-     - Sends headers `Content-Type: application/json`, `Accept: application/json, text/event-stream`, plus `MCP-Protocol-Version` (once negotiated from `initialize`, falling back to `'2025-06-18'`) and `Mcp-Session-Id` (once returned by the server).
-     - Remembers the client's original `initialize` request params. If a subsequent request with an active `Mcp-Session-Id` (`expiredId`) receives HTTP `404`, coordinate recovery with a single shared in-flight recovery promise keyed to `expiredId` (`recovering = { expiredId, promise }`): concurrent requests failing with 404 for the same `expiredId` await that one recovery instead of starting duplicate `initialize` calls; recovery clears `Mcp-Session-Id`, re-sends `initialize` + `notifications/initialized` once (updating `Mcp-Session-Id` and `MCP-Protocol-Version`), and then each affected request retries once with the new session ID.
-     - Parses responses:
-       - `202 Accepted` (for notifications): no stdout reply.
-       - `application/json`: parses JSON body, compacts to one JSON line, and checks it with `checker.check(Buffer.from(line))`.
-       - `text/event-stream`: parses complete SSE events (buffering lines until a blank line `\n\n` or `\r\n\r\n`, joining all `data:` lines of an event with `\n`, ignoring `:` comments and non-`data` fields), compacts each JSON event to one line, and checks it with `checker.check(Buffer.from(line))`. If the HTTP stream ends for a request with an `id` before any response matching that `id` is received, replies with a JSON-RPC error (`code: -32603`, `HTTP stream ended before response arrived`).
+     - Uses `machine/lib/mcp-http.js` to POST each newline-delimited JSON-RPC message from `process.stdin` to `urlOverride || tool.url` with `${KEY}` placeholders substituted in memory.
+     - Remembers the client's original `initialize` request params. If a subsequent request that sent `sentSessionId` receives HTTP `404`:
+       - If the proxy's current `sessionId` has **already changed** (`sessionId !== sentSessionId`), skip recovery and retry the request once with the current `sessionId`.
+       - Otherwise coordinate recovery with a single shared in-flight recovery promise keyed to `sentSessionId` (`recovering = { expiredId: sentSessionId, promise }`): concurrent requests failing with 404 for the same `sentSessionId` await that one recovery; recovery clears `sessionId`, re-sends `initialize` + `notifications/initialized` once (updating `sessionId` and `protocolVersion`), and then each affected request retries once with the new session ID.
      - Redaction uses `const checker = createLineChecker({ name: tool.name, values })` from `machine/lib/server-lines.js:160`:
-       - For each `res = checker.check(buf)`: if `res.out` is non-null, write `res.out` + `\n` to `process.stdout`; if `res.toServer` is non-null, POST `res.toServer` back to the HTTP server (with active headers, ignoring its body) without forwarding to `process.stdout`; if `res.note` is non-null, log `res.note` to `process.stderr` (never raw keys).
-     - On non-2xx HTTP status or network error for a request with an `id`, replies with a JSON-RPC error (`code: -32603`, redacted message naming HTTP status or error code; never raw keys).
-     - Exits cleanly when `process.stdin` closes or on `SIGINT`/`SIGTERM`/`SIGHUP`, aborting any in-flight HTTP request via `AbortController`.
+       - For each response JSON message (compacted to one JSON line `buf`), call `const res = checker.line(buf)`; for an oversized body/event (`LINE_LIMIT` exceeded), call `const res = checker.oversized(prefixBuf)`.
+       - If `res.out` is non-null, write `res.out` + `\n` to `process.stdout`; if `res.toServer` is non-null, POST `res.toServer` back to the HTTP server (ignoring its body) without forwarding to `process.stdout`; if `res.note` is non-null, log `res.note` to `process.stderr` (never raw keys).
+     - If an SSE stream ends for a request with an `id` before any response matching that `id` arrives, or on non-2xx / redirect / network error for a request with an `id`, reply with a JSON-RPC error (`code: -32603`, redacted message naming HTTP status or error code; never raw keys).
+     - On `process.stdin` close or `SIGINT`/`SIGTERM`/`SIGHUP`, abort in-flight requests, run best-effort `deleteSession` (bounded 1s timeout) if a `Mcp-Session-Id` is active, and exit cleanly.
 4. **CLI `wc.js tool check` for HTTP folder tools (`viewer/app/tool-cli.js`):**
-   - For an HTTP server with `row.tool.windows === true` on WSL (`process.platform === 'linux'` and `/proc/version` indicates WSL), skip live network handshake (since Windows localhost requires the session's machine port forward) and print `<name>: ok (Windows localhost HTTP tool — live check runs through the Windows forward at session start)`.
-   - For all other HTTP servers, `wc.js tool check` performs an HTTP MCP handshake (`initialize` -> capture `Mcp-Session-Id` and negotiated `protocolVersion` -> `notifications/initialized` with both `MCP-Protocol-Version` and `Mcp-Session-Id` -> `tools/list` with both headers if `capabilities.tools` is present) against `row.tool.url` using the remaining check deadline and abort signal, sending only literal (non-`${...}`) headers (never reading saved keys), and parsing both `application/json` and multi-line `text/event-stream` responses.
-   - On success, prints the same format as stdio servers (`<name>: <serverInfo.name> tools: ...`, appending ` (checked without its keys)` if `row.tool.keys.length > 0`).
-   - On failure (including HTTP 401/403 when keyed), prints `<name>: <error>` plus `it ran without its keys; that may be why` when `row.tool.keys.length > 0`, and exits non-zero.
-5. **Tools page, `wc.js tool list` & docs:**
+   - For an HTTP server with `row.tool.windows === true` on WSL (`process.platform === 'linux'` and `/proc/version` indicates WSL), skip live network handshake and print `<name>: ok (Windows localhost HTTP tool — live check runs through the Windows forward at session start)`.
+   - For all other HTTP servers, call `httpHandshake` from `machine/lib/mcp-http.js` with only literal (non-`${...}`) headers and remaining check deadline/signal. Print `<name>: <serverInfo.name> tools: ...` (appending ` (checked without its keys)` if `row.tool.keys.length > 0`) on success, or `<name>: <error>` plus `it ran without its keys; that may be why` when keyed on failure.
+5. **Tests, Tools page & docs:**
+   - Add `machine/test/http-tool-proxy.test.js` testing: keyed header injection + `createLineChecker` redaction (safe string redaction and held-back structural leak), `3xx` redirect refusal, concurrent 404 session recovery (both in-flight and late-arriving 404), multi-line SSE parsing + incomplete stream error, `LINE_LIMIT` oversized handling, best-effort `DELETE` on shutdown, and `httpHandshake` in `wc.js tool check`.
    - Keep `kind: 'server'` in `wc.js tool list` and Tools page API; include `transport: 'http' | 'stdio'` on the tool object.
    - Update `protocol/tools.md` to document HTTP folder servers (`url`, `headers`, `keys`, `windows`).
 
@@ -193,14 +203,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
      - `bridgeEntry` and stdio `serverEntry` pass `--sandbox` (and set `CODEX_HOME` in the entry's `env` when `codexHome` is set) to `tool-bridge.js` and `tool-launch.js`.
      - `tool-bridge.js` (via `tool-run.js`) and `tool-launch.js` run **outside** `codex sandbox` so they can read the machine key store (`stateDir`) and perform output redaction, and wrap only the spawned child tool command using `sandboxWrapTool([program, ...args], { worktree: projectDir, toolDir: dir })` with `cwd: projectDir` (the wrapper's `/bin/sh -c 'cd "$1" ...'` changes to `toolDir` inside the sandbox so the writable root is `projectDir`, not `toolDir`).
      - HTTP folder servers (both direct unkeyed entries and `http-tool-proxy.js`) are registered normally for sandboxed Codex sessions, matching `.mcp.json` HTTP behavior.
-3. **Real Codex sandbox test (`machine/test/folder-tools-codex-sandbox.test.js`) & router update (`machine/AGENTS.md`):**
+3. **Real Codex sandbox test (`machine/test/folder-tools-codex-sandbox.test.js`), `test-support/run-dir.js`, & router update (`machine/AGENTS.md`):**
    - Uses the real `codex` binary (skipped with a clear skip reason only when `codex` is not installed on the host; runs unconditionally when `codex` is present).
-   - Creates its fixture directory **outside `/tmp`** (under `path.join(os.homedir(), '.cache', 'wheelchair-sandbox-test-<pid>-<rand>')`, removed in a `finally` block), containing sibling `worktree/`, `outside/`, `state/`, and `codex-home/` directories so neither `worktree/` nor `outside/` falls under the `/tmp` write grant. Before invoking the sandbox, asserts that the test process itself can create and delete a probe file in `outside/`.
+   - Add an optional `base` root parameter to `test-support/run-dir.js` (defaulting to `os.tmpdir()` as today) so the test creates a managed per-process run directory **outside `/tmp`** (under `path.join(os.homedir(), '.cache', 'wheelchair-test-runs')`), preserving `run-dir.js`'s exit cleanup and dead-owner sweeping while ensuring neither `worktree/` nor `outside/` falls under the `/tmp` write grant. Before invoking the sandbox, assert that the test process itself can create and delete a probe file in `outside/`.
    - Tests both `tool-bridge.js` (script tool) and `tool-launch.js` (stdio server tool), including a keyed tool:
      1. Tool can create a file inside `worktree/` and read its injected key (and stdout redaction masks the key).
      2. Tool attempting to write a file inside `outside/` fails with a permission/read-only error and does not create the file.
      3. Named account `CODEX_HOME`: verifies the sandboxed invocation receives the configured `CODEX_HOME`.
-   - Update `machine/AGENTS.md` to note the real-Codex sandbox test exception (runs when `codex` is installed using isolated temp directories, skips otherwise).
+   - Update `machine/AGENTS.md` to note the real-Codex sandbox test exception (runs when `codex` is installed using isolated `run-dir.js` temp directories, skips otherwise).
 4. **Update existing tests & docs:**
    - Update `machine/test/folder-tools-launch.test.js` and `machine/test/project-mcp-codex.test.js:145-160` to assert that sandboxed Codex sessions register folder MCP entries with `--sandbox` and `CODEX_HOME`, preserve ordering and `tool_timeout_sec=260`, retain the `PROJECT_OVERRIDE_BUDGET` check, and skip Windows executables on WSL.
    - Update `machine/test/project-tools.test.js:478` and `viewer/test/app-project-tools.spec.js:1518` for the updated Tools page / API status strings, and add a Git-tree HTTP folder tool test in `machine/test/project-tools.test.js`.
@@ -216,9 +226,13 @@ node --test machine/test/folder-tools.test.js
 node --test machine/test/folder-tools-run.test.js
 node --test machine/test/folder-tools-launch.test.js
 node --test machine/test/folder-tools-codex-sandbox.test.js
+node --test machine/test/http-tool-proxy.test.js
+node --test machine/test/win-tool-proxy.test.js
+node --test machine/test/win-tool-service.test.js
 node --test machine/test/project-tools.test.js
 node --test machine/test/project-mcp-codex.test.js
 node --test machine/test/screen.test.js
+node --test test-support/test/*.test.js
 node --test viewer/test/wc-tool.test.js
 npm --prefix viewer run test:browser -- test/app-project-tools.spec.js
 ```
@@ -280,19 +294,38 @@ npm --prefix viewer run test:browser -- test/app-project-tools.spec.js
 | mechanics | major | S4 does not coordinate concurrent 404 session recoveries | upheld | S4.3: single shared in-flight recovery promise per expired session ID |
 | mechanics | major | S4 SSE parser assumes single-line `data:` and ignores incomplete streams | upheld | S4.3 & S4.4: full blank-line-delimited SSE event parsing; incomplete stream returns JSON-RPC error |
 | mechanics | major | S4 leaves redirect handling open for keyed HTTP requests | upheld | S4.3: reject `3xx` redirects without forwarding headers |
-| mechanics | major | S5 real Codex sandbox test under `/tmp` is already inside writable `/tmp` | upheld | S5.3: fixture under `$HOME/.cache/wheelchair-sandbox-test-...` outside `/tmp`, with pre-sandbox write probe on `outside/` |
+| mechanics | major | S5 real Codex sandbox test under `/tmp` is already inside writable `/tmp` | upheld | S5.3: fixture outside `/tmp`, with pre-sandbox write probe on `outside/` |
 | mechanics | minor | S5 omits updating `machine/test/project-mcp-codex.test.js:145-160` | upheld | S5.4 explicitly includes updating `project-mcp-codex.test.js:145-160` |
 | mechanics | minor | Targeted browser command doesn't use `viewer/playwright.config.js` | upheld | Validation uses `npm --prefix viewer run test:browser -- test/app-project-tools.spec.js` |
 
 ### Round 3 — 2026-11-28
 
-**Lanes:** (pending)
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
-**Changed since Round 2:**
-- S1.1 & S1.2: extracted `pipeKeyless` helper and deterministic unit test for pending `stdout` write across `child` `'close'`.
-- S2.1 & S2.2: added `resolveProgram`, separated `isWindowsExecutable` from `shouldWrapWindowsProxy`, passed per-tool `--win` flag into `tool-bridge.js`, and made `win-tool-proxy.js` hold `tools/list` until ready when `--list-cache` is omitted.
-- S4.3 & S4.4: fixed `createLineChecker({ name: tool.name, values })` signature and `out`/`toServer`/`note` handling, serialized concurrent 404 recovery per expired session ID, parsed multi-line SSE events and errored on incomplete streams, and rejected `3xx` redirects on keyed HTTP requests.
-- S5.1–S5.4 & Validation: dropped unused `read-only` mode and `--codex-trust` flag; documented `service.js` consumers of removed `shellToolsOnly`/`keyedToolsReason`; moved real-Codex sandbox test fixture outside `/tmp` with pre-sandbox write probe; added `project-mcp-codex.test.js` update; fixed Playwright validation command.
+**Changed since Round 2:** S1.1/S1.2 `pipeKeyless`; S2.1/S2.2 `resolveProgram`, `--win`, holding `tools/list`; S4.3/S4.4 `createLineChecker`, serialized 404 recovery, multi-line SSE, redirect rejection; S5.1–S5.4 simplified `sandboxWrapTool`, fixture outside `/tmp`, Playwright command.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | S2, S3, S4.3 lack explicit test requirements and validation commands for IDEA.md criteria | upheld | Added explicit test specs in S2.4, S3.3, S4.5 and added `http-tool-proxy.test.js`, `win-tool-proxy.test.js`, `win-tool-service.test.js` to Validation |
+| intent | minor | S4.3 and S4.4 duplicate HTTP MCP client and SSE parsing | upheld | Extracted shared `machine/lib/mcp-http.js` reused by both `http-tool-proxy.js` and `tool-cli.js` |
+| mechanics | blocking | S4.3 calls `checker.check()`, but `createLineChecker()` exposes `line()` and `oversized()` | upheld | S4.3 updated to `checker.line(buf)` and `checker.oversized(prefixBuf)` |
+| mechanics | major | S4.3 late 404 arriving after recovery can clear the replacement session | upheld | S4.3 compares `sentSessionId` against current `sessionId`; if already changed, skips recovery and retries once |
+| mechanics | major | S2.2 sets `windows: true` only on wrapped stdio servers, missing unwrapped `mcp-for-unity` | upheld | S2.2 sets `windows: true` for every `isWindowsExecutable` server (`wrapped: false` when unwrapped) |
+| mechanics | major | S2.1 checks path spelling, missing symlinks to Windows executables | upheld | S2.1 `resolveProgram` resolves symlinks via `fs.realpathSync` before `isWindowsProgram` |
+| mechanics | minor | S4.3 and S4.4 leave stateful HTTP sessions without teardown | upheld | S4.3 & S4.4 add bounded 1s best-effort HTTP `DELETE` teardown when `Mcp-Session-Id` is active |
+| mechanics | minor | S4 accepts reserved transport headers (`Accept`, `Content-Type`, `MCP-Protocol-Version`, `Mcp-Session-Id`) in `tool.json` | upheld | S4.1 rejects those four headers case-insensitively in `tool.json` |
+| mechanics | minor | S4.3 lacks the keyed relay's 32 MiB (`LINE_LIMIT`) response buffer cap | upheld | S4.3 enforces `LINE_LIMIT` from `server-lines.js` and routes oversized responses through `checker.oversized` |
+| mechanics | minor | S5.3 standalone home-cache fixture bypasses `test-support/run-dir.js` sweeping | upheld | S5.3 adds optional `base` root to `test-support/run-dir.js` so the fixture outside `/tmp` is still managed and swept |
+
+### Round 4 — 2026-11-28
+
+**Lanes:** (pending — paused at 3-round review budget)
+
+**Changed since Round 3:**
+- S2.1, S2.2 & S2.4: `resolveProgram` resolves symlinks (`fs.realpathSync`); set `windows: true` for unwrapped `mcp-for-unity` servers too; added explicit S2 test cases and validation commands.
+- S3.3: added explicit Python starter + `wc.js tool check` test cases in `viewer/test/wc-tool.test.js`.
+- S4.1, S4.3, S4.4 & S4.5: extracted shared `machine/lib/mcp-http.js`; fixed `checker.line()`/`checker.oversized()`; added `LINE_LIMIT` (32 MiB) cap; rejected reserved transport headers in `tool.json`; handled late-arriving 404 after recovery; added bounded best-effort `DELETE` teardown; added `machine/test/http-tool-proxy.test.js`.
+- S5.3 & Validation: added optional `base` root to `test-support/run-dir.js` for the real-Codex sandbox fixture outside `/tmp` and added `test-support/test/*.test.js` plus the new S2/S4 test files to Validation.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
@@ -314,3 +347,4 @@ npm --prefix viewer run test:browser -- test/app-project-tools.spec.js
 - 2026-11-28: Checked `session leads` before setting `status: ready-for-review`; still no overlapping active threads.
 - 2026-11-28: Completed Round 1 triage (18 findings, all upheld and resolved); advancing to Round 2.
 - 2026-11-28: Completed Round 2 triage (13 findings, all upheld and resolved); advancing to Round 3.
+- 2026-11-28: Completed Round 3 triage (10 findings, all upheld and resolved); paused at 3-round review budget and posted `needs` card.
