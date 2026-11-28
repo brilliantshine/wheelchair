@@ -15,13 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: Should keyed folder tools also work over MCP in sandboxed Codex sessions?
-- **Context:** Today sandboxed Codex sessions get no folder MCP entries (scripts run via `wc.js tool run`, and keyed tools are skipped on sandboxed Codex unless Codex is set to unrestricted). Once folder tools are wrapped in `codex sandbox` (with the worktree as writable root and matching `CODEX_HOME`/trust), the bridge/launcher can either load keys outside the sandbox and pass them into the sandboxed tool process (redacting output as usual), or keep keyed folder tools unrestricted-only.
-- **Options:**
-  - Enable both unkeyed and keyed folder tools over MCP in sandboxed Codex
-  - Enable only unkeyed folder tools over MCP in sandboxed Codex; keep keyed tools unrestricted-only
-- **Recommendation:** Enable both unkeyed and keyed folder tools over MCP in sandboxed Codex.
-
 ### Q2: Should HTTP folder tools keep secret header keys hidden behind a local proxy, or pass them directly in the agent's MCP config?
 - **Context:** Folder tools can now use existing project/shared key stores. For an HTTP folder tool (`url` + optional `headers` with `${KEY}` placeholders), passing keys directly in the agent's MCP config/env is simpler, while routing keyed HTTP tools through a local proxy keeps raw keys out of the agent's config and environment (matching how script and stdio server folder tools protect keys today).
 - **Options:**
@@ -55,6 +48,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 1 | Skip mockups for this thread. | Almost all work is machine/connector/CLI behavior; any Tools page change for HTTP folder tools is a small text/badge detail on the existing read-only list. | defaulted |
 | 2 | Fix the keyless launcher output-drain race in `machine/lib/tool-launch.js` by waiting for `process.stdout` to flush before exiting, and verify both keyless and keyed drain paths under load in `machine/test/folder-tools-run.test.js`. | `child.on('close')` currently calls `process.exit(code)` while piped `process.stdout` still has buffered bytes under load. | defaulted |
 | 3 | Support Windows-side folder tools from WSL for both stdio servers and scripts (and localhost HTTP forwarding if marked) by reusing the existing Windows readiness file and `win-tool-wrap.js` / `win-tool-proxy.js` handoff. | Matches existing `.mcp.json` WSL behavior and `IDEA.md`. | defaulted |
+| 4 | Enable both unkeyed and keyed folder tools over MCP in sandboxed Codex sessions. The bridge/launcher runs outside the sandbox to load keys and redact output, and confines each tool process inside `codex sandbox` with the worktree as writable root and matching `CODEX_HOME` and worktree trust. | Gives sandboxed Codex full folder-tool parity without exposing raw keys in the agent's config or environment. | user |
 
 ## Spec
 
