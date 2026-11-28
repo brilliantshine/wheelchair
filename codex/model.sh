@@ -292,19 +292,25 @@ def agy_parse(text):
         match = re.fullmatch(r"(.+)-(low|medium|high|xhigh|max)", model)
         named = re.fullmatch(r"(.*) \((low|medium|high|xhigh|max)\)", name, re.I)
         group = None
-        if match and named and match[2] == named[2].lower() and FORMATS[AGY["provider"]].fullmatch(match[1]):
+        if match and named and match[2] == named[2].lower() and match[1] != "none" and FORMATS[AGY["provider"]].fullmatch(match[1]):
             group = match[1]
             groups.setdefault(group, []).append((match[2], named[1]))
         entries.append((model, name, group))
-    result, emitted = [], set()
+    result, emitted, values = [], set(), set()
     for model, name, group in entries:
         if group and len(groups[group]) >= 2:
             if group in emitted:
                 continue
             emitted.add(group)
+            if group in values:
+                continue
+            values.add(group)
             levels = [level for level in LEVELS if any(e == level for e, _ in groups[group])]
             result.append({"value": group, "label": f"{groups[group][0][1]} · {group}", "efforts": levels})
         else:
+            if model in values:
+                continue
+            values.add(model)
             result.append({"value": model, "label": f"{name} · {model}" if name else model, "efforts": []})
     return result
 
@@ -352,14 +358,15 @@ def agy_models(pin_path, mode="demand", model=None, effort=None, timeout=10):
         return listed
     name = AGY["install"]["binary"]
     binary = os.environ.get("WHEELCHAIR_AGY", shutil.which(name) or os.path.expanduser(f"~/.local/bin/{name}"))
+    if not binary or not os.path.isfile(binary) or not os.access(binary, os.X_OK):
+        return listed
     fresh = []
-    if binary and os.access(binary, os.X_OK):
-        try:
-            run = subprocess.run([binary, "models"], capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
-            if run.returncode == 0:
-                fresh = agy_parse(run.stdout)
-        except Exception:
-            pass
+    try:
+        run = subprocess.run([binary, "models"], capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+        if run.returncode == 0:
+            fresh = agy_parse(run.stdout)
+    except Exception:
+        pass
     try:
         if fresh:
             atomic_write(path, json.dumps({"at": time.time(), "models": fresh}) + "\n")
