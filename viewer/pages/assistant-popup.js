@@ -60,12 +60,13 @@
   const convo = el('div', 'wc-asst-convo');
   chat.append(convo);
   const errorEl = el('div', 'wc-asst-error'); errorEl.hidden = true; errorEl.setAttribute('role', 'alert');
+  const waitEl = el('div', 'wc-asst-wait'); waitEl.hidden = true; waitEl.setAttribute('role', 'status');
   const form = el('form', 'wc-asst-compose');
   const box = el('div', 'wc-asst-box');
   const input = el('textarea', 'wc-asst-input'); input.rows = 1;
   const send = el('button', 'wc-asst-send', '➜'); send.type = 'submit'; send.disabled = true; send.setAttribute('aria-label', 'Send');
   box.append(input, send); form.append(box);
-  panel.append(head, switcher, stopped, chat, errorEl, form);
+  panel.append(head, switcher, stopped, chat, errorEl, waitEl, form);
   document.body.append(button, shade, panel);
 
   const composer = document.getElementById('composer');
@@ -101,6 +102,18 @@
   function leadsOf(d) { return ((d && d.thread && d.thread.sessions) || []).filter((s) => s.role === 'lead'); }
   const liveLead = (d) => leadsOf(d).some((s) => s.live);
   const working = (d) => leadsOf(d).some((s) => s.live && s.ready && s.turn_ended === false);
+
+  // Why a queued message cannot start, when Settings → Models is what holds the lead back.
+  function configWait(d) {
+    const lead = leadsOf(d).filter((s) => s.live).pop();
+    const reason = lead && lead.status === 'waiting' && lead.waiting_reason;
+    return reason && reason.endsWith('in Settings → Models') ? reason + '.' : '';
+  }
+  // Written only on a change, so the status is not announced again on every poll.
+  function renderWait(text) {
+    if (waitEl.textContent !== text) waitEl.textContent = text;
+    waitEl.hidden = !text;
+  }
 
   // The newest thing the user did not write: the lead's text, context and cards.
   function newestAt(d) {
@@ -309,6 +322,7 @@
   function render() {
     const c = cur;
     stopped.textContent = '';
+    renderWait(configWait(c.data));
     if (!c.data) { stopped.hidden = true; input.disabled = false; send.disabled = true; return; }
     const live = liveLead(c.data);
     if (live) c.startError = '';

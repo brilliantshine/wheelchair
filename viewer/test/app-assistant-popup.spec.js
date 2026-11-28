@@ -12,7 +12,7 @@ const NEW = '2026-01-01T11:00:00.000Z';
 test.describe('assistant pop-up', () => {
   let ctx;
   test.beforeEach(async ({ page }) => { ctx = await startWorld(); await signIn(page, ctx); });
-  test.afterEach(async () => { await ctx.close(); });
+  test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); });
 
   const setting = (page, assistant) => page.evaluate(async (value) => {
     const res = await fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assistant: value }) });
@@ -198,6 +198,80 @@ test.describe('assistant pop-up', () => {
     const dismissed = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/threads/${id}/cards/sys-needs/dismiss`));
     await needs.getByRole('button', { name: 'Dismiss' }).click();
     await dismissed;
+  });
+
+  const NOT_USED = 'GPT is set to Not used for heavy in Settings → Models';
+  const NO_LADDER = "No enabled provider in this role's provider ladder in Settings → Models";
+  const waitFor = (id, reason) => ctx.patch(id, (t) => {
+    Object.assign(t.sessions[0], { live: true, ready: false, status: 'waiting', waiting_until: '2099-01-01T00:00:00.000Z', waiting_reason: reason });
+  });
+  const stopWaiting = (id) => ctx.patch(id, (t) => {
+    const s = t.sessions[0];
+    delete s.status; delete s.waiting_until; delete s.waiting_reason;
+  });
+
+  for (const [name, viewport] of [['desktop', { width: 1280, height: 800 }], ['phone', { width: 390, height: 844 }]]) {
+    test.describe(`configuration wait on ${name}`, () => {
+      test.use({ viewport });
+
+      test('shows why the assistant cannot start above the composer, only while it waits on Settings → Models', async ({ page }) => {
+        const id = await turnOn(page);
+        await seedAssistant(id, [['assistant', 'Hi', OLD]]);
+        await waitFor(id, NOT_USED);
+        await page.goto(`${ctx.server.url}/app/threads`);
+        await page.locator('.wc-asst-float').click();
+        const panel = page.locator('.wc-asst-panel');
+        const line = panel.locator('.wc-asst-wait');
+        await expect(line).toBeVisible();
+        await expect(line).toHaveText(NOT_USED + '.');
+        const panelBox = await panel.boundingBox();
+        const box = await line.boundingBox();
+        const composer = await panel.locator('.wc-asst-compose').boundingBox();
+        expect(box.y + box.height).toBeLessThanOrEqual(composer.y + 1);
+        expect(box.x).toBeGreaterThanOrEqual(panelBox.x);
+        expect(box.x + box.width).toBeLessThanOrEqual(panelBox.x + panelBox.width);
+        expect(await line.evaluate((n) => n.scrollWidth - n.clientWidth)).toBeLessThanOrEqual(0);
+        await waitFor(id, 'GPT is left out in Settings');
+        await expect(line).toBeHidden();
+        await waitFor(id, NO_LADDER);
+        await expect(line).toHaveText(NO_LADDER + '.');
+        await expect(line).toBeVisible();
+        await stopWaiting(id);
+        await expect(line).toBeHidden();
+      });
+    });
+  }
+
+  test('the configuration wait follows the project lead and Assistant switch', async ({ page }) => {
+    const id = await turnOn(page);
+    await seedAssistant(id, [['assistant', 'Hi', OLD]]);
+    await page.evaluate(async () => {
+      const res = await fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project_leads: 'on' }) });
+      if (!res.ok) throw new Error('preferences ' + res.status);
+    });
+    await waitFor(id, NOT_USED);
+    await projectPage(page);
+    await page.locator('.wc-asst-float').click();
+    const panel = page.locator('.wc-asst-panel');
+    const line = panel.locator('.wc-asst-wait');
+    const choices = panel.getByRole('group', { name: 'Conversation' }).getByRole('button');
+    await expect(choices).toHaveCount(2);
+    // The project lead opens first and was never started.
+    await expect(choices.first()).toHaveAttribute('aria-pressed', 'true');
+    await expect(line).toBeHidden();
+    await choices.last().click();
+    await expect(line).toHaveText(NOT_USED + '.');
+    await choices.first().click();
+    await expect(line).toBeHidden();
+    await choices.last().click();
+    await expect(line).toBeVisible();
+  });
+
+  test('the thread page shows a configuration wait as its own reason', async ({ page }) => {
+    const made = await ctx.make({ cli: 'claude' });
+    await waitFor(made.id, NOT_USED);
+    await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+    await expect(page.locator('#lead-wait')).toHaveText(NOT_USED + '.');
   });
 
   test.describe('phone', () => {
