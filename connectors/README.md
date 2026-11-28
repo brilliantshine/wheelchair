@@ -92,7 +92,7 @@ These are called only when present; they need no flag in the manifest.
 | `redact` | `redact(value)` | The tool's own redaction of transcript lines, events and aside output (Pi). The shared output scrub in `common.js` applies to every tool regardless. |
 | `stylePreviewArgv` | `stylePreviewArgv(model)` returns argv | The tool that runs the writing-style preview. Required when `stylePreview: true` (one manifest at most); forbidden otherwise. |
 | `disableProjectServers` | `disableProjectServers(built, dropped)` | Record project tools that were dropped into the built launch settings. |
-| `launchContext` | `async launchContext(service)` returns an object | Returned keys reach `command` except service-owned keys (`stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `wsl`, `mount`, `replaceEntries`, `extraServers`, `resume`), whose service values override them. |
+| `launchContext` | `async launchContext(service, input, session)` returns an object | Returned keys reach `command` except service-owned keys (`stateDir`, `promptPath`, `rolePrompt`, `mcp`, `tools`, `accountDir`, `wsl`, `mount`, `replaceEntries`, `extraServers`, `resume`), whose service values override them. |
 | `launchPath` | `launchPath(service)` | Kimi's resolution of its launch executable and version. |
 | `recordLaunch` | `recordLaunch(session, status)` | Store the version check result on the session at launch (Pi). |
 | `startupCheck` | `startupCheck(session)` returns a reason or `null` | Why a session that never became ready ended, so the stop reason says more than "exited". |

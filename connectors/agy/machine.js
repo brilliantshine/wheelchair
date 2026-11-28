@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { execFile } = require('node:child_process');
 const c = require('../common');
 const { DUPLICATE_HEADERS, serverLabel } = require('../../machine/lib/project-mcp');
 const onboarding = ['Choose your color scheme', 'Terms of Service & Data Use', 'Do you trust the contents of this project?', 'Requesting permission for:'];
@@ -31,7 +32,21 @@ module.exports = {
     fs.chmodSync(temp, mode);
     fs.renameSync(temp, file);
   },
+  async launchContext(service, input, session) {
+    if (!input.model) return {};
+    const fallback = { agyLaunchModel: input.model, agyLaunchEffort: session.effort };
+    const script = process.env.WHEELCHAIR_AGY_MODEL_SCRIPT || path.join(c.root, 'codex', 'model.sh');
+    const timeout = Number(process.env.WHEELCHAIR_AGY_LAUNCH_TIMEOUT_MS) || 15000;
+    return new Promise(resolve => {
+      execFile(script, ['agy-launch', input.model, ...(session.effort ? [session.effort] : [])], { timeout }, (error, stdout) => {
+        const match = !error && /^([^\t\r\n]+)\t([^\t\r\n]*)\n$/.exec(stdout);
+        resolve(match ? { agyLaunchModel: match[1], agyLaunchEffort: match[2] } : fallback);
+      });
+    });
+  },
   command(input, session, worktree, context) {
+    const model = context.agyLaunchModel ?? input.model;
+    const effort = context.agyLaunchEffort ?? session.effort;
     const settingsPath = path.join(context.stateDir, 'settings', `${session.name}.json`);
     const servers = {}, warnings = [];
     const extras = context.tools ? context.extraServers || [] : [];
@@ -71,7 +86,7 @@ module.exports = {
         { path: path.join(plugin, 'mcp_config.json'), text: JSON.stringify({ mcpServers: servers }, null, 2) + '\n' },
       ] };
     }
-    return { loaded: [...c.loadedTools(Object.keys(servers).filter(name => !extras.some(extra => extra.name === name)), context.mcp, context.mount, context.replaceEntries), ...extras.filter(extra => Object.hasOwn(servers, extra.name)).map(({ name }) => ({ name, windows: false, wrapped: false }))], ...(warnings.length ? { warnings } : {}), ...(toolFiles ? { toolFiles } : {}), settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(toolFiles ? ['--add-dir', toolFiles.dir] : []), '--dangerously-skip-permissions', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
+    return { loaded: [...c.loadedTools(Object.keys(servers).filter(name => !extras.some(extra => extra.name === name)), context.mcp, context.mount, context.replaceEntries), ...extras.filter(extra => Object.hasOwn(servers, extra.name)).map(({ name }) => ({ name, windows: false, wrapped: false }))], ...(warnings.length ? { warnings } : {}), ...(toolFiles ? { toolFiles } : {}), settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(toolFiles ? ['--add-dir', toolFiles.dir] : []), '--dangerously-skip-permissions', ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])] };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('? for shortcuts') && !onboarding.some(s => pane.includes(s)); },
