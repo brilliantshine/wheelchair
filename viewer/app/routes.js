@@ -362,9 +362,12 @@ async function handleSettings(hub, request, response, url, bits, body) {
       const levels = effort ? await settings.modelLevels(hub, body.provider, model) : null;
       if (levels && !levels.includes(effort)) throw appError(400, levels.length ? `${model} has no ${effort} level; it has ${levels.join(', ')}` : `${model} takes no effort`);
     }
-    await settings.update(hub, async (value) => { await dismissEmptyLeadNotice(hub, value); });
-    try { await settings.modelCommand(hub, ['set', body.provider, slot, model || 'none', ...(effort ? [effort] : [])]); }
-    catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
+    await settings.update(hub, async (value) => {
+      const dismiss = !value.lead_tier_notice_dismissed && !settings.legacyLeadDiffs(value, await settings.models(hub)).length;
+      try { await settings.modelCommand(hub, ['set', body.provider, slot, model || 'none', ...(effort ? [effort] : [])]); }
+      catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
+      if (dismiss) value.lead_tier_notice_dismissed = true;
+    });
     return send(response, 200, { models: await settings.models(hub) });
   }
   if (bits[1] === 'models' && bits[2] === 'heads-up' && request.method === 'POST') {
@@ -387,7 +390,6 @@ async function handleSettings(hub, request, response, url, bits, body) {
   if (bits[1] === 'preferences' && request.method === 'PUT') {
     let beforeAssistant, beforeProjectLeads;
     const value = await settings.update(hub, async (value) => {
-      if (body.other_agents !== undefined) await dismissEmptyLeadNotice(hub, value);
       beforeAssistant = value.assistant;
       beforeProjectLeads = value.project_leads;
       if (body.lead_names !== undefined) {
@@ -463,7 +465,10 @@ async function handleSettings(hub, request, response, url, bits, body) {
       }
       if (body.other_agents !== undefined) {
         if (!body.other_agents || typeof body.other_agents !== 'object' || Array.isArray(body.other_agents)) throw appError(400, 'other_agents must be an object');
-        for (const [role, tier] of Object.entries(body.other_agents)) { if (!Object.hasOwn(value.other_agents, role)) throw appError(400, `invalid other_agents.${role}`); value.other_agents[role] = settings.tier(tier, `other_agents.${role}`); }
+        const tiers = {};
+        for (const [role, tier] of Object.entries(body.other_agents)) { if (!Object.hasOwn(value.other_agents, role)) throw appError(400, `invalid other_agents.${role}`); tiers[role] = settings.tier(tier, `other_agents.${role}`); }
+        if (body.lead_tier_notice_dismissed === undefined) await dismissEmptyLeadNotice(hub, value);
+        Object.assign(value.other_agents, tiers);
       }
       if (body.provider_orders !== undefined) {
         if (!body.provider_orders || typeof body.provider_orders !== 'object' || Object.getPrototypeOf(body.provider_orders) !== Object.prototype) throw appError(400, 'provider_orders must be an object');
