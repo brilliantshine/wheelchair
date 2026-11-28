@@ -1,6 +1,6 @@
 ---
 slug: agent-model-preferences
-status: ready-for-review
+status: approved
 created: 2026-11-27
 ---
 
@@ -37,6 +37,17 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Keep both the clear empty/`Not used` ladder configuration messages and the one-time dismissible legacy Lead/Sub-lead pin notice (with one-click recovery when the target tier is `Not used`), and run the next review pass. | Confirmed by Collin after the 3-round review budget check. | user |
 
 ## Spec
+
+```mermaid
+flowchart LR
+  UI["Settings → Models (Agents, Provider ladders, Tier models, Escalation, Assistants)"] -->|"PUT /settings/preferences"| Settings["settings.json (other_agents, provider_orders, escalation, review_families)"]
+  UI -->|"PUT /settings/balancing"| Settings
+  UI -->|"PUT /settings/models"| Pins["codex/model.sh (~/.wheelchair/models tier pins)"]
+  Settings --> Balancer["balancer.js choose() (tier slot + role ladder + review_families)"]
+  Pins --> Balancer
+  Balancer -->|"provider, account, slot"| Launch["sessions.js startSession() -> resolveModel(slot) & resolveScout()"]
+  Balancer -->|"configuration wait (in Settings → Models)"| Banners["thread.js, assistant-popup.js, harnesses.js, wc.js"]
+```
 
 ### Mockups
 
@@ -77,8 +88,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
    - Add boolean `lead_tier_notice_dismissed` to `defaults()` (default `false`; normalized as `Boolean(saved.lead_tier_notice_dismissed)`).
    - In `describe(hub)`: when `!value.lead_tier_notice_dismissed`, read models strictly through `models(hub)` (`codex/model.sh show --json`, honoring `WHEELCHAIR_MODELS` and `viewer/AGENTS.md:27` — never reading `~/.wheelchair/models` directly). For each enabled provider:
      - Compare its `lead` cell (`legacy_model`, `legacy_effort`) against its current `value.other_agents.lead` tier cell (`tier_model`, `tier_effort`); emit a diff entry `{ provider, label, role: 'lead', legacy_model, legacy_effort, tier, tier_model, tier_effort }` whenever they differ (by model or effort).
-     - Compare its `sub-lead` cell against its current `value.other_agents['sub-lead']` tier cell **only** when the `sub-lead` cell differs from the `lead` cell (skipping inherited `sub-lead` cells so an unedited `sub-lead` never duplicates the `lead` entry); emit a diff entry when it differs from the `other_agents['sub-lead']` tier cell.
+     - Compare its `sub-lead` cell against its current `value.other_agents['sub-lead']` tier cell, skipping it only when `value.other_agents['sub-lead'] === value.other_agents.lead` **and** the `sub-lead` cell equals the `lead` cell (so an inherited `sub-lead` never duplicates `lead` on the same tier, while a `sub-lead` pointing at a different `Not used` tier still gets a recovery entry).
      - When dismissed or when there are no diffs, return `legacy_lead_diffs: []`.
+   - To prevent a fresh install from showing a retroactive notice after its first ordinary tier edit: whenever `PUT /settings/models` or `PUT /settings/preferences` (updating `other_agents`) runs while `!value.lead_tier_notice_dismissed` and `legacy_lead_diffs` is already empty before the edit, persist `lead_tier_notice_dismissed = true`.
    - Never silently overwrite any shared tier cell on upgrade; the user decides whether to apply a legacy pin to a tier cell (via the explicit button in §4.2) or dismiss the notice.
 
 ### 2. API routes and documentation (`viewer/app/routes.js`, `viewer/app/API.md`)
@@ -126,7 +138,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
        - Else if `role === 'lead'` (new thread lead, Personal assistant, or Project lead) or `role === 'sub-lead'` or `['reviewer', 'verifier', 'mapper', 'designer'].includes(role)`: `order = expandOrder(settings.provider_orders[preferenceRole(role, thread)], settings)`.
        - Else (`worker`): `order = [...settings.worker_order]`.
      - Apply `strictReview` override and enabled-harness filter: `order = (strictReview ? [strictReview] : [...new Set(order.filter(Boolean))]).filter((p) => settings.harnesses[p])`.
-     - Compute candidate list including any `appendWhenRequested` explicit provider (`candidates = connectors.byProvider(provider)?.placement.appendWhenRequested && !order.includes(provider) ? [...order, provider] : order`), and run the existing `model.sh` + account-ranking loop over `candidates`, tracking `configuredCount` (number of candidates that did not exit 3 from `model.sh`).
+     - Compute candidate list including any `appendWhenRequested` explicit provider only when its harness is enabled (`candidates = settings.harnesses[provider] && connectors.byProvider(provider)?.placement.appendWhenRequested && !order.includes(provider) ? [...order, provider] : order`), and run the existing `model.sh` + account-ranking loop over `candidates`, tracking `configuredCount` (number of candidates that did not exit 3 from `model.sh`).
      - **Configuration-block waits (checked only after `picked` is falsy, before falling through to the quota-refill wait):**
        - If `!candidates.length`: return `{ wait: { provider: null, until: new Date(now + 60000).toISOString(), reason: 'No enabled provider in this role\'s provider ladder in Settings → Models' } }`.
        - If `configuredCount === 0`: return `{ wait: { provider: candidates.length === 1 ? candidates[0] : null, until: new Date(now + 60000).toISOString(), reason: candidates.length === 1 ? `${DISPLAY_NAMES[candidates[0]]} is set to Not used for ${slot} in Settings → Models` : `All enabled providers on this role's ladder are set to Not used for ${slot} in Settings → Models` } }` (instead of a misleading quota wait).
@@ -135,8 +147,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 4. **Harness diagnostics, thread/pop-up wait banners, CLI output, and lead prompt (`viewer/app/harnesses.js`, `viewer/pages/settings.js`, `viewer/pages/thread.js`, `viewer/pages/assistant-popup.js`, `viewer/app/wc.js`, `protocol/app/lead.md`):**
    - In `viewer/app/harnesses.js:28-36`, compute `enabledLeadOrder(value)` from `balancer.expandOrder(value.provider_orders.lead, value)` (filtered by `value.harnesses[p]`). If `selection.wait?.reason` ends with `in Settings → Models`, surface `selection.wait.reason` directly as `can_start[role].reason` (never falling through to the quota-limit message). When another enabled & signed-in provider exists outside the order, name the exact owning control without duplicating `"in Settings"`: `Worker ladder` for `role === 'worker'`, and for `role === 'lead'`, `Lead ladder` when `value.provider_orders.lead === 'lead'` (or `Worker ladder` if `lead_order` includes `'any'`), `Worker ladder` when `value.provider_orders.lead === 'worker'`, and `Leads provider order` when `value.provider_orders.lead` is a custom array (ending `in Settings.`).
    - In `viewer/pages/settings.js:2300-2303` (`linkReasons()`): update the matcher regex from `/(Workers try first|Leads try)/` to `/(Lead ladder|Worker ladder|Leads provider order|Settings → Models)/` and link matches to `#models` (updating the corresponding assertion in `viewer/test/app-harnesses.spec.js:501`).
-   - In `viewer/pages/thread.js:1633-1642` (`waitingLine()`) and `viewer/pages/assistant-popup.js` (where waiting/status text is shown for Personal assistant and Project lead conversations): when a waiting session's `waiting_reason` ends with `in Settings → Models`, display `waiting_reason + '.'` directly instead of the quota refill or generic waiting message.
-   - In `viewer/app/wc.js` (compact `session start` output when a session starts in `waiting` state): include `waiting.reason` when `waiting.reason` ends with `in Settings → Models` so leads starting sub-leads, reviewers, or checkers see the configuration block instead of a generic waiting-for-room line.
+   - In `viewer/pages/thread.js:1633-1642` (`waitingLine()`): when a waiting lead session's `waiting_reason` ends with `in Settings → Models`, display `waiting_reason + '.'` directly instead of the quota refill message.
+   - In `viewer/pages/assistant-popup.js` (around `render()` / `working(d)` at `:201-205`): add a waiting-status line above the message composer shown when the active Personal assistant or Project lead session has `status === 'waiting'` and `waiting_reason` ending with `in Settings → Models`, rendering `waiting_reason + '.'` so users staying in the pop-up see why a queued message cannot start.
+   - In `viewer/app/wc.js:223-227`: widen the existing `response.session.waiting_reason?.endsWith(' is left out in Settings')` check to also match `response.session.waiting_reason?.endsWith('in Settings → Models')`, replacing the generic waiting-for-room line with that reason while keeping existing review-family fallback output intact.
    - In `protocol/app/lead.md:92`: update `the lead and sub-lead run on the lead model from Settings, and the reviewer, verifier, mapper and designer on the Other agents tiers there` to `the lead, sub-lead, reviewer, verifier, mapper and designer each run on their configured tier in Settings → Models`.
 
 ### 4. Reworked Settings → Models & Usage and balancing UI (`viewer/pages/settings.js`, `viewer/pages/settings.css`)
@@ -155,7 +168,7 @@ Match the agreed v5 desktop (`1280 × 900`) and phone (`390 × 844`) mockups in 
 3. **Agents block (`agents`):**
    - Heading: `Agents`, subtitle: `Choose a tier for each role. Models depend on the provider used.`
    - Roles in order:
-     1. `Leads` (`lead`, ladder hint: `Provider order applies to new threads; existing threads stay on their provider`)
+     1. `Leads` (`lead`)
      2. `Sub-leads` (`sub-lead`)
      3. `Plan reviewers` (`reviewer`)
      4. `Checker` (`verifier`)
@@ -165,7 +178,7 @@ Match the agreed v5 desktop (`1280 × 900`) and phone (`390 × 844`) mockups in 
      8. `Scout` (`scout`, hint: `Runs on the lead's or sub-lead's provider` — no provider ladder control)
      9. `Scout for bigger changes` (`scout-heavy`, hint: `Runs on the sub-lead's provider` — no provider ladder control)
    - Each role row displays:
-     - Role title and a live resolved model preview line showing the configured tier models across enabled providers (e.g. `Claude: claude-opus-4-6 · GPT: gpt-5.4 (high)` — omitting providers set to `Not used`; showing `No provider set for this tier` if all enabled providers are `Not used`). For Scouts, the preview displays the same configured tier models (CLI family/member-id resolution occurs at launch). Changing any tier model/effort or toggling a role's tier updates affected previews immediately.
+     - Role title and a live resolved model preview line showing the configured tier models across the enabled providers reachable by that role's effective provider ladder (`expandOrder(data.provider_orders[role], data)` filtered by enabled harnesses; for Scouts, across all enabled providers since they run on the lead/sub-lead's provider), e.g. `Claude: claude-opus-4-6 · GPT: gpt-5.4 (high)` — omitting providers set to `Not used`, and showing `No provider set for this tier` if none of the reachable providers has a model configured at that tier. Changing any tier model/effort, role tier, or provider ladder updates affected previews immediately.
      - A 4-way segmented tier control (`role="radiogroup"`, `Light | Standard | Heavy | Critical`) that saves immediately via `PUT /settings/preferences` (`{ other_agents: { [role]: tier } }`). On failure, restores the previous tier and shows an inline error on that row.
      - For every role except `scout` and `scout-heavy`: a collapsible provider ladder control (`<details>` / disclosure trigger):
        - Closed summary label shows `Default: Lead`, `Default: Worker`, or `Custom: <Prov1> → <Prov2>…` (listing enabled providers in order, plus `→ any` if `'any'` is enabled).
@@ -217,7 +230,7 @@ Targeted unit and browser tests covering the changed areas (the full test suite 
 
 - `node --test viewer/test/app-settings.test.js viewer/test/app-balancer.test.js viewer/test/char-settings-defaults.test.js viewer/test/app-kimi-settings.test.js viewer/test/app-openrouter-settings.test.js viewer/test/assistant.test.js viewer/test/project-lead.test.js viewer/test/app-hub.test.js viewer/test/app-harnesses.test.js`
 - `node --test machine/test/name-guard.test.js`
-- `npm --prefix viewer run test:browser -- browser.spec.js app-settings.spec.js app-harnesses.spec.js app-accounts.spec.js app-settings-hold.spec.js background-settings-surfaces.spec.js`
+- `npm --prefix viewer run test:browser -- browser.spec.js app-settings.spec.js app-harnesses.spec.js app-accounts.spec.js app-settings-hold.spec.js background-settings-surfaces.spec.js app-assistant-popup.spec.js`
 - Protocol check (per `CONTRIBUTING.md:92-95`): inspect the updated sentence in `protocol/app/lead.md:92` and confirm it matches `viewer/app/balancer.js` tier resolution with no conflicting references.
 
 ## Accepted Risks
@@ -335,7 +348,7 @@ Targeted unit and browser tests covering the changed areas (the full test suite 
 
 ### Round 5 — 2026-11-27
 
-**Lanes:** pending
+**Lanes:** claude / claude-opus-5-5 (intent); gpt / gpt-6.2-sol (mechanics); cross-family: yes.
 
 **Changed since Round 4:**
 - §1.3: Simplified legacy pin diff by dropping manifest-default comparison: compare `lead` against `other_agents.lead`, and compare `sub-lead` against `other_agents['sub-lead']` only when `sub-lead` differs from `lead`.
@@ -345,6 +358,15 @@ Targeted unit and browser tests covering the changed areas (the full test suite 
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | `assistant-popup.js` has no existing waiting line; specify adding one above the composer. | upheld | Specified new waiting-status line above the composer in `assistant-popup.js` (§3.4). |
+| intent | minor | `wc.js:227` already checks `response.session.waiting_reason?.endsWith(' is left out in Settings')`; widen it instead of adding a parallel path. | upheld | Specified widening `wc.js:223-227` to also match `in Settings → Models` (§3.4). |
+| intent | minor | Leads row repeated "new threads only" in both the row hint and open disclosure. | upheld | Kept `Applies to new threads` inside the open disclosure only (§4.3). |
+| mechanics | minor | Fresh install could trigger legacy notice after its first ordinary tier edit if dismissal stays false. | upheld | Auto-persist `lead_tier_notice_dismissed = true` on `models`/`other_agents` save when no diffs existed before the edit (§1.3). |
+| mechanics | minor | Skipping `sub-lead` whenever it equals `lead` hides recovery when `sub-lead` uses a different tier whose cell is `Not used`. | upheld | Deduplicate `sub-lead` against `lead` only when both their tiers and legacy cells match (§1.3). |
+| mechanics | minor | `appendWhenRequested` candidate should check `settings.harnesses[provider]` before counting as configured. | upheld | Added `settings.harnesses[provider]` guard to `candidates` (§3.3). |
+| mechanics | minor | `wc.js:223` reads `response.session.waiting_reason` and should replace the generic waiting line for configuration blocks. | upheld | Updated §3.4 with exact `response.session.waiting_reason` field and replacement behavior. |
+| mechanics | minor | Live preview showed all enabled providers even when a role's custom ladder excluded them. | upheld | Scoped each standalone role's preview to enabled providers reachable by its effective provider ladder (§4.3). |
+| mechanics | minor | §6 omitted `app-assistant-popup.spec.js` for the popup wait line. | upheld | Added `app-assistant-popup.spec.js` to §6. |
 
 ## Prior Work
 
