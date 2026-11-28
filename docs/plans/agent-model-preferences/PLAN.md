@@ -239,6 +239,9 @@ Targeted unit and browser tests covering the changed areas (the full test suite 
 |------|--------------|-------|
 | `Object.hasOwn(PROVIDERS, v)` in array validation coerces nested single-element arrays like `['gpt']` to string keys. | Rare path per `realism.md`: neither the UI nor any real tool writes nested arrays into `provider_orders` or `lead_order`. | review-round-1 |
 | Clicking the one-time legacy pin recovery button in one tab while manually editing the same tier cell in a second open Settings tab could overwrite the other tab's edit. | Rare path per `realism.md`: requires concurrent manual edits to the same tier cell across two open Settings tabs during the one-time notice. | review-round-3 |
+| Clicking an effort pill while a model `<select>` save for the same tier cell is still in flight can send the previous model with the new effort (`viewer/pages/settings.js:348`). | Rare path per `realism.md`: sub-second race requiring a ~1s delayed local hub response while clicking an effort pill mid-save. | verification-3 |
+| Closed custom provider-ladder summary clips with ellipsis when all 5 providers are enabled in one custom ladder (`viewer/pages/settings.css:347`). | Matches Spec §4.3 (`Custom: <Prov1> → <Prov2>…` ellipsis truncation by design); full order is in `aria-label` and shown when opened. | verification-3 |
+| Pressing Right Arrow on `role="radio"` or `role="tab"` does not move focus/selection (`viewer/pages/settings.js:836,923`). | Pre-existing Settings button-group pattern (Tab/Enter/Space); Spec §4.8 requires preserving semantic ARIA labels, not roving-tabindex arrow handlers. | verification-3 |
 
 ## Check Once Built
 
