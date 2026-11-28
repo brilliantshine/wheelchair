@@ -479,10 +479,10 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
     test('a 409 on switch-off shows its message under the row', async ({ page }) => {
       const s = status();
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }),
-        put: (r) => json(r, { error: 'Lead order would have no harness left. Add another to Lead order first.' }, 409) });
+        put: (r) => json(r, { error: 'Leads would have no enabled provider left. Turn a provider on under Settings → AI providers or add another to Leads\' provider ladder in Settings → Models first.' }, 409) });
       await openPage(page, context, '/app/settings#providers');
       await page.getByLabel('Use Claude Code').click();
-      await expect(row(page, 'claude').getByRole('alert')).toContainText('Lead order would have no harness left.');
+      await expect(row(page, 'claude').getByRole('alert')).toContainText('Leads would have no enabled provider left.');
       await expect(page.getByLabel('Use Claude Code')).toBeChecked();
     });
 
@@ -500,20 +500,31 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
 
     test("the can't-start notice names the reasons and links the lists", async ({ page }) => {
       const s = status({}, { can_start: { machine: 'hub',
-        lead: { ok: false, reason: 'New leads try Claude Code; none is installed and signed in on hub. Add Pi to Leads try in Settings.' },
-        worker: { ok: false, reason: 'New workers try Codex; none is installed and signed in on hub. Add Pi to Workers try first in Settings.' } } });
+        lead: { ok: false, reason: 'New leads try Claude Code; none is installed and signed in on hub. Add Pi to Lead ladder in Settings.' },
+        worker: { ok: false, reason: 'New workers try Codex; none is installed and signed in on hub. Add Pi to Worker ladder in Settings.' } } });
       await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
       await openPage(page, context, '/app/settings#providers');
       const notice = page.locator('.h-notice');
       await expect(notice).toContainText("Agents can't start yet on hub:");
       await expect(notice).toContainText('New leads try Claude Code');
-      await expect(notice.getByRole('link', { name: 'Leads try' })).toHaveAttribute('href', '#usage');
-      await expect(notice.getByRole('link', { name: 'Workers try first' })).toHaveAttribute('href', '#usage');
+      await expect(notice.getByRole('link', { name: 'Lead ladder' })).toHaveAttribute('href', '#models');
+      await expect(notice.getByRole('link', { name: 'Worker ladder' })).toHaveAttribute('href', '#models');
       s.can_start = { machine: 'hub', lead: { ok: true }, worker: { ok: true } };
-      await notice.getByRole('link', { name: 'Leads try' }).click();
-      await expect(page.locator('.catview h1')).toHaveText('Usage and balancing');
+      await notice.getByRole('link', { name: 'Lead ladder' }).click();
+      await expect(page.locator('.catview h1')).toHaveText('Models');
       await goTo(page, 'providers');
       await expect(page.locator('.h-notice')).toHaveCount(0);
+    });
+
+    test('the custom-order and Models reasons link to Models too', async ({ page }) => {
+      const s = status({}, { can_start: { machine: 'hub',
+        lead: { ok: false, reason: 'Add Pi to Leads provider order in Settings.' },
+        worker: { ok: false, reason: 'Pi is set to Not used for heavy in Settings → Models' } } });
+      await stub(page, { harnesses: (r) => json(r, s), install: (r) => json(r, { state: 'idle' }), put: (r) => json(r, {}) });
+      await openPage(page, context, '/app/settings#providers');
+      const notice = page.locator('.h-notice');
+      await expect(notice.getByRole('link', { name: 'Leads provider order' })).toHaveAttribute('href', '#models');
+      await expect(notice.getByRole('link', { name: 'Settings → Models' })).toHaveAttribute('href', '#models');
     });
 
     test('switching a harness off hides its account row, review-family option and order entries', async ({ page }) => {
@@ -528,11 +539,10 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
       await expect(page.locator('.prov-group[data-provider="claude"]')).toBeVisible();
       await expect(page.locator('.prov-group[data-provider="gemini"]')).toHaveCount(0);
       await goTo(page, 'models');
-      await expect(page.locator('tr[data-provider="gemini"]')).toHaveCount(0);
-      await expect(page.locator('tr[data-provider="claude"]')).toHaveCount(1);
+      await expect(page.getByRole('tab', { name: 'Claude' })).toHaveCount(1);
+      await expect(page.getByRole('tab', { name: 'Antigravity' })).toHaveCount(0);
       await expect(page.getByRole('radio', { name: 'Antigravity' })).toHaveCount(0);
       await expect(page.getByRole('radio', { name: 'Kimi Code' })).toHaveCount(1);
-      await goTo(page, 'usage');
       await expect(page.locator('[data-order="lead_order"] li').first()).toBeVisible();
       await expect(page.locator('[data-order="lead_order"]').getByRole('button', { name: '+ Antigravity' })).toHaveCount(0);
       await expect(page.locator('[data-order="worker_order"] li', { hasText: 'Antigravity' })).toHaveCount(0);
@@ -554,18 +564,16 @@ for (const [label, size] of [['phone', { width: 390, height: 844 }], ['desktop',
         saved = r.request().postDataJSON();
         return json(r, { ...saved, reserved_provider: null });
       });
-      await openPage(page, context, '/app/settings#usage');
+      await openPage(page, context, '/app/settings#models');
       const wo = page.locator('[data-order="worker_order"]');
       await expect(wo.locator('li')).toHaveCount(3);
       await wo.getByRole('button', { name: 'Move Claude down' }).click();
-      await expect(wo.locator('li span').first()).toHaveText('Antigravity');
-      await page.locator('#bal-save').click();
+      await expect(wo.locator('li > span').first()).toHaveText('Antigravity');
       await expect.poll(() => saved && saved.worker_order).toEqual(['gpt', 'gemini', 'claude', 'kimi']);
       saved = null;
-      const lo = page.locator('[data-order="lead_order"]');
-      await lo.getByRole('button', { name: 'Move Claude down' }).click();
-      await page.locator('#lead-order-save').click();
+      await page.locator('[data-order="lead_order"]').getByRole('button', { name: 'Move Claude down' }).click();
       await expect.poll(() => saved && saved.lead_order).toEqual(['gpt', 'gemini', 'claude', 'kimi', 'any']);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
     });
 
     test('Install targets the machine the picker shows and waits for its data', async ({ page }) => {

@@ -43,7 +43,7 @@ test('all Settings categories keep content solid and outer gutters visible', asy
   await expect.poll(() => page.evaluate(() => window.wcBackground.current().available)).toBe(true);
   for (const [section, selector] of [
     ['providers', '.harnesses > *, .prov-group > h3, #add-account, .cat-head'],
-    ['usage', '.usage-bars, .models.balance > section, .lead-order-box > section'],
+    ['usage', '.usage-bars, .models.balance > section'],
     ['models', '.models > section, .cat-head'],
     ['leads', '.models > section, .cat-head'],
     ['threads', '.models > section, .cat-head'],

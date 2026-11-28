@@ -2,6 +2,10 @@
 
 module.exports = [
   'app-settings-hold.spec.js', // Settings scroll anchoring.
+  'app-settings.spec.js', // Horizontal scroll containment.
+  'app-harnesses.spec.js', // Horizontal scroll containment.
+  'app-accounts.spec.js', // Horizontal scroll containment.
+  'background-settings-surfaces.spec.js', // Horizontal scroll containment.
   'browser.spec.js', // Graph rendering and geometry.
   'touch.spec.js', // Touch gestures.
   'background-rendering.spec.js', // Pixel sampling.

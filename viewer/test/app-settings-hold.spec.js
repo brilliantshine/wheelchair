@@ -166,15 +166,15 @@ test('phone Technical terms wording fits', async ({ page }) => {
 });
 
 for (const mode of ['press', 'hover', 'focus']) {
-  test(`Lead order ${mode} stays in place when usage bars arrive`, async ({ page }) => {
+  test(`Balancing ${mode} stays in place when usage bars arrive`, async ({ page }) => {
     let release;
     const held = new Promise((resolve) => { release = resolve; });
     await mock(page, { settings: { harnesses: { claude: true, gpt: true, gemini: true, kimi: true, openrouter: true }, lead_order: ['claude', 'gpt', 'any'] } });
     await page.route('**/api/usage', async (route) => { await held; await route.fulfill({ json: usageBody() }); });
     await open(page, 'usage');
-    await page.addStyleTag({ content: '* { overflow-anchor: none !important; }' });
-    const button = page.getByRole('group', { name: 'Lead order' }).getByRole('button', { name: 'Move Claude down' });
-    await expect(button).toBeVisible();
+    await page.addStyleTag({ content: '* { overflow-anchor: none !important; } .panel { padding-bottom: 600px !important; }' });
+    const button = page.getByRole('checkbox', { name: 'Reviewers' });
+    await expect(button).toBeChecked();
     await page.locator('[data-block="usage"]').evaluate((el) => {
       const nav = document.getElementById('app-nav').getBoundingClientRect().bottom;
       window.scrollBy(0, el.getBoundingClientRect().bottom - nav - 20);
@@ -200,8 +200,7 @@ for (const mode of ['press', 'hover', 'focus']) {
     expect(Math.abs(after.y - box.y)).toBeLessThanOrEqual(1);
     if (mode === 'press') {
       await page.mouse.up();
-      await expect(page.locator('[data-order="lead_order"] li').nth(0)).toContainText('GPT');
-      await expect(page.locator('[data-order="lead_order"] li').nth(1)).toContainText('Claude');
+      await expect(button).not.toBeChecked();
     }
   });
 }
