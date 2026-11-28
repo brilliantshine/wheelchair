@@ -49,7 +49,7 @@ async function start() {
       };
       request({ url, headers, sessionId: sid, protocolVersion: version, message: msg, signal: controller.signal,
         onHeaders: h => { responseHeaders = h; if (forward && msg.method === 'initialize' && h['mcp-session-id']) sessionId = h['mcp-session-id']; if (!isRequest) finish(null, { headers: h }); },
-        onMessage: response => { const result = apply(checker.line(Buffer.from(JSON.stringify(response)))); if (result) finish(null, { message: result, headers: responseHeaders, original: response }); },
+        onMessage: response => { if (!forward && response && typeof response === 'object' && response.method === 'ping' && response.id !== undefined) { request({ url, headers, sessionId: responseHeaders?.['mcp-session-id'] || sid, protocolVersion: version, message: { jsonrpc: '2.0', id: response.id, result: {} }, signal: controller.signal }).catch(() => {}); return; } const result = apply(checker.line(Buffer.from(JSON.stringify(response)))); if (result) finish(null, { message: result, headers: responseHeaders, original: response }); },
         onOversized: prefix => { const result = apply(checker.oversized(prefix)); if (result) finish(null, { message: result, headers: responseHeaders }); }
       }).then(() => { controllers.delete(controller); if (!done) finish(new Error('HTTP stream ended without a matching response')); }, e => { controllers.delete(controller); finish(e); });
     });

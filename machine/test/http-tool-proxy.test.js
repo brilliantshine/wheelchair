@@ -26,6 +26,40 @@ test('HTTP handshake negotiates, lists and deletes session', async () => {
   try { const result = await httpHandshake({ url: fixture.url, timeoutMs: 3000 }); assert.equal(result.ok, true); assert.deepEqual(result.tools, ['one']); assert.deepEqual(calls, ['initialize', 'notifications/initialized', 'tools/list', 'delete']); } finally { fixture.s.close(); }
 });
 
+test('HTTP handshake answers a ping during initialization', async () => {
+  let stream, received, replySession;
+  const fixture = await server((req, res) => { let body = ''; req.on('data', b => { body += b; }); req.on('end', () => {
+    if (req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+    const msg = JSON.parse(body);
+    if (msg.method === 'initialize') { stream = res; res.writeHead(200, { 'content-type': 'text/event-stream', 'mcp-session-id': 'hs-session' }); res.write(`data: ${JSON.stringify({ jsonrpc: '2.0', id: 'hs-ping', method: 'ping' })}\n\n`); }
+    else if (msg.id === 'hs-ping') { received = msg; replySession = req.headers['mcp-session-id']; res.writeHead(202); res.end(); stream.end(`data: ${JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18', capabilities: {} } })}\n\n`); }
+    else { res.writeHead(202); res.end(); }
+  }); });
+  try { const result = await httpHandshake({ url: fixture.url, timeoutMs: 3000 }); assert.equal(result.ok, true); assert.deepEqual(received, { jsonrpc: '2.0', id: 'hs-ping', result: {} }); assert.equal(replySession, 'hs-session'); } finally { fixture.s.closeAllConnections(); fixture.s.close(); }
+});
+
+test('proxy answers a ping during 404 recovery initialization', async () => {
+  const fs = require('node:fs/promises'), path = require('node:path'), { spawn } = require('node:child_process'), readline = require('node:readline'), { makeTemp } = require('../../test-support/run-dir');
+  const root = await makeTemp(), dir = path.join(root, 'web'), state = path.join(root, 'state'); await fs.mkdir(dir); await fs.mkdir(path.join(state, 'shared-keys'), { recursive: true });
+  await fs.writeFile(path.join(state, 'shared-keys', 'keys.json'), JSON.stringify({ shared: true, revision: 1, keys: { API_KEY: 'secret123456' } }));
+  let generation = 0, stream, received, replySession;
+  const fixture = await server((req, res) => { let body = ''; req.on('data', b => { body += b; }); req.on('end', () => {
+    if (req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+    const msg = JSON.parse(body);
+    if (msg.method === 'initialize') { generation++; if (generation === 2) { stream = res; res.writeHead(200, { 'content-type': 'text/event-stream', 'mcp-session-id': 's2' }); res.write(`data: ${JSON.stringify({ jsonrpc: '2.0', id: 'rec-ping', method: 'ping' })}\n\n`); } else { res.writeHead(200, { 'content-type': 'application/json', 'mcp-session-id': 's1' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2025-06-18' } })); } }
+    else if (msg.id === 'rec-ping') { received = msg; replySession = req.headers['mcp-session-id']; res.writeHead(202); res.end(); stream.end(`data: ${JSON.stringify({ jsonrpc: '2.0', id: '__wheelchair_init__', result: { protocolVersion: '2025-06-18' } })}\n\n`); }
+    else if (msg.method === 'notifications/initialized') { res.writeHead(202); res.end(); }
+    else if (req.headers['mcp-session-id'] === 's1') { res.writeHead(404); res.end(); }
+    else { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { recovered: true } })); }
+  }); });
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'web', description: 'x', kind: 'server', url: fixture.url, keys: ['API_KEY'] }));
+  const child = spawn(process.execPath, [path.join(__dirname, '../lib/http-tool-proxy.js'), '--project-dir', root, '--tool', dir, '--state-dir', state, '--key-store', 'shared', '--key', 'API_KEY'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+  const next = async () => JSON.parse((await Promise.race([lines.next(), new Promise((_, reject) => setTimeout(() => reject(new Error('reply timed out')), 3000))])).value);
+  const send = msg => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
+  try { send({ id: 1, method: 'initialize', params: {} }); assert.equal((await next()).id, 1); send({ method: 'notifications/initialized' }); send({ id: 2, method: 'tools/call' }); assert.deepEqual(await next(), { jsonrpc: '2.0', id: 2, result: { recovered: true } }); assert.deepEqual(received, { jsonrpc: '2.0', id: 'rec-ping', result: {} }); assert.equal(replySession, 's2'); } finally { child.kill(); fixture.s.closeAllConnections(); fixture.s.close(); }
+});
+
 test('proxy injects keys, redacts replies, recovers one expired session and deletes on shutdown', async () => {
   const fs = require('node:fs/promises'), path = require('node:path'), { spawn } = require('node:child_process'), readline = require('node:readline');
   const { makeTemp } = require('../../test-support/run-dir');
