@@ -347,12 +347,17 @@ test('idle poll probes eligible accounts in order and records the selected machi
   const { c, hub } = await pollSetup();
   try {
     await settings.update(hub, s => { s.accounts.push({ ...account, id: 'signed-out' }, { ...account, id: 'live' }, { ...account, id: 'paused', paused: true }); });
-    c.machine.status.agy = { logged_in: true };
-    c.machine.status.accounts.push({ id: 'live', cli: 'claude', logged_in: true }, { id: 'paused', cli: 'claude', logged_in: true }, { id: 'default-gemini', cli: 'agy', logged_in: true });
+    c.machine.status.agy = { installed: true, logged_in: true };
+    c.machine.status.pi = { installed: true, logged_in: true };
+    c.machine.status.accounts.push({ id: 'live', cli: 'claude', logged_in: true }, { id: 'paused', cli: 'claude', logged_in: true }, { id: 'default-gemini', cli: 'agy', logged_in: true }, { id: 'default-openrouter', cli: 'pi', logged_in: true });
     await hub.save({ id: 'poll-live', sessions: [{ live: true, account: 'live' }] });
     await hub.pollIdle();
-    assert.deepEqual(usageCalls(c).map(x => x.body), [{ account: 'default-claude', cli: 'claude', dir: null }]);
+    assert.deepEqual(usageCalls(c).map(x => x.body), [
+      { account: 'default-claude', cli: 'claude', dir: null },
+      { account: 'default-gemini', cli: 'agy', dir: null },
+    ]);
     assert.equal((await usage.readings(hub))['default-claude'].machine, 'hub');
+    assert.equal((await usage.readings(hub))['default-gemini'].machine, 'hub');
   } finally { await close(c); }
 });
 
@@ -384,6 +389,19 @@ test('idle poll stores a Kimi reading while its session is live', async () => {
     const poll = hub.pollIdle(); await g.called; g.release(); await poll;
     assert.equal(usageCalls(c)[0].body.cli, 'kimi');
     assert.equal((await usage.readings(hub))['default-kimi'].week.used, 20);
+  } finally { g.release(); await close(c); }
+});
+
+test('idle poll stores an Antigravity reading while its session is live', async () => {
+  const { c, hub } = await pollSetup(); const g = gate(); c.machine.usageReply = g.respond;
+  try {
+    await settings.update(hub, s => { s.accounts.find(a => a.id === 'default-claude').paused = true; });
+    c.machine.status.agy = { installed: true, logged_in: true };
+    c.machine.status.accounts.push({ id: 'default-gemini', cli: 'agy', logged_in: true });
+    await hub.save({ id: 'agy-live', sessions: [{ live: true, account: 'default-gemini' }] });
+    const poll = hub.pollIdle(); await g.called; g.release(); await poll;
+    assert.equal(usageCalls(c)[0].body.cli, 'agy');
+    assert.equal((await usage.readings(hub))['default-gemini'].week.used, 20);
   } finally { g.release(); await close(c); }
 });
 
