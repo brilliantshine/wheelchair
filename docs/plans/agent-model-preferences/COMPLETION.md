@@ -9,6 +9,12 @@ verified-by:
   - round: 1
     lane: gpt / gpt-6.2-sol
     checks: standard (gpt-6.1-terra, gpt-6.1-terra --effort high, claude-sonnet-5-5)
+  - round: 2
+    lane: claude / claude-opus-5-5
+    checks: standard (gpt-6.1-terra, gpt-6.1-terra --effort high, claude-sonnet-5-5)
+  - round: 2
+    lane: gpt / gpt-6.2-sol
+    checks: standard (gpt-6.1-terra, gpt-6.1-terra --effort high, claude-sonnet-5-5)
 ---
 
 # Completion Report — Better agent model preferences in Settings
@@ -90,3 +96,12 @@ Fixed all 6 distinct gaps from verifiers + `full-run-1` (details in `docs/plans/
   - Added `'app-assistant-popup.spec.js'` to `viewer/test/firefox-specs.js` per `CONTRIBUTING.md:93`.
   - Added three regression tests in `viewer/test/app-settings.spec.js`.
   - Validation: `npm --prefix viewer run test:browser -- app-settings.spec.js app-assistant-popup.spec.js` — **208 passed, 2 skipped, 0 failed** across Chromium + Firefox (exit 0); `node --test machine/test/name-guard.test.js` — **2 passed, 0 failed** (exit 0).
+
+### Remediation 2 (after verification attempt 2 on `12cb6ed6`)
+
+Claude verifier (`wc-c29d9fe6f697-verifier-3`) returned `PASS`. Fixed the one genuine gap from GPT verifier (`wc-c29d9fe6f697-verifier-4`, details in `docs/plans/agent-model-preferences/REMEDIATION-2.md`):
+
+- **R2-A (`5b7fc0df`, `standard / gpt-6.1-terra`):**
+  - Updated `POST /settings/models/heads-up` (`viewer/app/routes.js:386-396`) so `action === 'switch'` runs inside `settings.update` using the same pre-check + post-success dismissal pattern as `PUT /settings/models`, preventing a fresh install from getting a retroactive legacy pin notice after clicking Switch.
+  - Added unit test `heads-up switch dismisses only an empty legacy notice` in `viewer/test/app-settings.test.js:678-695`.
+  - Validation: `node --test viewer/test/app-settings.test.js` — **28 passed, 0 failed** (exit 0); `node --test machine/test/name-guard.test.js` — **2 passed, 0 failed** (exit 0).
