@@ -629,3 +629,146 @@ test('worker on its own worktree reports its missing project and shared keys', a
     'shared tool shared needs key TOKEN, not set on this machine when this session started; set it and run again',
   ]);
 });
+async function keyedLauncherFixture(t) {
+  const root = await makeTemp('keyed-launch-'), dir = await putTool(root, 'server', 'server', 'server'), state = path.join(root, 'state');
+  const file = path.join(dir, 'tool.json'), tool = JSON.parse(await fs.readFile(file, 'utf8')); tool.keys = ['TOKEN']; await fs.writeFile(file, JSON.stringify(tool));
+  await fs.writeFile(path.join(dir, 'tool.js'), `const readline = require('node:readline');\nprocess.stderr.write('diagnostic ' + process.env.TOKEN + '\\n');\nreadline.createInterface({input:process.stdin}).on('line', line => { const v = JSON.parse(line); process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:v.id,result:process.env.TOKEN})+'\\n'); });\n`);
+  await require('../lib/shared-keys').writeSharedKeys(state, { set: { TOKEN: 'secretvalue123' } });
+  const args = [path.join(__dirname, '../lib/tool-launch.js'), '--project-dir', root, '--tool', dir, '--state-dir', state, '--key-store', 'shared', '--key', 'TOKEN'];
+  const run = (extra = {}, argv = args) => spawn(process.execPath, argv, { env: { ...process.env, ...extra }, stdio: ['pipe', 'pipe', 'pipe'] });
+  return { dir, file, tool, args, run };
+}
+
+test('keyed launcher reads the store, redacts output and detects changed keys', { timeout: 10000 }, async t => {
+  const f = await keyedLauncherFixture(t), child = f.run();
+  let output = '', errors = ''; child.stdout.on('data', b => output += b); child.stderr.on('data', b => errors += b);
+  child.stdin.end('{"jsonrpc":"2.0","id":1,"method":"test"}\n');
+  const [code] = await once(child, 'close'); assert.equal(code, 0); assert.match(output, /\[key\]/); assert.doesNotMatch(output + errors, /secretvalue123/); assert.match(errors, /diagnostic \[key\]/);
+  delete f.tool.keys; await fs.writeFile(f.file, JSON.stringify(f.tool));
+  const changed = f.run(); let error = ''; changed.stderr.on('data', b => error += b); changed.stdin.end(); const [changedCode] = await once(changed, 'close'); assert.equal(changedCode, 1); assert.match(error, /its keys changed/);
+});
+
+test('keyed launcher refuses child-process debugging and missing values', { timeout: 10000 }, async t => {
+  const f = await keyedLauncherFixture(t);
+  for (const [env, expected] of [[{ NODE_DEBUG: 'child_process' }, /Node debug output/], [{}, /needs key TOKEN/]]) {
+    if (!env.NODE_DEBUG) await require('../lib/shared-keys').writeSharedKeys(path.join(path.dirname(path.dirname(path.dirname(f.dir))), 'state'), { remove: ['TOKEN'] });
+    const child = f.run(env); let error = ''; child.stderr.on('data', b => error += b); child.stdin.end(); const [code] = await once(child, 'close'); assert.equal(code, 1); assert.match(error, expected); assert.doesNotMatch(error, /secretvalue123/);
+  }
+});
+
+test('held server request waits for the end of the client line before injection', { timeout: 10000 }, async t => {
+  const f = await keyedLauncherFixture(t);
+  await fs.writeFile(path.join(f.dir, 'tool.js'), `process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:9,method:process.env.TOKEN})+'\\n');\nlet input=''; process.stdin.on('data', b => input += b); process.stdin.on('end', () => { process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:1,result:input})+'\\n'); });`);
+  const child = f.run(); let output = '', errors = ''; child.stdout.on('data', b => output += b); child.stderr.on('data', b => errors += b);
+  child.stdin.write('{"id":1,');
+  await new Promise((resolve, reject) => { const deadline = setTimeout(() => reject(new Error('held request deadline')), 5000); const onData = () => { if (errors.includes('held back')) { clearTimeout(deadline); child.stderr.off('data', onData); resolve(); } }; child.stderr.on('data', onData); onData(); });
+  child.stdin.end('"method":"call"}\n');
+  const [code] = await once(child, 'close'); assert.equal(code, 0);
+  const input = JSON.parse(output).result.trimEnd().split('\n'); assert.equal(input[0], '{"id":1,"method":"call"}'); assert.equal(JSON.parse(input[1]).id, 9);
+});
+
+async function keyedRunScript(t, script) {
+  const f = await keyedLauncherFixture(t);
+  await fs.writeFile(path.join(f.dir, 'tool.js'), script);
+  return f;
+}
+function collectLaunch(child) {
+  const out = [], err = [];
+  child.stdout.on('data', b => out.push(b)); child.stderr.on('data', b => err.push(b));
+  return { out, err, closed: once(child, 'close') };
+}
+
+test('keyed server receives env without exposing it in arguments', { timeout: 10000 }, async t => {
+  const f = await keyedRunScript(t, `process.stdout.write(JSON.stringify({env: process.env.TOKEN, argv: process.argv})+'\\n');`);
+  assert(!f.args.join(' ').includes('secretvalue123'));
+  const child = f.run(), c = collectLaunch(child); child.stdin.end();
+  assert.equal((await c.closed)[0], 0); const result = JSON.parse(Buffer.concat(c.out));
+  assert.equal(result.env, '[key]'); assert(!JSON.stringify(result.argv).includes('secretvalue123'));
+});
+
+test('keyless entry refuses a server that gained keys', { timeout: 10000 }, async t => {
+  const f = await keyedLauncherFixture(t), child = f.run({}, f.args.slice(0, -2)), c = collectLaunch(child);
+  child.stdin.end(); assert.equal((await c.closed)[0], 1); assert.match(Buffer.concat(c.err).toString(), /its keys changed/);
+});
+
+test('keyed client can wait for each reply before sending the next', { timeout: 10000 }, async t => {
+  const f = await keyedRunScript(t, `require('readline').createInterface({input:process.stdin}).on('line',l=>process.stdout.write(JSON.stringify({id:JSON.parse(l).id,result:'ok'})+'\\n'));`);
+  const child = f.run(), lines = createInterface({ input: child.stdout }), iterator = lines[Symbol.asyncIterator](), closed = once(child, 'close'); child.stderr.resume();
+  for (let i = 0; i < 3; i++) { child.stdin.write(JSON.stringify({id:i})+'\n'); assert.equal(JSON.parse((await iterator.next()).value).id, i); }
+  child.stdin.end(); assert.equal((await closed)[0], 0);
+});
+
+test('stderr redacts a key across the piece edge and preserves long ordinary lines', { timeout: 10000 }, async t => {
+  const f = await keyedRunScript(t, `process.stderr.write('word '.repeat(817)+'se' + process.env.TOKEN.slice(2)+'\\n'+'ordinary '.repeat(2500)+'\\n');`);
+  const child = f.run(), c = collectLaunch(child); child.stdin.end(); assert.equal((await c.closed)[0], 0);
+  assert.equal(Buffer.concat(c.err).toString(), 'word '.repeat(817)+'[key]\n'+'ordinary '.repeat(2500)+'\n');
+});
+
+test('server output is fully delivered after stdin closes', { timeout: 15000 }, async t => {
+  const f = await keyedRunScript(t, `process.stdin.resume(); process.stdin.on('end',()=>process.stdout.write(JSON.stringify({id:1,result:'x'.repeat(1000000)})+'\\n'));`);
+  const child = f.run(), c = collectLaunch(child); child.stdin.end(); assert.equal((await c.closed)[0], 0);
+  assert.equal(JSON.parse(Buffer.concat(c.out)).result.length, 1000000);
+});
+
+test('server exit with inherited stdout held open has a two second deadline', { timeout: 10000 }, async t => {
+  const f = await keyedRunScript(t, `require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},10000)'],{stdio:['ignore','inherit','inherit']}).unref(); process.stdout.write('{"id":1,"result":"done"}\\n');`);
+  const child = f.run(), c = collectLaunch(child), start = Date.now(); child.stdin.end(); assert.equal((await c.closed)[0], 0);
+  assert(Date.now() - start < 5000); assert.equal(JSON.parse(Buffer.concat(c.out)).result, 'done');
+});
+
+test('closed server stdin does not prevent output or client shutdown', { timeout: 10000 }, async t => {
+  const f = await keyedRunScript(t, `process.stdin.destroy(); process.stdout.write('{"id":1,"result":"done"}\\n'); setTimeout(()=>process.exit(0),1200);`);
+  const child = f.run(), c = collectLaunch(child); child.stdin.on('error',()=>{}); child.stdin.write('x'.repeat(1000000));
+  await new Promise(resolve => setTimeout(resolve, 1500)); child.stdin.end(); assert.equal((await c.closed)[0], 0);
+  assert.equal(JSON.parse(Buffer.concat(c.out)).result, 'done');
+});
+
+test('paused client receives final server reply after eight seconds', { timeout: 20000 }, async t => {
+  const f = await keyedRunScript(t, `process.stdin.resume(); process.stdin.on('end',()=>{process.stdout.write(JSON.stringify({id:1,result:'x'.repeat(1000000)})+'\\n'); setTimeout(()=>{},12000);});`);
+  const child = f.run(), out = []; child.stderr.resume(); const closed = once(child, 'close'); child.stdin.end();
+  await new Promise(resolve => setTimeout(resolve, 8000)); child.stdout.on('data', b => out.push(b));
+  await closed; assert.equal(JSON.parse(Buffer.concat(out)).result.length, 1000000);
+});
+
+test('oversized lines use only a complete id before the cutoff', { timeout: 30000 }, async t => {
+  const f = await keyedRunScript(t, `const big='x'.repeat(33*1024*1024); process.stdout.write('{"id":7,"result":"'+big+'"}\\n{"result":"'+big+'","id":8}\\n');`);
+  const child = f.run(), c = collectLaunch(child); child.stdin.end(); assert.equal((await c.closed)[0], 0);
+  const lines = Buffer.concat(c.out).toString().trim().split('\n'); assert.equal(lines.length, 1); assert.equal(JSON.parse(lines[0]).id, 7); assert.match(lines[0], /over 32 MiB/);
+  assert.equal((Buffer.concat(c.err).toString().match(/over 32 MiB/g) || []).length, 2);
+});
+
+test('server exit during paused output still delivers every reply after resume', { timeout: 15000 }, async t => {
+  const f = await keyedRunScript(t, `for(let i=0;i<3;i++) process.stdout.write(JSON.stringify({id:i,result:'x'.repeat(1000000)})+'\\n');`);
+  const child = f.run(), out = [], closed = once(child, 'close'); child.stderr.resume(); child.stdin.end();
+  await new Promise(resolve => setTimeout(resolve, 3500)); child.stdout.on('data', b => out.push(b));
+  assert.equal((await closed)[0], 0); const lines = Buffer.concat(out).toString().trim().split('\n'); assert.equal(lines.length, 3); assert.deepEqual(lines.map(l => JSON.parse(l).id), [0,1,2]);
+});
+
+test('closing the client stdout kills a blocked server group', { timeout: 10000 }, async t => {
+  const f = await keyedRunScript(t, `const b=JSON.stringify({id:1,result:'x'.repeat(1000000)})+'\\n'; function send(){while(process.stdout.write(b)){} process.stdout.once('drain',send)} send();`);
+  const child = f.run(), closed = once(child, 'close'); child.stderr.resume(); child.stdin.on('error',()=>{});
+  await new Promise(resolve => setTimeout(resolve, 1500)); const start = Date.now(); child.stdout.destroy();
+  assert.equal((await closed)[0], 1); assert(Date.now() - start < 4000);
+});
+
+test('paused stdout reaches the 60 second hard limit after client stdin ends', { timeout: 70000 }, async t => {
+  const f = await keyedRunScript(t, `const b=JSON.stringify({id:1,result:'x'.repeat(1000000)})+'\\n'; function send(){while(process.stdout.write(b)){} process.stdout.once('drain',send)} send();`);
+  const child = f.run(), closed = once(child, 'exit'); child.stderr.resume(); child.stdin.end(); const start = Date.now();
+  const [code] = await closed; const elapsed = Date.now() - start; assert.equal(code, 1); assert(elapsed >= 59000 && elapsed < 65000, `elapsed ${elapsed}`); child.stdout.destroy();
+});
+
+test('20 MiB client request reaches a server that delays reading', { timeout: 20000 }, async t => {
+  const f = await keyedRunScript(t, `setTimeout(()=>{let n=0; process.stdin.on('data',b=>n+=b.length); process.stdin.on('end',()=>process.stdout.write(JSON.stringify({id:1,result:n})+'\\n'));},1200);`);
+  const child = f.run(), c = collectLaunch(child), chunk = Buffer.alloc(65536, 120);
+  for (let i = 0; i < 320; i++) if (!child.stdin.write(chunk)) await once(child.stdin, 'drain');
+  child.stdin.end(); assert.equal((await c.closed)[0], 0); assert.equal(JSON.parse(Buffer.concat(c.out)).result, 20 * 1024 * 1024);
+});
+
+test('keyless launcher still spawns with inherited stderr', { timeout: 10000 }, async t => {
+  const f = await keyedLauncherFixture(t); delete f.tool.keys; await fs.writeFile(f.file, JSON.stringify(f.tool));
+  const spy = path.join(f.dir, 'spy.js'), record = path.join(f.dir, 'spawn.json');
+  await fs.writeFile(spy, `const fs=require('fs'), cp=require('child_process'), orig=cp.spawn; cp.spawn=function(p,a,o){if(Array.isArray(o.stdio)) fs.writeFileSync(process.env.SPAWN_RECORD,JSON.stringify(o.stdio)); return orig.apply(this,arguments)};`);
+  const child = f.run({ NODE_OPTIONS: `--require=${spy}`, SPAWN_RECORD: record }, f.args.slice(0, -2)); child.stdout.resume(); child.stderr.resume();
+  const closed = once(child, 'close'); await new Promise(resolve => setTimeout(resolve, 1200)); child.stdin.end(); await closed;
+  assert.deepEqual(JSON.parse(await fs.readFile(record, 'utf8')), ['pipe','pipe','inherit']);
+});
