@@ -2,6 +2,7 @@
 
 // Spec "State": the hub composes focused modules and owns no transient app state.
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { DEFAULT_STATE, State, appError } = require('./state.js');
 const { validate } = require('./card.js');
@@ -17,6 +18,8 @@ const { handle } = require('./routes.js');
 
 class Hub {
   constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, graphCacheRoot = null, saveGraph = null, queueRetryInterval, quietGraceMs, quietEscalateMs, usagePollInterval, now = Date.now } = {}) {
+    this.settingsBootId = crypto.randomBytes(6).toString('hex');
+    this.settingsRevs = { settings: 0, diagram: 0, shared_keys: 0 };
     this.usagePollInterval = usagePollInterval;
     this.now = now;
     this.transcripts = new Map();
@@ -55,6 +58,15 @@ class Hub {
     const escalate = Number(quietEscalateMs ?? process.env.WHEELCHAIR_QUIET_ESCALATE_MS ?? 600_000);
     this.quietGraceMs = Number.isFinite(grace) && grace > 0 ? grace : 30_000;
     this.quietEscalateMs = Number.isFinite(escalate) && escalate > 0 ? escalate : 600_000;
+  }
+
+  settingsRevisions() {
+    return Object.fromEntries(Object.entries(this.settingsRevs).map(([domain, seq]) => [domain, `${this.settingsBootId}:${seq}`]));
+  }
+
+  bumpSettingsRevision(domain = 'settings') {
+    if (Object.hasOwn(this.settingsRevs, domain)) this.settingsRevs[domain]++;
+    return `${this.settingsBootId}:${this.settingsRevs[domain]}`;
   }
 
   async init() {

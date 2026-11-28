@@ -207,3 +207,68 @@ test('a 502 shows one line per failed machine, and pressing the same level again
   await expect(radio(page, /High/)).toHaveAttribute('aria-checked', 'true');
   expect(posts).toEqual([{ level: 'high' }, { level: 'high' }]);
 });
+
+// The hub's diagram revision is stubbed along with the diagram routes: `state.rev` moving is
+// an outside change.
+test.describe('live refresh', () => {
+  test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'ignoreErrors' }); });
+  const revisions = async (page, state) => {
+    state.polls = 0;
+    await page.route('**/api/settings/revision', async (route) => {
+      state.polls += 1;
+      const response = await route.fetch();
+      await route.fulfill({ json: { ...await response.json(), diagram: 'stub:' + state.rev } });
+    });
+  };
+  const tick = async (page, state) => {
+    const before = state.polls;
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await expect.poll(() => state.polls).toBeGreaterThan(before);
+    await page.waitForTimeout(300);
+  };
+
+  test('an outside change redraws the choices and keeps focus on the same one', async ({ page }) => {
+    const state = { rev: 1, machines: { hub: ok('ask') } };
+    await stub(page, state, () => ({ status: 200, body: {} }));
+    await revisions(page, state);
+    await openPage(page, context, '/app/settings#you');
+    await expect(radio(page, /Ask/)).toHaveAttribute('aria-checked', 'true');
+    await radio(page, /Default/).focus();
+    state.machines = { hub: ok('high') };
+    state.rev = 2;
+    await tick(page, state);
+    await expect(radio(page, /High/)).toHaveAttribute('aria-checked', 'true');
+    await expect(radio(page, /Default/)).toBeFocused();
+    await expect(page.locator('.stale-banner')).toHaveCount(0);
+  });
+
+  test('an unchanged revision reads nothing, even with a machine offline', async ({ page }) => {
+    const state = { rev: 1, machines: { hub: ok('ask'), 'node-2': { error: 'did not answer' } } };
+    await stub(page, state, () => ({ status: 200, body: {} }));
+    await revisions(page, state);
+    await openPage(page, context, '/app/settings#you');
+    await expect(page.locator('.diagram-lines')).toContainText('node-2: did not answer');
+    for (let i = 0; i < 3; i += 1) await tick(page, state);
+    expect(state.reads).toBe(1);
+    // A change is read once, and the offline machine in that answer does not make it repeat.
+    state.rev = 2;
+    for (let i = 0; i < 3; i += 1) await tick(page, state);
+    expect(state.reads).toBe(2);
+  });
+
+  test('a change while You is closed is read on coming back, not before', async ({ page }) => {
+    const state = { rev: 1, machines: { hub: ok('ask') } };
+    await stub(page, state, () => ({ status: 200, body: {} }));
+    await revisions(page, state);
+    await openPage(page, context, '/app/settings#you');
+    await expect(radio(page, /Ask/)).toHaveAttribute('aria-checked', 'true');
+    await page.locator('#sections a[data-section="models"]').click();
+    state.machines = { hub: ok('high') };
+    state.rev = 2;
+    await tick(page, state);
+    expect(state.reads).toBe(1);
+    await page.locator('#sections a[data-section="you"]').click();
+    await expect(radio(page, /High/)).toHaveAttribute('aria-checked', 'true');
+    expect(state.reads).toBe(2);
+  });
+});

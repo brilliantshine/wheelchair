@@ -108,6 +108,7 @@ async function handle(hub, request, response, url, machineAuthenticated) {
     if (config.shared_tools_repo) input.shared_tools = { repo: config.shared_tools_repo, candidates: config.saved_dirs.filter(entry => entry.machine === name).map(entry => entry.path) };
     try {
       const result = await hub.client.passThrough(name, `/v1/shared-keys/${bits[1]}`, 'POST', input, 120_000);
+      if (bits[1] !== 'read' && result.status >= 200 && result.status < 300) hub.bumpSettingsRevision?.('shared_keys');
       return send(response, result.status, result.body);
     } catch (error) {
       if (error.status === 404 && error.message === `unknown machine: ${name}`) return send(response, 404, { error: error.message });
@@ -263,7 +264,11 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (request.method === 'GET') return send(response, 200, await diagramSensitivity.read(hub));
     if (request.method === 'POST') { const result = await diagramSensitivity.write(hub, body); return send(response, result.status, result.body); }
   }
-  if (bits.length === 1 && request.method === 'GET') return send(response, 200, { ...await settings.describe(hub), reserved_provider: await reservedLabel(hub, await settings.load(hub)) });
+  if (bits[1] === 'revision' && bits.length === 2 && request.method === 'GET') return send(response, 200, hub.settingsRevisions());
+  if (bits.length === 1 && request.method === 'GET') {
+    const settings_revision = hub.settingsRevisions().settings;
+    return send(response, 200, { ...await settings.describe(hub), reserved_provider: await reservedLabel(hub, await settings.load(hub)), settings_revision });
+  }
   if (bits[1] === 'harnesses' && bits.length === 3 && request.method === 'PUT') {
     const provider = bits[2];
     if (!Object.hasOwn(PROVIDERS, provider)) throw appError(404, 'provider not found');
@@ -394,6 +399,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
     } else {
       try { await settings.modelCommand(hub, args); }
       catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
+      hub.bumpSettingsRevision?.('settings');
     }
     return send(response, 200, { models: await settings.models(hub), heads_up: await settings.headsUp(hub) });
   }

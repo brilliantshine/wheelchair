@@ -27,6 +27,10 @@
 .note { font-size: 12px; min-height: 18px; color: var(--good-text); }
 .note.bad, .inline-err { color: var(--bad-text); }
 .inline-err { font-size: 12px; margin: 2px 0 0; }
+/* A block holding unsaved edits while the saved values moved on. */
+.stale-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 14px;
+  border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--warn-line); font-size: 13px; }
+.block[data-block="templates"] > .stale-banner { margin-bottom: -12px; }
 
 /* ---- groups of controls ---- */
 .models { display: flex; flex-direction: column; gap: 26px; }
