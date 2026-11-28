@@ -1,6 +1,8 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { validateHeaderValue } = require('http');
+const { windowsTarget } = require('./win-mark');
 const { KEY_NAME, isReserved } = require('./project-keys');
 const NAME_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const RESERVED = 'wheelchair-tools';
@@ -16,9 +18,34 @@ function validateToolJson(folderName, value) {
   const tool = { name: value.name, description: value.description, kind: value.kind, keys: value.keys ? value.keys.slice() : [] };
   const argv = field => Array.isArray(value[field]) && value[field].length > 0 && value[field].every(x => typeof x === 'string' && x.length > 0);
   if (value.kind === 'server') {
-    if (!argv('start')) return bad('start');
-    tool.start = value.start.slice();
+    const start = Object.hasOwn(value, 'start'), url = Object.hasOwn(value, 'url');
+    if (start && url) return { ok: false, reason: 'tool.json cannot have both "start" and "url"' };
+    if (!url) {
+      if (!argv('start')) return bad('start');
+      if (Object.hasOwn(value, 'headers')) return bad('headers');
+      if (Object.hasOwn(value, 'windows')) return bad('windows');
+      tool.start = value.start.slice(); tool.transport = 'stdio';
+    } else {
+      try { if (typeof value.url !== 'string' || /[\s\x00-\x1f\x7f]/.test(value.url) || !['http:', 'https:'].includes(new URL(value.url).protocol)) return bad('url'); } catch { return bad('url'); }
+      tool.url = value.url; tool.transport = 'http';
+      if (Object.hasOwn(value, 'headers')) {
+        if (!object(value.headers) || ![Object.prototype, null].includes(Object.getPrototypeOf(value.headers)) || Object.keys(value.headers).length > 20) return bad('headers');
+        const seen = new Set();
+        for (const [key, val] of Object.entries(value.headers)) {
+          const lower = key.toLowerCase();
+          if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(key) || seen.has(lower) || ['accept', 'content-type', 'mcp-protocol-version', 'mcp-session-id'].includes(lower) || typeof val !== 'string' || !val || /[\r\n]/.test(val)) return bad('headers');
+          seen.add(lower);
+          try { validateHeaderValue(key, val); } catch { return bad('headers'); }
+          let rest = val;
+          while (rest.includes('${')) { const at = rest.indexOf('${'), match = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}/.exec(rest.slice(at)); if (!match || !tool.keys.includes(match[1])) return bad('headers'); rest = rest.slice(at + match[0].length); }
+        }
+        tool.headers = { ...value.headers };
+      }
+      if (Object.hasOwn(value, 'windows')) { if (typeof value.windows !== 'boolean' || (value.windows && !windowsTarget({ type: 'http', url: tool.url }))) return bad('windows'); tool.windows = value.windows; }
+    }
   } else {
+    if (Object.hasOwn(value, 'headers')) return bad('headers');
+    if (Object.hasOwn(value, 'windows')) return bad('windows');
     if (!object(value.inputs)) return bad('inputs');
     tool.inputs = {};
     for (const [name, input] of Object.entries(value.inputs)) {
@@ -64,7 +91,7 @@ async function discover({ worktree, shared, path: pathText }) {
   const names = new Set(project.map(r => r.name));
   for (const row of [...project, ...others]) {
     if (row.source === 'shared' && names.has(row.name)) { row.status = 'hidden'; row.reason = 'hidden: this project has its own tool with the same name'; }
-    else if (row.status === 'ok') { const program = row.tool.kind === 'script' ? row.tool.run[0] : row.tool.start[0]; if (!findProgram(program, row.dir, pathText)) { row.status = 'missing-program'; row.reason = `its program ${program} wasn't found`; } }
+    else if (row.status === 'ok' && row.tool.transport !== 'http') { const program = row.tool.kind === 'script' ? row.tool.run[0] : row.tool.start[0]; if (!findProgram(program, row.dir, pathText)) { row.status = 'missing-program'; row.reason = `its program ${program} wasn't found`; } }
   }
   const rows = [...project, ...others];
   return { rows, usable: rows.filter(r => r.status === 'ok'), problems: rows.filter(r => r.status !== 'ok').map(r => ({ names: [r.name], text: `${r.source === 'shared' ? 'shared tool' : 'tool'} ${r.name}: ${r.reason}` })) };
@@ -75,6 +102,12 @@ function inputSchema(inputs) {
   return { type: 'object', properties, ...(required.length ? { required } : {}) };
 }
 function bridgeEntry(worktree, rows, { stateDir } = {}) { return { name: RESERVED, folder: 'bridge', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-bridge.js'), '--project-dir', worktree, ...(rows.some(r => r.tool?.keys?.length) ? ['--state-dir', stateDir] : []), ...rows.flatMap(r => ['--tool', r.dir, ...(r.tool?.keys?.length ? ['--key-store', r.key_store, ...r.tool.keys.flatMap(k => ['--key', k])] : [])])], env: {} } }; }
-function serverEntry(worktree, row, { stateDir } = {}) { return { name: row.name, folder: 'server', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-launch.js'), '--project-dir', worktree, '--tool', row.dir, ...(row.tool?.keys?.length ? ['--state-dir', stateDir, '--key-store', row.key_store, ...row.tool.keys.flatMap(k => ['--key', k])] : [])], env: {} } }; }
+function serverEntry(worktree, row, { stateDir, urlOverride } = {}) {
+  if (row.tool?.transport === 'http') {
+    const entry = row.tool.keys.length ? { command: process.execPath, args: [path.join(__dirname, 'http-tool-proxy.js'), '--project-dir', worktree, '--tool', row.dir, '--state-dir', stateDir, '--key-store', row.key_store, ...row.tool.keys.flatMap(k => ['--key', k]), ...(urlOverride ? ['--url-override', urlOverride] : [])], env: {} } : { type: 'http', url: urlOverride || row.tool.url, ...(row.tool.headers ? { headers: row.tool.headers } : {}) };
+    return { name: row.name, folder: 'server', windows: false, wrapped: false, entry };
+  }
+  return { name: row.name, folder: 'server', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-launch.js'), '--project-dir', worktree, '--tool', row.dir, ...(row.tool?.keys?.length ? ['--state-dir', stateDir, '--key-store', row.key_store, ...row.tool.keys.flatMap(k => ['--key', k])] : [])], env: {} } };
+} 
 function toolKeyStore(row, ownShared) { return row.source === 'shared' || ownShared ? 'shared' : 'project'; }
 module.exports = { toolKeyStore, NAME_RE, RESERVED, validateToolJson, readToolsDir, findProgram, discover, inputSchema, bridgeEntry, serverEntry };

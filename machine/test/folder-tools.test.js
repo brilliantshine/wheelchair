@@ -90,3 +90,27 @@ test('keyed bridge arguments carry names and store only', () => {
   const rows = [{ dir: '/tool', tool: { keys: ['TOKEN', 'OTHER'] }, key_store: 'shared' }];
   assert.deepEqual(f.bridgeEntry('/project', rows, { stateDir: '/state' }).entry.args.slice(1), ['--project-dir', '/project', '--state-dir', '/state', '--tool', '/tool', '--key-store', 'shared', '--key', 'TOKEN', '--key', 'OTHER']);
 });
+
+test('HTTP server schema and entries', () => {
+  const base = { name: 'web', description: 'Web', kind: 'server', url: 'http://localhost:1234/mcp', keys: ['API_KEY'], headers: { Authorization: 'Bearer ${API_KEY}' }, windows: true };
+  const valid = f.validateToolJson('web', base); assert.equal(valid.ok, true); assert.equal(valid.tool.transport, 'http');
+  for (const [change, reason] of [
+    [{ start: ['node'] }, 'both'], [{ url: 'ftp://localhost' }, 'url'], [{ url: 'http://example.com', windows: true }, 'windows'],
+    [{ headers: { Accept: 'x' } }, 'headers'], [{ headers: { X: 'x', x: 'y' } }, 'headers'], [{ headers: { X: '\0' } }, 'headers'], [{ headers: { X: '☃' } }, 'headers'],
+    [{ headers: { X: '${BAD}' } }, 'headers'], [{ headers: { X: '${API_KEY' } }, 'headers'], [{ headers: { X: '${1}' } }, 'headers']
+  ]) { const result = f.validateToolJson('web', { ...base, ...change }); assert.equal(result.ok, false); assert.match(result.reason, new RegExp(reason)); }
+  assert.equal(f.validateToolJson('web', { name: 'web', description: 'x', kind: 'server' }).reason, 'tool.json is missing "start"');
+  for (const field of ['headers', 'windows']) {
+    assert.equal(f.validateToolJson('web', { name: 'web', description: 'x', kind: 'server', start: ['x'], [field]: field === 'windows' ? false : {} }).ok, false);
+    assert.equal(f.validateToolJson('web', { name: 'web', description: 'x', kind: 'script', run: ['x'], inputs: {}, [field]: field === 'windows' ? false : {} }).ok, false);
+  }
+  const row = { name: 'web', dir: '/tool', key_store: 'shared', tool: valid.tool };
+  const keyed = f.serverEntry('/project', row, { stateDir: '/state', urlOverride: 'http://localhost:2' }); assert.equal(keyed.entry.command, process.execPath); assert.ok(keyed.entry.args.includes('--url-override'));
+  row.tool = { ...valid.tool, keys: [] }; assert.deepEqual(f.serverEntry('/project', row).entry, { type: 'http', url: base.url, headers: base.headers });
+});
+
+test('HTTP discovery does not look for a program', async () => {
+  const root = await makeTemp(), dir = path.join(root, '.wheelchair', 'tools', 'web'); await fs.promises.mkdir(dir, { recursive: true });
+  await fs.promises.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'web', description: 'x', kind: 'server', url: 'https://example.com/mcp' }));
+  const found = await f.discover({ worktree: root, path: '' }); assert.equal(found.usable.length, 1); assert.equal(found.usable[0].tool.transport, 'http');
+});
