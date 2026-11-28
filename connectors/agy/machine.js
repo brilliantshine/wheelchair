@@ -5,13 +5,32 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const c = require('../common');
+const { run } = require('../../machine/lib/usage-probe');
 const { DUPLICATE_HEADERS, serverLabel } = require('../../machine/lib/project-mcp');
 const onboarding = ['Choose your color scheme', 'Terms of Service & Data Use', 'Do you trust the contents of this project?', 'Requesting permission for:'];
+function parseUsage(raw) {
+  if (typeof raw === 'string') raw = JSON.parse(raw);
+  if (raw?.status !== 'SUCCESS' || raw?.command?.name !== 'usage' || !Array.isArray(raw.command?.data?.groups)) throw new Error('invalid Antigravity usage response');
+  const group = raw.command.data.groups.find(g => g?.name === 'Gemini Models');
+  const buckets = Array.isArray(group?.buckets) ? group.buckets : [];
+  const window = pred => {
+    const b = buckets.find(pred);
+    if (!b || typeof b.remaining_fraction !== 'number' || !Number.isFinite(b.remaining_fraction)) return null;
+    const used = Math.min(Math.max((1 - b.remaining_fraction) * 100, 0), 100);
+    const reset = typeof b.reset_time === 'string' && b.reset_time.trim() ? Date.parse(b.reset_time) : NaN;
+    return { used, resets_at: Number.isFinite(reset) && reset > 0 ? new Date(reset).toISOString() : null };
+  };
+  const five_hour = window(b => b?.window === '5h' || b?.id === 'gemini-5h');
+  const week = window(b => b?.window === 'weekly' || b?.id === 'gemini-weekly');
+  if (!five_hour && !week) throw new Error('no usage windows');
+  return { five_hour, week, ...([five_hour, week].some(w => w && w.used >= 100) ? { reached: true } : {}) };
+}
 module.exports = {
   recognizePane: text => text.includes('Antigravity CLI'),
 
   stepVocabulary: c.stepVocabularies.codexStyle,
-  loginEnv: () => ({}), sessionNameEnv: true,
+  loginEnv: () => ({}), sessionNameEnv: true, parseUsage,
+  usageProbe(dir, options = {}) { return run('agy', ['-p', '/usage', '--output-format', 'json'], { ...options, env: { ...process.env }, parse: parseUsage }); },
   prepare() {
     const file = path.join(os.homedir(), '.gemini', 'config', 'hooks.json');
     const wanted = { Stop: [{ type: 'command', command: `${c.quote(path.join(c.root, 'machine', 'hook.sh'))} agy` }] };

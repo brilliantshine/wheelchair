@@ -1,5 +1,6 @@
 'use strict';
 module.exports = {
+  "usage": { "probeWhileLive": true },
   "cli": "agy",
   "provider": "gemini",
   "label": "Antigravity",
@@ -7,7 +8,7 @@ module.exports = {
   "typesRoleMessage": true,
   "singleAccount": true,
   "capabilities": {
-    "usageProbe": false,
+    "usageProbe": true,
     "usageEvents": false,
     "preflight": false,
     "sandbox": false,

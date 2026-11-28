@@ -152,3 +152,56 @@ test('Codex idle usage maps rate limit response', () => {
   assert.equal(parse(response).five_hour.used, 100); assert.equal(parse(response).reached, true); assert.equal(parse(response).plan_type, 'pro');
   assert.throws(() => parse({ error: { message: 'bad' } }));
 });
+test('Antigravity usage parses Gemini model limits and ignores epoch resets', () => {
+  const parse = adapters.agy.parseUsage;
+  const sample = {
+    status: 'SUCCESS',
+    command: {
+      name: 'usage',
+      data: {
+        groups: [
+          {
+            name: 'Gemini Models',
+            buckets: [
+              { id: 'gemini-weekly', window: 'weekly', remaining_fraction: 0.75, reset_time: '2026-12-05T01:52:30Z' },
+              { id: 'gemini-5h', window: '5h', remaining_fraction: 0.6, reset_time: '2026-11-28T06:52:30Z' },
+            ],
+          },
+          {
+            name: 'Claude and GPT models',
+            buckets: [
+              { id: '3p-weekly', window: 'weekly', remaining_fraction: 0.1, reset_time: '2026-12-05T01:52:30Z' },
+              { id: '3p-5h', window: '5h', remaining_fraction: 0, reset_time: '2026-11-28T06:52:30Z' },
+            ],
+          },
+        ],
+      },
+    },
+  };
+  assert.deepEqual(parse(sample), {
+    five_hour: { used: 40, resets_at: '2026-11-28T06:52:30.000Z' },
+    week: { used: 25, resets_at: '2026-12-05T01:52:30.000Z' },
+  });
+  const epochAndFull = {
+    status: 'SUCCESS',
+    command: {
+      name: 'usage',
+      data: {
+        groups: [{
+          name: 'Gemini Models',
+          buckets: [
+            { id: 'gemini-weekly', window: 'weekly', remaining_fraction: 1, reset_time: '1970-01-01T00:00:00Z' },
+            { id: 'gemini-5h', window: '5h', remaining_fraction: 0, reset_time: '2026-11-28T06:52:30Z' },
+          ],
+        }],
+      },
+    },
+  };
+  assert.deepEqual(parse(JSON.stringify(epochAndFull)), {
+    five_hour: { used: 100, resets_at: '2026-11-28T06:52:30.000Z' },
+    week: { used: 0, resets_at: null },
+    reached: true,
+  });
+  assert.throws(() => parse({ status: 'ERROR', command: { name: 'usage', data: { groups: [] } } }));
+  assert.throws(() => parse({ status: 'SUCCESS', command: { name: 'usage', data: { groups: [{ name: 'Claude and GPT models', buckets: [{ id: '3p-5h', window: '5h', remaining_fraction: 0.5, reset_time: '2026-11-28T06:52:30Z' }] }] } } }));
+});

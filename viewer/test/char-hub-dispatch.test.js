@@ -13,10 +13,10 @@ const chat = require('../app/chat');
 const { api, close, setup } = require('./helpers/app');
 const tools = [['claude','claude'],['gpt','codex'],['gemini','agy'],['kimi','kimi'],['openrouter','pi']];
 
-test('idle probes all and only supported tools, including live Kimi', async () => {
+test('idle probes all and only supported tools, including live Antigravity and Kimi', async () => {
   const dir = await makeTemp('char-hub-poll-'); const hub = new Hub({ stateDir: dir }); await hub.state.init();
   hub.machines = async () => ({ hub: { name: 'hub' } });
-  hub.allThreads = async () => [{ sessions: [{ live: true, account: 'default-kimi' }] }];
+  hub.allThreads = async () => [{ sessions: [{ live: true, account: 'default-kimi' }, { live: true, account: 'default-gemini' }] }];
   const calls = [];
   hub.call = async (_m, route, _method, body) => {
     if (route === '/v1/status') return { ...Object.fromEntries(tools.map(([,cli]) => [cli, { installed: true }])), accounts: tools.map(([p,cli]) => ({ id: `default-${p}`, cli, logged_in: true })) };
@@ -24,15 +24,15 @@ test('idle probes all and only supported tools, including live Kimi', async () =
     throw Error(route);
   };
   await poll.pollIdle(hub);
-  assert.deepEqual(calls, ['claude','gpt','kimi'].map(p => ({ account: `default-${p}`, cli: tools.find(t => t[0] === p)[1], dir: null })));
-  assert.deepEqual(Object.keys(await usage.readings(hub)).sort(), ['default-claude','default-gpt','default-kimi']);
+  assert.deepEqual(calls, ['claude','gpt','gemini','kimi'].map(p => ({ account: `default-${p}`, cli: tools.find(t => t[0] === p)[1], dir: null })));
+  assert.deepEqual(Object.keys(await usage.readings(hub)).sort(), ['default-claude','default-gemini','default-gpt','default-kimi']);
 
   const liveHub = new Hub({ stateDir: await makeTemp('char-hub-live-') }); await liveHub.state.init();
   liveHub.machines = hub.machines; liveHub.call = hub.call;
   liveHub.allThreads = async () => [{ sessions: tools.map(([p]) => ({ live: true, account: `default-${p}` })) }];
   calls.length = 0; await poll.pollIdle(liveHub);
-  assert.deepEqual(calls, [{ account: 'default-kimi', cli: 'kimi', dir: null }]);
-  assert.deepEqual(Object.keys(await usage.readings(liveHub)), ['default-kimi']);
+  assert.deepEqual(calls, [{ account: 'default-gemini', cli: 'agy', dir: null }, { account: 'default-kimi', cli: 'kimi', dir: null }]);
+  assert.deepEqual(Object.keys(await usage.readings(liveHub)).sort(), ['default-gemini', 'default-kimi']);
 
   const retryHub = new Hub({ stateDir: await makeTemp('char-hub-retry-') }); await retryHub.state.init();
   retryHub.machines = async () => ({ hub: { name: 'hub' }, second: { name: 'second' } });
@@ -45,7 +45,7 @@ test('idle probes all and only supported tools, including live Kimi', async () =
     return { reading: { account: body.account, week: { used: 40, resets_at: null } } };
   };
   await poll.pollIdle(retryHub);
-  assert.deepEqual(attempts, [['hub','claude'], ['hub','codex'], ['hub','kimi'], ['second','kimi']]);
+  assert.deepEqual(attempts, [['hub','claude'], ['hub','codex'], ['hub','agy'], ['hub','kimi'], ['second','kimi']]);
   assert.deepEqual(Object.keys(await usage.readings(retryHub)), ['default-kimi']);
 });
 

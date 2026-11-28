@@ -1429,6 +1429,10 @@ test('idle usage probes isolate Claude and send only Codex rate-limit RPCs', asy
     const codex = await api(env, 'POST', '/v1/usage', { account: 'default-gpt', cli: 'codex', dir: null }, hubHeader);
     assert.equal(codex.status, 200); assert.equal(codex.body.reading.week.used, 42);
     assert.deepEqual((await fs.readFile(record, 'utf8')).trim().split('\n').map(line => JSON.parse(line).method), ['initialize', 'initialized', 'account/rateLimits/read']);
+    await write(path.join(env.fake.bin, 'agy'), `#!/usr/bin/env node\nconst fs = require('fs'); fs.writeFileSync(${JSON.stringify(record)}, JSON.stringify(process.argv.slice(2))); console.log(JSON.stringify({ status: 'SUCCESS', command: { name: 'usage', data: { groups: [{ name: 'Gemini Models', buckets: [{ id: 'gemini-weekly', window: 'weekly', remaining_fraction: 0.7, reset_time: '2026-12-05T01:52:30Z' }, { id: 'gemini-5h', window: '5h', remaining_fraction: 0.8, reset_time: '2026-11-28T06:52:30Z' }] }] } } }));\n`, 0o755);
+    const agy = await api(env, 'POST', '/v1/usage', { account: 'default-gemini', cli: 'agy', dir: null }, hubHeader);
+    assert.equal(agy.status, 200); assert.equal(Math.round(agy.body.reading.week.used), 30); assert.equal(Math.round(agy.body.reading.five_hour.used), 20);
+    assert.deepEqual(JSON.parse(await fs.readFile(record, 'utf8')), ['-p', '/usage', '--output-format', 'json']);
   } finally { await env.close(); }
 });
 test('idle usage timeout kills the child without blocking status', async () => {
