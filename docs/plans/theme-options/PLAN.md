@@ -15,14 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q3: What kind of ready-made presets should ship?
-- **Context:** Collin wants ready-made color theme presets alongside picking any custom accent color.
-- **Options:**
-  - `curated-palettes`: 6–8 curated full-palette presets (Wheelchair Default + distinct palettes) that each work in both light and dark modes, with optional custom accent override.
-  - `accent-swatches`: One light and one dark base palette, with one-click accent presets plus custom color picker.
-  - `distinct-themes`: Editor-style named themes where each theme sets its own fixed surface + accent palette.
-- **Recommendation:** `curated-palettes` — gives cohesive looks in both light and dark modes while still allowing any custom accent color.
-
 ### Overlap with 72ca062b2848 (Auto-refresh an open Settings page when settings change): both threads touch Settings (`viewer/pages/settings.js`), `viewer/app/settings.js`, and `viewer/app/routes.js`.
 - **Context:** Thread `72ca062b2848` (`settings-live-refresh`) is planning auto-refresh for an open Settings page: polling, block dirty/focus guards, and save-ordering in `viewer/pages/settings.js`, plus a lightweight settings revision endpoint in `viewer/app/routes.js` / `viewer/app/settings.js`. Our thread adds Theme controls in Settings → You (`viewer/pages/settings.js`) and theme persistence/routes in `viewer/app/settings.js` / `viewer/app/routes.js` (if hub-synced).
 
@@ -43,6 +35,7 @@ Log and is deleted from here.
 | 3 | Leave `signin.html` on the default theme. | Unauthenticated browsers cannot fetch user settings, and sign-in is a one-time gate. | defaulted |
 | 4 | Apply theme (color mode, preset, custom accent color) to all signed-in app pages, standalone doc (`viewer/doc.html`), and graph viewer (`viewer/index.html` + `picture-export.js`), while keeping the embedded terminal (`xterm.js` in `viewer/pages/term-view.js`) dark. | Keeps all Wheelchair UI and diagrams cohesive without making CLI ANSI colors unreadable in light mode. | user |
 | 5 | Store theme settings in hub `settings.json` synced across all devices, backed by a browser-local cache applied before first paint so pages do not flash the wrong theme on load. | Matches Background sync behavior across phone and computer; `system` color mode lets each device follow its own OS light/dark schedule. | user |
+| 6 | Ship curated full-palette theme presets (Wheelchair Default plus 5–7 cohesive palettes such as Midnight, Forest, Warm Sand, Rose, and Monochrome) that each define both light and dark surface/border/text palettes and a default accent, while allowing the user to override the accent to any custom hex color (and reset to preset or default). | Lets the user change the whole mood of the app in both light and dark modes while keeping full freedom over the accent color. | user |
 
 ## Spec
 
@@ -58,6 +51,11 @@ Log and is deleted from here.
 ### 3. Storage, syncing, and pre-paint bootstrap
 - Theme settings are stored in hub `settings.json` under a `theme` object with revision-checked writes (serialized through `viewer/app/state.js`'s settings file queue, matching `background`).
 - Signed-in pages apply the last cached theme from `localStorage` via a tiny synchronous pre-paint script before stylesheets paint, then refresh from the hub (and re-sync on focus/pageshow/polling like Background) so changes on one device propagate to other open tabs and devices.
+
+### 4. Presets and color modes
+- Color mode supports `system`, `light`, and `dark` (`system` follows `prefers-color-scheme` and reacts to live OS changes).
+- Ship 6 curated full-palette presets (`default` Wheelchair Slate/Blue, `midnight` Deep Indigo, `forest` Pine/Emerald, `sand` Warm Sand/Amber, `rose` Plum/Rose, `mono` Neutral Monochrome), each providing tailored light and dark surface/panel/border/ink palettes plus a preset default accent.
+- The user may override the preset's accent with any custom hex color (`accent: null` uses the preset's default accent; setting a `#rrggbb` overrides it) and can reset either the accent back to the preset or the whole theme back to Wheelchair Default.
 
 ## Accepted Risks
 
