@@ -1,7 +1,7 @@
 ---
 slug: settings-live-refresh
 date: 2026-11-28
-implemented-by: standard / gpt / gpt-6.1-terra (T1), standard / claude / claude-sonnet-5-5 (T2), light / gpt / gpt-6-luna (R1-1), standard / claude / claude-sonnet-5-5 (R1-2)
+implemented-by: standard / gpt / gpt-6.1-terra (T1), standard / claude / claude-sonnet-5-5 (T2), light / gpt / gpt-6-luna (R1-1), standard / claude / claude-sonnet-5-5 (R1-2), standard / claude / claude-sonnet-5-5 (R2-1)
 verified-by:
   - round: 1
     lane: claude / claude-opus-5-5
@@ -9,6 +9,12 @@ verified-by:
   - round: 1
     lane: gpt / gpt-6.2-sol
     checks: standard / gpt / gpt-6.1-terra (T1), standard / claude / claude-sonnet-5-5 (T2)
+  - round: 2
+    lane: claude / claude-opus-5-5
+    checks: light / gpt / gpt-6-luna (R1-1), standard / claude / claude-sonnet-5-5 (R1-2)
+  - round: 2
+    lane: gpt / gpt-6.2-sol
+    checks: light / gpt / gpt-6-luna (R1-1), standard / claude / claude-sonnet-5-5 (R1-2)
 ---
 
 # Completion Report — Auto-refresh an open Settings page when settings change
@@ -85,3 +91,12 @@ Sub-lead independent runs (note: host `/tmp` tmpfs was at 100% / load avg ~100 d
   - Gap 4 (§3.1 background focus): added `data-focus="background:remove"` on Remove background in `viewer/pages/settings.js`, plus Playwright test in `viewer/test/background-editor.spec.js`.
   - Gap 5 (§3.4 Shared tools key save after external project change): added `rereadAfterWrite()` in `viewer/pages/settings.js` so saving/removing a key (200 and 409) repaints `shared-tools` when `shared_tools_repo`/`saved_dirs` moved, plus Playwright tests (200 and 409) in `viewer/test/app-settings.spec.js`.
   - Validation: worker run `npm --prefix viewer run test:browser -- viewer/test/app-settings.spec.js viewer/test/background-editor.spec.js` -> `232 passed, 2 skipped` (Chromium & Firefox), exit 0; sub-lead independent run of `live refresh` (`44/44`) + `background-editor.spec.js` (`24/24`) -> `68/68 passed`, exit 0.
+
+### Remediation 2 (after Verification Attempt 2 on `c4ae6592`)
+
+- **Accepted rare path (`PLAN.md` Accepted Risks, `verification-2`):** delayed `/threads?view=list` response repainting a focused lesson textarea after a deferred settings poll.
+- **Deferred (`PLAN.md` Deferred, `d7`, source `verification`):** refresh Lead names cleanly when Custom is selected without an uploaded file and another tab changes the list.
+- **R2-1 (`d27b4621`, `standard / claude / claude-sonnet-5-5`):**
+  - Gap 1 (§3.1 template action buttons focus): added template-scoped `data-focus` keys on `#save-template`, `#duplicate`, `#toggle-use`, and `#see-full` in `viewer/pages/settings.js`, and extended the template-deletion focus tests in `viewer/test/app-settings.spec.js` to cover all 5 buttons.
+  - Gap 2 (§4.2 Worker ladder assertion): added Worker ladder order assertion in `viewer/test/app-settings.spec.js`.
+  - Validation: worker run `npm --prefix viewer run test:browser -- viewer/test/app-settings.spec.js` -> `216 passed, 2 skipped` (Chromium & Firefox), exit 0; sub-lead independent run of modified tests -> `12/12 passed`, exit 0.
