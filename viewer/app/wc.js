@@ -98,10 +98,19 @@ function sessionRequest(operation, tail) {
 }
 
 function assistantRequest(operation, tail, projectLead = false) {
-  if (!(projectLead ? ['threads', 'thread', 'start', 'message', 'press', 'restart', 'archive', 'refresh'] : ['projects', 'threads', 'thread', 'start', 'message', 'press', 'restart', 'archive']).includes(operation)) throw new Error('unsupported assistant action');
-  const args = tail.filter((x) => x !== '--archived');
+  if (!(projectLead ? ['threads', 'thread', 'start', 'message', 'press', 'restart', 'archive', 'refresh'] : ['projects', 'threads', 'thread', 'start', 'message', 'press', 'restart', 'archive', 'settings', 'setting']).includes(operation)) throw new Error('unsupported assistant action');
+  const args = tail.filter((x) => x !== '--archived' && x !== '--include-history');
   const parsed = flags(args);
   const body = { action: operation };
+  if (operation === 'settings' && tail.includes('--include-history')) body.include_history = true;
+  if (operation === 'setting') {
+    if (!parsed._[0] || !parsed.file) throw new Error('setting requires <target> and --file');
+    const text = fs.readFileSync(parsed.file, 'utf8');
+    let payload;
+    try { payload = JSON.parse(text); } catch { throw new Error('setting --file must contain a JSON object'); }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('setting --file must contain a JSON object');
+    Object.assign(body, { target: parsed._[0], payload });
+  }
   if (operation === 'threads') body.archived = tail.includes('--archived');
   if (['thread', 'message', 'press', 'restart', 'archive'].includes(operation)) { if (!parsed._[0]) throw new Error('thread is required'); body.thread = parsed._[0]; }
   if (operation === 'start') {
@@ -204,12 +213,12 @@ async function main(argv) {
           ? winRequest(operation, tail)
       : null;
   if (!input) throw new Error('usage: wc.js tool|git|assistant|project-lead|session <start|stop|list|leads [--all-projects]>|screen|win …');
-  const result = (group === 'session' || (['assistant', 'project-lead'].includes(group) && ['projects', 'threads', 'thread', 'refresh'].includes(operation)))
+  const result = (group === 'session' || (['assistant', 'project-lead'].includes(group) && ['projects', 'threads', 'thread', 'refresh', 'settings'].includes(operation)))
     ? await postSessionWithRetry(`${base}${input.path}`, token, input.body)
     : await request(`${base}${input.path}`, token, input.body);
   if (['assistant', 'project-lead'].includes(group) && (result.status < 200 || result.status >= 300)) {
     let failure; try { failure = JSON.parse(result.output); } catch { failure = {}; }
-    process.stdout.write(`${JSON.stringify({ ...failure, ok: false, error: result.status === 503 ? 'hub unavailable' : (failure.error || 'request failed') })}\n`); return;
+    process.stdout.write(`${JSON.stringify({ ok: false, ...failure, error: result.status === 503 ? 'hub unavailable' : (failure.error || 'request failed'), ok: false })}\n`); return;
   }
   if (result.status < 200 || result.status >= 300) {
     throw new Error(result.status === 503 ? 'hub unavailable' : result.output);
