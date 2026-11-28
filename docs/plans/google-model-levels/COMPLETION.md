@@ -2,7 +2,31 @@
 slug: google-model-levels
 date: 2026-11-27
 implemented-by: "standard gpt-6.1-terra (T1, T2, T4), standard claude-sonnet-5-5 (T3), light gpt-6-luna (T5); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra, claude-sonnet-5-5
+  - round: 1
+    lane: gpt-6.2-sol
+    checks: gpt-6.1-terra, claude-sonnet-5-5
+  - round: 2
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra, claude-sonnet-5-5
+  - round: 2
+    lane: gpt-6.2-sol
+    checks: gpt-6.1-terra, claude-sonnet-5-5
+  - round: 3
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra, claude-sonnet-5-5
+  - round: 3
+    lane: gpt-6.2-sol
+    checks: gpt-6.1-terra, claude-sonnet-5-5
+  - round: 4
+    lane: claude-opus-5-5
+    checks: gpt-6.1-terra, claude-sonnet-5-5, claude-haiku-5-5
+  - round: 4
+    lane: gpt-6.2-sol
+    checks: gpt-6.1-terra, claude-sonnet-5-5, claude-haiku-5-5
 ---
 
 # Completion Report — Google model list and levels
@@ -144,3 +168,23 @@ Verification attempt 3 (commit fcf9ac83): gpt-6.2-sol PASS, claude-opus-5-5 FAIL
 | Gap | Fix | Lane | At | Validated by |
 |-----|-----|------|----|--------------|
 | Flaky 'Antigravity levels' browser tests | `test.afterEach(... page.unrouteAll({ behavior: 'ignoreErrors' }))` in the block, as at `viewer/test/app-settings.spec.js:932` | R4, light / claude-haiku-5-5 | `viewer/test/app-settings.spec.js:1320` | `npm --prefix viewer run test:browser -- --grep 'Antigravity levels' --repeat-each=15`: 135 passed; `--grep 'effort'`: 12 passed (sub-lead re-run) |
+
+## Verification result — 2026-11-27
+
+Attempt 4 on 6c492130: claude-opus-5-5 PASS, gpt-6.2-sol PASS, no gaps. Rare paths accepted during verification: 2 (Accepted Risks, rounds verification-1 and verification-2).
+
+Full run (`bash test-support/full-run.sh`) on the verified commit, `summary.txt`:
+
+```text
+commit 6c492130acb5b2bcf411069781d73758d2638cf3
+suite viewer-browser exit 0 seconds 468
+suite viewer-node exit 0 seconds 181
+suite machine exit 0 seconds 139
+suite test-support exit 0 seconds 27
+suite sensitivity exit 0 seconds 3
+suite codex exit 0 seconds 18
+suite install exit 0 seconds 34
+suite sudo-helper exit 0 seconds 8
+```
+
+No full-run failures to confirm on main.
