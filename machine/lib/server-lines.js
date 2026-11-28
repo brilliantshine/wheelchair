@@ -3,6 +3,7 @@ const { findSpellings, escapeLike } = require('./key-spell');
 const { isUtf8 } = require('node:buffer');
 const LINE_LIMIT = 32 * 1024 * 1024, LINE_BUDGET = 64000000;
 const exhausted = Symbol('budget');
+const SIMPLE_ESCAPES = { 34: '"', 92: '\\', 47: '/', 98: '\b', 102: '\f', 110: '\n', 114: '\r', 116: '\t' };
 
 // Returns { wellFormed, members }; members maps top-level names to [start,end].
 // visit({ start, end, name, text, top }) receives one decoded string Buffer at a time.
@@ -12,7 +13,17 @@ function readLine(buf, { prefix = false, visit = () => {} } = {}) {
   const ws = () => { while (p < buf.length && (buf[p] === 32 || buf[p] === 10 || buf[p] === 13 || buf[p] === 9)) p++; };
   function string(name, top) {
     const start = p++; let segment = p, decoded = null, used = 0;
-    function append(part) { if (!decoded) decoded = Buffer.allocUnsafe(buf.length - start); part.copy(decoded, used); used += part.length; }
+    function append(part) {
+      if (!decoded) {
+        let closing = p;
+        while (closing < buf.length) {
+          if (buf[closing] === 92) { closing = Math.min(closing + 2, buf.length); continue; }
+          if (buf[closing++] === 34) break;
+        }
+        decoded = Buffer.allocUnsafe(closing - start);
+      }
+      part.copy(decoded, used); used += part.length;
+    }
     while (p < buf.length) {
       const c = buf[p++];
       if (c === 34) {
@@ -27,7 +38,7 @@ function readLine(buf, { prefix = false, visit = () => {} } = {}) {
       if (c !== 92) continue;
       append(buf.subarray(segment, p - 1));
       if (p >= buf.length) return null;
-      const e = buf[p++], simple = { 34: '"', 92: '\\', 47: '/', 98: '\b', 102: '\f', 110: '\n', 114: '\r', 116: '\t' };
+      const e = buf[p++];
       if (e === 117) {
         if (p + 4 > buf.length || !/^[0-9a-fA-F]{4}$/.test(buf.toString('ascii', p, p + 4))) return null;
         let code = parseInt(buf.toString('ascii', p, p + 4), 16); p += 4;
@@ -36,7 +47,7 @@ function readLine(buf, { prefix = false, visit = () => {} } = {}) {
           if (low >= 0xdc00 && low <= 0xdfff) { code = 0x10000 + (code - 0xd800) * 1024 + low - 0xdc00; p += 6; }
         }
         append(Buffer.from(String.fromCodePoint(code)));
-      } else if (simple[e] !== undefined) append(Buffer.from(simple[e]));
+      } else if (SIMPLE_ESCAPES[e] !== undefined) append(Buffer.from(SIMPLE_ESCAPES[e]));
       else return null;
       segment = p;
     }
@@ -79,7 +90,7 @@ function readLine(buf, { prefix = false, visit = () => {} } = {}) {
 function detect(buf, values, budget = LINE_BUDGET) {
   const needles = values.filter(Boolean).map(v => Buffer.from(v));
   if (!needles.length) return 'clean';
-  let key = needles.some(n => buf.includes(n)), unchecked = false, work = 0, batch = Buffer.allocUnsafe(1024 * 1024), size = 0;
+  let key = needles.some(n => buf.includes(n)), unchecked = false, work = 0, batch = null, size = 0;
   const shortest = Math.min(...needles.map(n => n.length));
   const spend = n => { work += n; if (work > budget) throw exhausted; };
   function flush() {
@@ -99,6 +110,7 @@ function detect(buf, values, budget = LINE_BUDGET) {
       const length = p - start;
       if (!escaped || length < shortest) continue;
       if (length > 4096) { unchecked = true; continue; }
+      if (!batch) batch = Buffer.allocUnsafe(1024 * 1024);
       if (size + length + (size ? 1 : 0) > 1024 * 1024) flush();
       if (size) batch[size++] = 10;
       b.copy(batch, size, start, p); size += length;
@@ -173,6 +185,12 @@ function createLineChecker({ name, values }) {
           last = t.end;
         } });
         if (any(last, buf.length)) valid = false;
+        for (const name of ['jsonrpc', 'id', 'method']) {
+          if (Object.prototype.hasOwnProperty.call(parsed.members, name)) {
+            const [a, b] = parsed.members[name];
+            if (any(a, b)) valid = false;
+          }
+        }
         if (valid) {
           let length = 0;
           for (let p = 0; p < buf.length;) {
