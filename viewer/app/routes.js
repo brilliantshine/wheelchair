@@ -46,6 +46,7 @@ function send(response, status, body) {
 async function handle(hub, request, response, url, machineAuthenticated) {
   const suffix = url.pathname.slice('/wheelchair/api/'.length);
   const bits = suffix.split('/').filter(Boolean);
+  if (bits[0] === 'settings' && bits[1] === 'theme') return require('./theme.js').handle(hub, request, response, url, bits, send);
   if (bits[0] === 'settings' && bits[1] === 'background') return require('./background.js').handle(hub, request, response, url, bits, send);
   if (bits[0] === 'threads' && bits[1] && bits[1] !== 'import') await guard(hub, bits[1]);
   if (request.method === 'POST' && bits[0] === 'threads' && bits[1] && bits[2] === 'uploads' && bits.length === 3) return upload(hub, request, response, url, bits[1]);
