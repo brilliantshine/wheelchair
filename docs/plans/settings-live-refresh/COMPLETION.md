@@ -21,6 +21,12 @@ verified-by:
   - round: 3
     lane: gpt / gpt-6.2-sol
     checks: standard / claude / claude-sonnet-5-5 (R2-1)
+  - round: 4
+    lane: claude / claude-opus-5-5
+    checks: standard / claude / claude-sonnet-5-5 (R2-1)
+  - round: 4
+    lane: gpt / gpt-6.2-sol
+    checks: standard / claude / claude-sonnet-5-5 (R2-1)
 ---
 
 # Completion Report — Auto-refresh an open Settings page when settings change
@@ -78,10 +84,24 @@ Sub-lead independent runs (note: host `/tmp` tmpfs was at 100% / load avg ~100 d
 - `viewer/test/background-editor.spec.js`: `22 passed (1.3m)`, exit 0 (Chromium & Firefox).
 - `live refresh` tests in `app-settings.spec.js`, `app-accounts.spec.js`, `app-lessons.spec.js`, `app-diagram-sensitivity.spec.js`: all tests passed across Chromium & Firefox (full suite run also scheduled via `bash test-support/full-run.sh`).
 
+### Full run (`bash test-support/full-run.sh`, exit 0 — all 8 suites passed)
+
+```text
+commit 31186cbba1f1c48a390c6c9e8a730d5a5d093cc0
+suite viewer-browser exit 0 seconds 490
+suite viewer-node exit 0 seconds 133
+suite machine exit 0 seconds 134
+suite test-support exit 0 seconds 27
+suite sensitivity exit 0 seconds 3
+suite codex exit 0 seconds 23
+suite install exit 0 seconds 50
+suite sudo-helper exit 0 seconds 9
+```
+
 ## Known gaps / residual risks
 
-- Deferred hardening items `d1`–`d5` remain locked in `PLAN.md`'s `## Deferred` table per `mode: two-part` (Decision 6).
-- Accepted rare-path risks from Review Rounds 5, 8, and 9 remain recorded in `PLAN.md`'s `## Accepted Risks` table.
+- Deferred hardening items `d1`–`d10` are recorded in `PLAN.md`'s `## Deferred` table (`d1`–`d5` from planning, `d6`–`d10` from verification; `d10` deferred and finished at Collin's choice after Verification Attempt 4).
+- Accepted rare-path risks: 2 recorded during build verification (`verification-1`, `verification-2`) and 3 from plan review (`review-round-5`, `review-round-8`, `review-round-9`), all in `PLAN.md`'s `## Accepted Risks` table.
 
 ## Remediation rounds
 
