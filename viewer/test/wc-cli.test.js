@@ -69,3 +69,46 @@ test('session leads sends the all-projects flag and prints the response', async 
   const run = args => new Promise((resolve, reject) => { const child = spawn(process.execPath, [cli, 'session', 'leads', ...args], { env: { ...process.env, WHEELCHAIR_MACHINE_URL: `http://127.0.0.1:${server.address().port}`, WHEELCHAIR_SESSION_TOKEN: 'test' } }); let out = ''; child.stdout.on('data', c => out += c); child.on('error', reject); child.on('close', code => code ? reject(new Error(`exit ${code}`)) : resolve(out)); });
   try { assert.equal(await run([]), '{"leads":[{"thread":"a"}]}\n'); assert.equal(await run(['--all-projects']), '{"leads":[{"thread":"a"}]}\n'); assert.deepEqual(received, [{ action: 'leads', all_projects: false }, { action: 'leads', all_projects: true }]); } finally { await new Promise(resolve => server.close(resolve)); }
 });
+
+test('assistant settings reads retry and setting writes do not', async () => {
+  const dir = makeTempSync('wc assistant '); const file = path.join(dir, 'payload.json');
+  fs.writeFileSync(file, JSON.stringify({ enabled: true, nested: { value: 1 } }));
+  const received = []; let response = () => ({ status: 200, body: { ok: true } });
+  const server = http.createServer(async (req, res) => {
+    let text = ''; for await (const chunk of req) text += chunk;
+    received.push({ path: req.url, body: JSON.parse(text) });
+    const result = response(); res.statusCode = result.status; res.end(JSON.stringify(result.body));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const run = (group, args) => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, group, ...args], { env: { ...process.env, WHEELCHAIR_MACHINE_URL: `http://127.0.0.1:${server.address().port}`, WHEELCHAIR_SESSION_TOKEN: 'test' } });
+    let out = ''; child.stdout.on('data', c => out += c); child.on('error', reject); child.on('close', code => resolve({ code, out }));
+  });
+  try {
+    for (const extra of [[], ['--include-history']]) {
+      received.length = 0; let calls = 0;
+      response = () => ++calls === 1 ? { status: 503, body: { error: 'hub unavailable' } } : { status: 200, body: { ok: true } };
+      assert.deepEqual(await run('assistant', ['settings', ...extra]), { code: 0, out: '{"ok":true}\n' });
+      const body = { action: 'settings', ...(extra.length ? { include_history: true } : {}) };
+      assert.deepEqual(received, [{ path: '/assistant', body }, { path: '/assistant', body }]);
+    }
+    received.length = 0; response = () => ({ status: 200, body: { ok: true } });
+    assert.deepEqual(await run('assistant', ['setting', 'preferences', '--file', file]), { code: 0, out: '{"ok":true}\n' });
+    assert.deepEqual(received, [{ path: '/assistant', body: { action: 'setting', target: 'preferences', payload: { enabled: true, nested: { value: 1 } } } }]);
+    for (const [status, error] of [[503, 'hub unavailable'], [409, 'Background changed elsewhere']]) {
+      received.length = 0; response = () => ({ status, body: { error } });
+      assert.deepEqual(await run('assistant', ['setting', 'background', '--file', file]), { code: 0, out: `${JSON.stringify({ ok: false, error })}\n` });
+      assert.equal(received.length, 1);
+    }
+    for (const args of [['setting'], ['setting', 'target'], ['setting', '--file', file]]) {
+      assert.deepEqual(await run('assistant', args), { code: 0, out: '{"ok":false,"error":"setting requires <target> and --file"}\n' });
+    }
+    for (const value of ['{', 'null', '[]', '123', '"text"', 'true']) {
+      fs.writeFileSync(file, value);
+      assert.deepEqual(await run('assistant', ['setting', 'target', '--file', file]), { code: 0, out: '{"ok":false,"error":"setting --file must contain a JSON object"}\n' });
+    }
+    for (const operation of ['settings', 'setting']) {
+      assert.deepEqual(await run('project-lead', [operation]), { code: 0, out: '{"ok":false,"error":"unsupported assistant action"}\n' });
+    }
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
