@@ -891,4 +891,12 @@ async function handleSessions(hub, request, response, bits, body) {
   throw appError(404, 'route not found');
 }
 
-module.exports = { handle, readBody, send, newThread, listThreads, HTML_HEADERS, UPLOAD_LIMIT };
+async function invokeSettings(hub, method, relPath, body = {}) {
+  let status, result;
+  const response = { setHeader() {}, writeHead(code) { status = code; }, end(json) { result = JSON.parse(json); } };
+  const url = new URL('http://localhost/wheelchair/api/settings' + relPath);
+  await handleSettings(hub, { method }, response, url, ['settings', ...relPath.split('/').filter(Boolean)], body);
+  return { status, body: result };
+}
+
+module.exports = { handle, readBody, send, newThread, listThreads, invokeSettings, HTML_HEADERS, UPLOAD_LIMIT };
