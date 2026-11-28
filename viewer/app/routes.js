@@ -351,7 +351,13 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (body.model !== null && (typeof body.model !== 'string' || !new RegExp(manifest.models.hubPattern).test(body.model))) throw appError(400, 'model is invalid');
     if (!PROVIDERS[body.provider].effort && body.effort !== undefined) throw appError(400, `${PROVIDERS[body.provider].label} has no effort setting`);
     if (body.effort !== undefined && !manifest.models.efforts.includes(body.effort)) throw appError(400, manifest.models.effortError || 'effort is invalid');
-    try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
+    let { model, effort } = body;
+    if (model && body.provider === settings.levelTool()?.provider) {
+      ({ model, effort } = await settings.normalizeLevelModel(hub, body.provider, model, effort));
+      const levels = effort ? await settings.modelLevels(hub, body.provider, model) : null;
+      if (levels && !levels.includes(effort)) throw appError(400, levels.length ? `${model} has no ${effort} level; it has ${levels.join(', ')}` : `${model} takes no effort`);
+    }
+    try { await settings.modelCommand(hub, ['set', body.provider, slot, model || 'none', ...(effort ? [effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });
   }
