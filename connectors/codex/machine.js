@@ -121,9 +121,8 @@ module.exports = {
   readSteps: require('./steps').readLines,
   stepsReady: session => !!session.codex_thread_id,
   sandboxed: session => session.project_lead || session.codex_mode !== 'unrestricted',
-  shellToolsOnly: session => module.exports.sandboxed(session),
-  keyedToolsReason: session => module.exports.sandboxed(session) ? "sandboxed Codex can't use; set Codex to unrestricted in Settings to use it" : null,
   sandboxWrap: command => ['codex', 'sandbox', '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true', '--', ...command],
+  sandboxWrapTool: (command, { worktree, toolDir }) => ['codex', 'sandbox', '-P', 'wc', '-C', worktree, '-c', `permissions.wc.filesystem={"/"="read",${tomlString(worktree)}="write","/tmp"="write"}`, '-c', 'permissions.wc.network.enabled=true', '-c', `projects={${tomlString(worktree)}={trust_level="trusted"}}`, '--', '/bin/sh', '-c', 'cd "$1" && shift && exec "$@"', '--', toolDir, ...command],
   projectToolReason(name, entry) { const reason = codexEntryReason(name, entry); return reason ? `on Codex: ${reason}` : null; },
   projectToolFileWarning(servers) { return codexOverrides({ servers }).tooLarge ? 'project tools skipped on Codex: .mcp.json is too large to pass on the command line' : null; },
   stepVocabulary: c.stepVocabularies.codexStyle,
@@ -166,9 +165,7 @@ module.exports = {
     const { args, warnings, tooLarge } = codexOverrides(context?.tools ? context.mcp : null, context);
     const extras = context?.tools ? context.extraServers || [] : [];
     const folderNames = [];
-    if (extras.length && module.exports.sandboxed(session)) {
-      warnings.push({ names: extras.map(extra => extra.name), text: 'folder tools run from the shell here (`wc.js tool run`); server tools need Codex set to unrestricted' });
-    } else {
+    {
       for (const extra of extras) {
         const reason = codexEntryReason(extra.name, extra.entry);
         if (reason) { warnings.push({ names: [extra.name], text: `tool ${extra.name}: skipped on Codex: ${reason}` }); continue; }

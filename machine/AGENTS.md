@@ -57,7 +57,8 @@ agents own neither tmux nor the machine secret.
 | `hook.sh` | CLI hook entry point; hands every payload to `lib/hook-in.js`, which follows the tool's manifest `hook` field and turns it into a local event, spooling while the service is down. |
 | `lib/hook-post.js` | Dependency-free HTTP/spool helper used by `lib/hook-in.js`. |
 | `API.md` | The hub-to-machine and agent-to-machine route contract. |
-| `test/` | Isolated fakes and service tests; never uses a real CLI, tmux, or state directory. `fixtures/agy/` holds live captures from `agy` 1.5.9. `fixtures/win/wslpath-standin.js` puts a pass-through `wslpath` on PATH when the real one is missing (plain Linux). |
+| `lib/mcp-http.js`, `lib/http-tool-proxy.js` | HTTP MCP transport and keyed folder-tool proxy. |
+| `test/` | Isolated fakes and service tests; never uses real tmux or state. `test/folder-tools-codex-sandbox.test.js` runs against real Codex when installed, using isolated `run-dir.js` directories outside `/tmp`; otherwise it skips. `fixtures/agy/` holds live captures from `agy` 1.5.9. `fixtures/win/wslpath-standin.js` puts a pass-through `wslpath` on PATH when the real one is missing (plain Linux). |
 
 Test temp folders come from `test-support/run-dir.js` (`makeTemp`/`makeTempSync`), which removes them when the test process ends; never allocate from `os.tmpdir()` directly in a test.
 
