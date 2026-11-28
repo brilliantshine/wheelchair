@@ -483,6 +483,16 @@ test('folder key status and key-only refresh use the selected store', async () =
 });
 
 
+test('keyed server shows its key status on the Tools page', async () => {
+  const f = await fixture(), dir = path.join(f.repo, '.wheelchair/tools/server'); await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'server', description: 'Server', kind: 'server', start: ['node'], keys: ['TOKEN'] }));
+  git('-C', f.repo, 'add', '.wheelchair'); git('-C', f.repo, 'commit', '-qm', 'server'); git('-C', f.repo, 'push', '-q', f.remote, 'main');
+  const input = { path: f.repo }, read = (await f.tools.read(input)).body, row = read.folder_tools.rows[0];
+  assert.deepEqual(row.key_lines, ['needs key TOKEN, not set on this machine']); assert.equal(row.key_store, 'project');
+  await f.tools.save({ ...input, token: read.token, tools: null, keys: { TOKEN: 'longvalue' } });
+  const set = (await f.tools.keyStatus(input)).body.folder_tools.rows[0]; assert.equal(set.key_missing, false); assert.deepEqual(set.key_lines, []);
+});
+
 test('multiple missing project keys are named in order', async () => {
   const f = await fixture(), dir = path.join(f.repo, '.wheelchair/tools/demo'); await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, 'tool.json'), JSON.stringify({ name: 'demo', description: 'Demo', kind: 'script', inputs: {}, run: ['node'], keys: ['A', 'B'] }));

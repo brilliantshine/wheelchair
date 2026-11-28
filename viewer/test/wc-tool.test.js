@@ -89,12 +89,42 @@ test('keyed lists report session status, unavailable sessions, failure and scrat
   assert.equal(run(dir, ['list']).stdout, 'keyed\tscript\tproject\tok\tkeys: ALPHA, BETA, GAMMA (key status unknown outside a session)\nplain\tscript\tproject\tok\n');
 });
 
+test('keyed server lists report key status', async () => {
+  const dir = repo();
+  tool(dir, 'keyed', { kind: 'server', start: ['node'], keys: ['ALPHA', 'BETA', 'GAMMA'] });
+  tool(dir, 'plain', { kind: 'script', inputs: {}, run: ['node'] });
+  const entry = { name: 'keyed', source: 'project', store: 'project', keys: [{ name: 'ALPHA', set: true, reason: null }, { name: 'BETA', set: false, reason: 'not set on this machine' }, { name: 'GAMMA', set: false, reason: 'value too short' }] };
+  let unavailable = null, fail = false;
+  const server = http.createServer((req, res) => {
+    assert.equal(req.headers['x-wheelchair-session-token'], 'secret');
+    if (req.url === '/v1/agent/tools') res.end(JSON.stringify({ worktree: dir, shared_copy: null, keyed_unavailable: unavailable }));
+    else if (req.url === '/v1/agent/tool-keys') { if (fail) { res.statusCode = 503; res.end('offline'); } else res.end(JSON.stringify({ tools: [entry] })); }
+    else { res.statusCode = 404; res.end(); }
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const extra = { WHEELCHAIR_SESSION_TOKEN: 'secret', WHEELCHAIR_MACHINE_URL: `http://127.0.0.1:${server.address().port}/v1/agent` };
+  const list = async (...args) => { const result = await done(child(dir, ['list', ...args], extra)); assert.equal(result.code, 0, result.stderr); return result.stdout; };
+  try {
+    assert.equal(await list(), 'keyed\tserver\tproject\tok\tkeys: ALPHA set, BETA not set, GAMMA value too short\nplain\tscript\tproject\tok\n');
+    let rows = JSON.parse(await list('--json')); assert.deepEqual(rows[0].key_status, entry); assert.equal(rows[0].keyed_unavailable, null); assert.equal(rows[1].key_status, null); assert.equal('keyed_unavailable' in rows[1], false);
+    unavailable = "sandboxed Codex can't use; set Codex to unrestricted in Settings to use it";
+    assert.match(await list(), /needs keys, which sandboxed Codex can't use; set Codex to unrestricted in Settings to use it/);
+    rows = JSON.parse(await list('--json')); assert.equal(rows[0].keyed_unavailable, unavailable);
+    unavailable = null; fail = true;
+    assert.match(await list(), /key status unavailable: offline/);
+    rows = JSON.parse(await list('--json')); assert.equal(rows[0].key_status, null);
+  } finally { server.close(); }
+  assert.equal(run(dir, ['list']).stdout, 'keyed\tserver\tproject\tok\tkeys: ALPHA, BETA, GAMMA (key status unknown outside a session)\nplain\tscript\tproject\tok\n');
+});
+
 test('keyed check and run describe key handling while preserving caller environment', () => {
   const dir = repo();
   tool(dir, 'keyed', { kind: 'script', inputs: {}, run: ['./run.sh'], keys: ['WC_TEST_ABSENT_KEY'] }, { 'run.sh': '#!/bin/sh\nprintf "%s|%s" "${WC_TEST_ABSENT_KEY-unset}" "$WC_TEST_PRESENT"' });
-  tool(dir, 'server', { kind: 'server', start: ['node'], keys: ['WC_TEST_ABSENT_KEY'] });
+  tool(dir, 'server', { kind: 'server', start: ['node', 'server.js'], keys: ['WC_TEST_ABSENT_KEY'] }, { 'server.js': `require(${JSON.stringify(path.resolve(__dirname, '../../machine/lib/mcp-stdio.js'))}).serve({name:process.env.WC_TEST_ABSENT_KEY || 'unset',version:'1',tools:[{name:'hello',description:'Hi',inputSchema:{type:'object'}}]});` });
+  tool(dir, 'broken', { kind: 'server', start: ['node', '-e', 'process.exit(1)'], keys: ['WC_TEST_ABSENT_KEY'] });
   assert.equal(run(dir, ['check', 'keyed']).stdout, 'keyed: ok (validated without using keys)\n');
-  assert.match(run(dir, ['check', 'server']).stdout, /keys for server tools aren't supported yet/);
+  assert.equal(run(dir, ['check', 'server'], { WC_TEST_ABSENT_KEY: 'secretvalue' }).stdout, 'server: unset tools: hello (checked without its keys)\n');
+  assert.match(run(dir, ['check', 'broken']).stdout, /it ran without its keys; that may be why/);
   const result = run(dir, ['run', 'keyed'], { WC_TEST_ABSENT_KEY: undefined, WC_TEST_PRESENT: 'present' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, 'Ran without folder-tool keys; variables already in your environment were passed as usual. Keyed tools get their keys through MCP, from the next call in a session that offered them.\nunset|present');

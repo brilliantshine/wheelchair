@@ -120,9 +120,11 @@ async function main(args, io = {}) {
         const remaining = deadline - Date.now();
         if (remaining <= 0) { out.write(`${row.name}: check deadline exceeded\n`); failed = true; continue; }
         const [program, ...argv] = row.tool.start;
-        const result = await handshake({ command: program.includes('/') ? path.resolve(row.dir, program) : program, args: argv, cwd: row.dir, env: toolEnv(process.env, worktree), timeoutMs: remaining, signal: controller.signal });
-        if (!result.ok) { out.write(`${row.name}: ${result.error}\n`); failed = true; }
-        else out.write(`${row.name}: ${result.serverInfo?.name || '(unnamed server)'}${result.tools === null ? '' : ` tools: ${result.tools.join(', ')}`}\n`);
+        const env = toolEnv(process.env, worktree);
+        for (const key of row.tool.keys) delete env[key];
+        const result = await handshake({ command: program.includes('/') ? path.resolve(row.dir, program) : program, args: argv, cwd: row.dir, env, timeoutMs: remaining, signal: controller.signal });
+        if (!result.ok) { out.write(`${row.name}: ${result.error}\n${row.tool.keys.length ? 'it ran without its keys; that may be why\n' : ''}`); failed = true; }
+        else out.write(`${row.name}: ${result.serverInfo?.name || '(unnamed server)'}${result.tools === null ? '' : ` tools: ${result.tools.join(', ')}`}${row.tool.keys.length ? ' (checked without its keys)' : ''}\n`);
       }
     } finally {
       clearTimeout(timer);

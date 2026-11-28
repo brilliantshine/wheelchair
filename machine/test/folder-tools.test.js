@@ -79,7 +79,9 @@ test('key declarations and store choice', () => {
   assert.deepEqual(result.tool.keys,keys); assert.notEqual(result.tool.keys,keys);
   assert.deepEqual(f.validateToolJson('weather',script).tool.keys,[]);
   for (const keys of [null,{},[],Array(21).fill('A'),['A','A'],['1BAD'],['HOME'],[1]]) assert.equal(f.validateToolJson('weather',{...script,keys}).reason,'tool.json has an invalid "keys"');
-  assert.equal(f.validateToolJson('weather',{name:'weather',description:'x',kind:'server',start:['sh'],keys:['TOKEN']}).reason,"keys for server tools aren't supported yet");
+  const server={name:'weather',description:'x',kind:'server',start:['sh']};
+  assert.deepEqual(f.validateToolJson('weather',{...server,keys:['TOKEN']}).tool.keys,['TOKEN']);
+  for (const keys of [['1BAD'],['A','A'],Array.from({length:21},(_,i)=>`K${i}`)]) assert.equal(f.validateToolJson('weather',{...server,keys}).reason,'tool.json has an invalid "keys"');
   assert.deepEqual(f.validateToolJson('weather',{name:'weather',description:'x',kind:'server',start:['sh']}).tool.keys,[]);
   assert.equal(f.toolKeyStore({source:'shared'},false),'shared'); assert.equal(f.toolKeyStore({source:'project'},true),'shared'); assert.equal(f.toolKeyStore({source:'project'},false),'project');
 });

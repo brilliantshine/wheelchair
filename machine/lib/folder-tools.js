@@ -14,7 +14,6 @@ function validateToolJson(folderName, value) {
   if (!['script', 'server'].includes(value.kind)) return bad('kind');
   if (Object.hasOwn(value, 'keys') && (!Array.isArray(value.keys) || value.keys.length < 1 || value.keys.length > 20 || new Set(value.keys).size !== value.keys.length || !value.keys.every(k => typeof k === 'string' && KEY_NAME.test(k) && !isReserved(k)))) return bad('keys');
   const tool = { name: value.name, description: value.description, kind: value.kind, keys: value.keys ? value.keys.slice() : [] };
-  if (value.kind === 'server' && tool.keys.length) return { ok: false, reason: "keys for server tools aren't supported yet" };
   const argv = field => Array.isArray(value[field]) && value[field].length > 0 && value[field].every(x => typeof x === 'string' && x.length > 0);
   if (value.kind === 'server') {
     if (!argv('start')) return bad('start');
@@ -76,6 +75,6 @@ function inputSchema(inputs) {
   return { type: 'object', properties, ...(required.length ? { required } : {}) };
 }
 function bridgeEntry(worktree, rows, { stateDir } = {}) { return { name: RESERVED, folder: 'bridge', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-bridge.js'), '--project-dir', worktree, ...(rows.some(r => r.tool?.keys?.length) ? ['--state-dir', stateDir] : []), ...rows.flatMap(r => ['--tool', r.dir, ...(r.tool?.keys?.length ? ['--key-store', r.key_store, ...r.tool.keys.flatMap(k => ['--key', k])] : [])])], env: {} } }; }
-function serverEntry(worktree, row) { return { name: row.name, folder: 'server', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-launch.js'), '--project-dir', worktree, '--tool', row.dir], env: {} } }; }
+function serverEntry(worktree, row, { stateDir } = {}) { return { name: row.name, folder: 'server', entry: { type: 'stdio', command: process.execPath, args: [path.join(__dirname, 'tool-launch.js'), '--project-dir', worktree, '--tool', row.dir, ...(row.tool?.keys?.length ? ['--state-dir', stateDir, '--key-store', row.key_store, ...row.tool.keys.flatMap(k => ['--key', k])] : [])], env: {} } }; }
 function toolKeyStore(row, ownShared) { return row.source === 'shared' || ownShared ? 'shared' : 'project'; }
 module.exports = { toolKeyStore, NAME_RE, RESERVED, validateToolJson, readToolsDir, findProgram, discover, inputSchema, bridgeEntry, serverEntry };

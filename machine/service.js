@@ -1021,8 +1021,18 @@ class MachineService {
         }
         if (!(machineKeys && row.tool.keys.length)) scriptRows.push(row);
       }
-      const servers = found.usable.filter(row => row.kind === 'server').sort((a, b) => a.name.localeCompare(b.name));
-      const entries = [...(scriptRows.length ? [folderTools.bridgeEntry(worktree, scriptRows, { stateDir: this.stateDir })] : []), ...servers.map(row => folderTools.serverEntry(worktree, row))];
+      const servers = [];
+      for (const row of found.usable.filter(row => row.kind === 'server').sort((a, b) => a.name.localeCompare(b.name))) {
+        if (row.tool.keys.length && !adapter.shellToolsOnly?.(session)) {
+          try {
+            const store = row.key_store === 'shared' ? await readSharedKeys(this.stateDir) : await readKeyStore(this.stateDir, await projectIdentity(worktree));
+            const missing = row.tool.keys.filter(k => !Object.hasOwn(store.keys, k) || usableReason(store.keys[k]));
+            if (missing.length) { folder.push({ names: [row.name], text: `${row.source === 'shared' ? 'shared tool' : 'tool'} ${row.name} needs ${missing.length === 1 ? 'key' : 'keys'} ${missing.join(', ')}, not set on this machine` }); continue; }
+          } catch (error) { folder.push({ names: [row.name], text: error.message }); continue; }
+        }
+        servers.push(row);
+      }
+      const entries = [...(scriptRows.length ? [folderTools.bridgeEntry(worktree, scriptRows, { stateDir: this.stateDir })] : []), ...servers.map(row => folderTools.serverEntry(worktree, row, { stateDir: this.stateDir }))];
       context.extraServers = entries.filter(entry => {
         if (!mcp?.names.includes(entry.name)) return true;
         folder.push({ names: [entry.name], text: `tool ${entry.name}: hidden by the .mcp.json server of the same name` });
